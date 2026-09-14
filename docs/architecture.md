@@ -1,0 +1,19 @@
+# Baseline architecture
+
+`MainActivity` provides Client/Profile/Server/Diagnostics. `WorkService` runs one transfer/validation task with a foreground notification, bounded wake lock, progress and cancellation. Jobs capture application state, not an Activity. No credentials are stored.
+
+`core/` is plain Java and is exercised by the JVM test harness. `SafeZip` streams ZIP/ZIP64 archives rather than loading game data into memory. Extraction rejects traversal, absolute/drive paths, duplicate files, conflicting Windows path casing, excessive nesting, more than 500,000 entries and more than 80 GiB expanded content. It reserves 512 MiB free space. Archive symlink records are extracted as ordinary files and cannot create filesystem links; existing filesystem links are rejected during inspection/export.
+
+`ClientInspector` detects one installation by `FFXi.dll`, `FFXiMain.dll` and `polcore.dll` / `polcoreeu.dll`, requires ROM data, checks PE32/x86 headers and hashes only the key executables. It does not certify completeness of every DAT, runtime dependencies, COM registration or server compatibility.
+
+`ClientStore` maintains `current/`, `previous/`, and `incoming/`. A full extraction and inspection occurs before directory promotion. No game executable is run during import. Full update imports optionally preserve the old FFXI USER and PlayOnline usr trees into staging. Restores use their backed-up settings without overlaying the old personal files. Previous-client rollback is a directory swap with recovery for interrupted renames. Staging leftovers are removed on the next import. A rollback keeps only one previous full client.
+
+`RepairPackage` emits a reviewable CMD recipe for the selected region. It resolves paths relative to an exported package, uses the 32-bit registry view and registration tool, stops on registration errors and preserves the first available install-key snapshot. It does not mark registration successful within the Android app. COM undo requires a Wine-prefix backup. Paths containing unsupported CMD-sensitive characters are rejected at generation. The source-derived DLL registration sequence requires on-device qualification.
+
+`SourceImport` stages an LSB source ZIP. Online mode accepts GitHub owner/repository and branch/tag/SHA, obtains a full commit SHA, then downloads the archive at that SHA. HTTPS redirects are restricted to GitHub API/archive hosts. Offline source ZIPs cannot prove their revision. Missing mesh contents are surfaced; source acquisition is not a compiler or runtime installation.
+
+## Intentionally absent runtime boundary
+
+The captured Proton arm64x/FEX environment cannot be truthfully represented by bundling unrelated generic Wine/Box64 binaries. Version strings alone do not prove binary equivalence. This baseline records that boundary explicitly. A future runtime implementation must provide install/verify, create-prefix, x86 Windows process launch, COM-probe results, display/input/audio, process supervision, and exit/crash reporting. It must pass real client startup and world-entry tests before the app enables an in-app Play flow.
+
+The standalone server backend needs an execution strategy compliant with Android's target-SDK restrictions, an ARM64 Linux or Android-native dependency bundle, MariaDB, all LSB processes, backup-aware migration, mesh import, and local-address/port configuration. An isolated toolchain can then compile selected source revisions. No interface in 0.1.0 claims these capabilities exist.

@@ -1,0 +1,30 @@
+name: Verify baseline
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Core import and recovery checks
+        run: python3 scripts/test.py
+      - name: Install Android SDK packages
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile, dex, package and verify
+        run: |
+          python3 scripts/build-apk.py \
+            --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
+            --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
+            --keystore "$RUNNER_TEMP/ci-only.jks"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.1.0.apk
+      - name: Note device build signing
+        run: echo 'This is a disposable-certificate build check. Use the separately delivered device APK for updates.' >> "$GITHUB_STEP_SUMMARY"
