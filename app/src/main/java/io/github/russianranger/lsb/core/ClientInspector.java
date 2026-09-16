@@ -4,13 +4,21 @@ import java.io.*;
 import java.util.*;
 
 public final class ClientInspector {
+    public static final class PlayOnlineChoiceRequired extends IOException {
+        public final List<String> choices;
+        PlayOnlineChoiceRequired(List<String> choices) { super("Choose the PlayOnline version to use. The extracted files are ready."); this.choices = choices; }
+    }
     public static final class Snapshot {
         public File root, game, pol, loader;
         public long bytes, files;
-        public String polDll, version = "Unknown (no readable patch.ver)", inventory;
-        public String summary() { return files + " files · " + bytes / 1048576 + " MiB\nClient version: " + version + "\n" + (loader == null ? "Import xiloader.exe to enable launch-package export." : "32-bit xiloader present."); }
+        public String polDll, polCore, version = "Unknown (no readable patch.ver)", inventory;
+        public List<String> polChoices;
+        public String summary() { return files + " files · " + bytes / 1048576 + " MiB\nClient version: " + version + "\nPlayOnline: " + polCore + "\n" + (loader == null ? "Import xiloader.exe to enable launch-package export." : "32-bit xiloader present."); }
     }
     public static Snapshot inspect(File root, SafeZip.Progress progress) throws Exception {
+        return inspect(root, "", progress);
+    }
+    public static Snapshot inspect(File root, String selectedPolCore, SafeZip.Progress progress) throws Exception {
         Snapshot s = new Snapshot(); s.root = root;
         Map<String, List<File>> candidates = new HashMap<>();
         scan(root, s, candidates, progress, 0);
@@ -21,13 +29,26 @@ public final class ClientInspector {
         List<File> cores = new ArrayList<>();
         cores.addAll(candidates.getOrDefault("polcore.dll", Collections.emptyList()));
         cores.addAll(candidates.getOrDefault("polcoreeu.dll", Collections.emptyList()));
-        if (cores.size() != 1) throw new IOException("Expected one PlayOnline polcore.dll or polcoreeu.dll; found " + cores.size() + ". Import one installation.");
-        File core = cores.get(0); s.pol = core.getParentFile(); s.polDll = core.getName();
-        if (s.game.equals(s.pol)) throw new IOException("PlayOnline and FFXI must have separate folders");
         File rom = child(s.game, "ROM");
         if (rom == null || !rom.isDirectory() || FilesEx.children(rom).length == 0) throw new IOException("Missing FFXI ROM data. Import the complete PlayOnline and FFXI installation.");
-        requireX86(main); requireX86(entry); requireX86(core);
-        s.loader = unique(candidates, "xiloader.exe", false);
+        requireX86(main); requireX86(entry);
+        if (cores.isEmpty()) throw new IOException("Missing PlayOnline polcore.dll or polcoreeu.dll");
+        s.polChoices = new ArrayList<>();
+        for (File f : cores) s.polChoices.add(FilesEx.relative(root, f));
+        File core;
+        if (selectedPolCore != null && !selectedPolCore.isEmpty()) {
+            int index = s.polChoices.indexOf(selectedPolCore);
+            if (index < 0) throw new IOException("The selected PlayOnline DLL is missing. Choose an available version.");
+            core = cores.get(index);
+        } else if (cores.size() == 1) core = cores.get(0);
+        else throw new PlayOnlineChoiceRequired(s.polChoices);
+        s.pol = core.getParentFile(); s.polDll = core.getName(); s.polCore = FilesEx.relative(root, core);
+        if (s.game.equals(s.pol)) throw new IOException("PlayOnline and FFXI must have separate folders");
+        requireX86(core);
+        List<File> loaders = candidates.getOrDefault("xiloader.exe", Collections.emptyList());
+        // Prefer the loader alongside the selected viewer when each viewer has its own copy.
+        s.loader = loaders.size() > 1 ? child(s.pol, "xiloader.exe") : unique(candidates, "xiloader.exe", false);
+        if (s.loader != null && !s.loader.isFile()) s.loader = null;
         if (s.loader != null) requireX86(s.loader);
         File version = child(s.game, "patch.ver");
         if (version != null && version.isFile() && version.length() < 4096) {
@@ -35,7 +56,7 @@ public final class ClientInspector {
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("[0-9]{8}_[0-9]+").matcher(text);
             if (m.find()) s.version = m.group();
         }
-        StringBuilder json = new StringBuilder("{\n  \"schema\": 1,\n  \"files\": " + s.files + ",\n  \"bytes\": " + s.bytes + ",\n  \"clientVersion\": " + FilesEx.json(s.version) + ",\n  \"runtimeTested\": false,\n  \"keyFiles\": [\n");
+        StringBuilder json = new StringBuilder("{\n  \"schema\": 1,\n  \"files\": " + s.files + ",\n  \"bytes\": " + s.bytes + ",\n  \"clientVersion\": " + FilesEx.json(s.version) + ",\n  \"selectedPlayOnline\": " + FilesEx.json(s.polCore) + ",\n  \"runtimeTested\": false,\n  \"keyFiles\": [\n");
         List<File> keys = new ArrayList<>(Arrays.asList(core, entry, main)); if (s.loader != null) keys.add(s.loader);
         for (int i = 0; i < keys.size(); i++) {
             File f = keys.get(i); progress.update("Hashing " + f.getName());

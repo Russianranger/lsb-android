@@ -14,7 +14,7 @@ public final class ClientStore {
     public boolean hasClient() { return client().isDirectory(); }
     public boolean hasPrevious() { return new File(previous(), "client").isDirectory(); }
     public LaunchConfig config() throws IOException { return LaunchConfig.load(new File(current(), "session.properties")); }
-    public void saveConfig(LaunchConfig config) throws IOException { FilesEx.mkdir(current()); FilesEx.text(new File(current(), "session.properties"), config.properties()); }
+    public void saveConfig(LaunchConfig config) throws IOException { requireRegion(config); FilesEx.mkdir(current()); FilesEx.text(new File(current(), "session.properties"), config.properties()); }
     public String summary() throws IOException {
         File f = new File(current(), "summary.txt");
         return hasClient() && f.exists() ? FilesEx.read(f, 8192) : "Import a ZIP containing both PlayOnline and FINAL FANTASY XI. Nested folders are detected automatically.";
@@ -31,14 +31,38 @@ public final class ClientStore {
         }
         if (swap.exists() && !previous().exists()) FilesEx.move(swap, previous());
     }
+    private File incoming() { return new File(home, "incoming"); }
+    public boolean hasPendingImport() { return new File(incoming(), "pending.properties").isFile(); }
+    public LaunchConfig pendingConfig() throws IOException { return LaunchConfig.load(new File(incoming(), "session.properties")); }
+    public List<String> pendingChoices() throws IOException { return readChoices(new File(incoming(), "pending.properties")); }
+    public List<String> playOnlineChoices() throws IOException { return readChoices(new File(current(), "playonline-options.properties")); }
+    private static List<String> readChoices(File file) throws IOException {
+        List<String> result = new ArrayList<>();
+        if (!file.isFile()) return result;
+        Properties p = new Properties(); try (Reader r = new FileReader(file)) { p.load(r); }
+        int count = Integer.parseInt(p.getProperty("count", "0"));
+        if (count < 0 || count > 500000) throw new IOException("Invalid PlayOnline option count");
+        for (int i = 0; i < count; i++) result.add(p.getProperty("choice." + i));
+        return result;
+    }
+    private static void writeChoices(File file, List<String> choices, boolean restore, boolean preserveUser) throws IOException {
+        Properties p = new Properties(); p.setProperty("count", Integer.toString(choices.size()));
+        p.setProperty("restore", Boolean.toString(restore)); p.setProperty("preserveUser", Boolean.toString(preserveUser));
+        for (int i = 0; i < choices.size(); i++) p.setProperty("choice." + i, choices.get(i));
+        StringWriter out = new StringWriter(); p.store(out, null); FilesEx.text(file, out.toString());
+    }
+    public void discardPendingImport() throws IOException { FilesEx.delete(incoming()); }
     public void importClient(InputStream in, boolean restore, boolean preserveUser, SafeZip.Progress progress) throws Exception {
         recover();
-        File incoming = new File(home, "incoming"); FilesEx.delete(incoming); FilesEx.mkdir(incoming);
-        boolean promoted = false;
+        if (hasPendingImport()) throw new IOException("Finish or discard the extracted import before importing another ZIP.");
+        File incoming = incoming(); FilesEx.delete(incoming); FilesEx.mkdir(incoming);
+        boolean retain = false;
         try {
             File unpack = new File(incoming, "unpack");
             SafeZip.extract(in, unpack, progress);
-            LaunchConfig cfg = config();
+            LaunchConfig active = config();
+            // A new archive can use different paths. Ask again if it contains multiple versions.
+            LaunchConfig cfg = new LaunchConfig(active.host, active.region);
             File payload = unpack;
             if (restore) {
                 File marker = new File(unpack, "backup-format.txt");
@@ -47,22 +71,61 @@ public final class ClientStore {
                 if (!payload.isDirectory()) throw new IOException("Backup has no client folder");
                 cfg = LaunchConfig.load(new File(unpack, "session.properties"));
             }
-            ClientInspector.Snapshot fresh = ClientInspector.inspect(payload, progress);
-            if (!restore && preserveUser && hasClient()) {
-                ClientInspector.Snapshot old = ClientInspector.inspect(client(), progress);
-                preserveDirectory(old.game, fresh.game, "USER", progress);
-                preserveDirectory(old.pol, fresh.pol, "usr", progress);
-                fresh = ClientInspector.inspect(payload, progress);
+            try { activateImport(payload, cfg, !restore && preserveUser, progress); }
+            catch (ClientInspector.PlayOnlineChoiceRequired choice) {
+                FilesEx.text(new File(incoming, "session.properties"), cfg.properties());
+                writeChoices(new File(incoming, "pending.properties"), choice.choices, restore, !restore && preserveUser);
+                retain = true;
+                progress.update("Choose PlayOnline version to finish import");
             }
-            File staged = new File(incoming, "ready"); FilesEx.mkdir(staged);
-            FilesEx.move(payload, new File(staged, "client"));
-            FilesEx.text(new File(staged, "session.properties"), cfg.properties());
-            FilesEx.text(new File(staged, "inventory.json"), fresh.inventory);
-            FilesEx.text(new File(staged, "summary.txt"), fresh.summary());
-            FilesEx.text(new File(staged, "backup-format.txt"), "lsb-android-session-v1\n");
-            SafeZip.checkCancelled();
-            promote(staged); promoted = true;
-        } finally { try { FilesEx.delete(incoming); } catch (IOException e) { if (!promoted) progress.update("Staging cleanup will retry on the next import"); } }
+        } finally { if (!retain) cleanupImport(progress); }
+    }
+    public void finishPendingImport(String selectedCore, String region, SafeZip.Progress progress) throws Exception {
+        if (!hasPendingImport()) throw new IOException("No extracted import is waiting for a selection");
+        if (!pendingChoices().contains(selectedCore)) throw new IOException("Choose one of the detected PlayOnline versions");
+        Properties state = new Properties();
+        try (Reader r = new FileReader(new File(incoming(), "pending.properties"))) { state.load(r); }
+        LaunchConfig old = pendingConfig();
+        LaunchConfig cfg = new LaunchConfig(old.host, region, selectedCore);
+        requireRegion(cfg);
+        File payload = new File(incoming(), Boolean.parseBoolean(state.getProperty("restore")) ? "unpack/client" : "unpack");
+        activateImport(payload, cfg, Boolean.parseBoolean(state.getProperty("preserveUser")), progress);
+        cleanupImport(progress);
+    }
+    private void activateImport(File payload, LaunchConfig cfg, boolean preserveUser, SafeZip.Progress progress) throws Exception {
+        ClientInspector.Snapshot fresh = ClientInspector.inspect(payload, cfg.polCore, progress);
+        if (preserveUser && hasClient()) {
+            ClientInspector.Snapshot old = ClientInspector.inspect(client(), config().polCore, progress);
+            preserveDirectory(old.game, fresh.game, "USER", progress);
+            preserveDirectory(old.pol, fresh.pol, "usr", progress);
+            fresh = ClientInspector.inspect(payload, fresh.polCore, progress);
+        }
+        // EU is identifiable by the DLL. US and JP share the other filename.
+        String region = fresh.polDll.equalsIgnoreCase("polcoreeu.dll") ? "EU" : cfg.region.equals("EU") ? "US" : cfg.region;
+        cfg = new LaunchConfig(cfg.host, region, fresh.polCore);
+        File staged = new File(incoming(), "ready"); FilesEx.delete(staged); FilesEx.mkdir(staged);
+        FilesEx.text(new File(staged, "session.properties"), cfg.properties());
+        writeSnapshot(staged, fresh);
+        FilesEx.text(new File(staged, "backup-format.txt"), "lsb-android-session-v1\n");
+        SafeZip.checkCancelled();
+        // Move the large payload only after validation and metadata are complete.
+        File stagedClient = new File(staged, "client");
+        FilesEx.move(payload, stagedClient);
+        try { promote(staged); }
+        catch (IOException e) { if (stagedClient.exists()) FilesEx.move(stagedClient, payload); throw e; }
+    }
+    private void cleanupImport(SafeZip.Progress progress) {
+        try { FilesEx.delete(incoming()); }
+        catch (IOException e) { progress.update("Staging cleanup will retry on the next import"); }
+    }
+    private static void writeSnapshot(File directory, ClientInspector.Snapshot snapshot) throws IOException {
+        FilesEx.text(new File(directory, "inventory.json"), snapshot.inventory);
+        FilesEx.text(new File(directory, "summary.txt"), snapshot.summary());
+        writeChoices(new File(directory, "playonline-options.properties"), snapshot.polChoices, false, false);
+    }
+    private static void requireRegion(LaunchConfig cfg) throws IOException {
+        if (!cfg.polCore.isEmpty() && cfg.region.equals("EU") != new File(cfg.polCore).getName().equalsIgnoreCase("polcoreeu.dll"))
+            throw new IOException("Choose EU for polcoreeu.dll, or US / JP for polcore.dll");
     }
     private void promote(File staged) throws IOException {
         // Existing validated current remains active until extraction and inspection succeed.
@@ -73,7 +136,7 @@ public final class ClientStore {
     }
     public void rollback(SafeZip.Progress progress) throws Exception {
         if (!hasPrevious() || !new File(previous(), "client").isDirectory()) throw new IOException("No previous client is available");
-        ClientInspector.inspect(new File(previous(), "client"), progress);
+        ClientInspector.inspect(new File(previous(), "client"), LaunchConfig.load(new File(previous(), "session.properties")).polCore, progress);
         File swap = new File(home, "swap");
         if (swap.exists()) throw new IOException("An interrupted rollback needs recovery");
         if (current().exists()) FilesEx.move(current(), swap);
@@ -82,9 +145,8 @@ public final class ClientStore {
     }
     public ClientInspector.Snapshot validate(SafeZip.Progress progress) throws Exception {
         if (!hasClient()) throw new IOException("Import a client first");
-        ClientInspector.Snapshot s = ClientInspector.inspect(client(), progress);
-        FilesEx.text(new File(current(), "summary.txt"), s.summary());
-        FilesEx.text(new File(current(), "inventory.json"), s.inventory); return s;
+        ClientInspector.Snapshot s = ClientInspector.inspect(client(), config().polCore, progress);
+        writeSnapshot(current(), s); return s;
     }
     public void importLoader(InputStream input, SafeZip.Progress progress) throws Exception {
         if (!hasClient()) throw new IOException("Import the client first");

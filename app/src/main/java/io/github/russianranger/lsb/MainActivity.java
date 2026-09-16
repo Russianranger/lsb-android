@@ -28,7 +28,8 @@ public final class MainActivity extends Activity {
     private ProgressBar progress;
     private Button cancel;
     private EditText host;
-    private Spinner region;
+    private Spinner region, playOnline;
+    private List<String> playOnlinePaths = Collections.emptyList();
     private CheckBox preserve;
     private boolean preserveOnImport = true;
     private long generation;
@@ -86,7 +87,7 @@ public final class MainActivity extends Activity {
     private void draw() {
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(18), dp(8), dp(18), dp(8));
         TextView heading = label("LSB Android", 26, TEXT); heading.setTypeface(null, Typeface.BOLD); page.addView(heading);
-        page.addView(label("FFXI client preparation · 0.1.0", 13, ACCENT));
+        page.addView(label("FFXI client preparation · 0.1.1", 13, ACCENT));
         LinearLayout nav = new LinearLayout(this);
         for (String name : new String[]{"Client", "Profile", "Server", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));
@@ -104,16 +105,25 @@ public final class MainActivity extends Activity {
     }
     private void clientPage() throws Exception {
         ClientStore s = store(this);
+        if (s.hasPendingImport() && !WorkService.busy) pendingImportCard(s);
         LinearLayout status = card(s.hasClient() ? "Imported client" : "Bring your FFXI installation");
         status.addView(label(s.summary(), 15, TEXT));
         status.addView(label("This first build prepares and exports your client for the working GameHub environment. In-app gameplay and the standalone server runtime are not included yet.", 14, MUTED));
         status.addView(label("Free space: " + storage(this).getUsableSpace() / 1073741824L + " GiB. Imports need room for a new full copy while retaining the active client.", 13, MUTED));
         preserve = new CheckBox(this); preserve.setText("Preserve current FFXI USER and PlayOnline usr settings on client import"); preserve.setTextColor(TEXT); preserve.setChecked(preserveOnImport); preserve.setOnCheckedChangeListener((b, checked) -> preserveOnImport = checked); status.addView(preserve);
-        button(status, s.hasClient() ? "Import a complete client update ZIP" : "Import client ZIP", () -> pick("client"));
+        button(status, s.hasClient() ? "Import a complete client update ZIP" : "Import client ZIP", () -> pick("client")).setEnabled(!s.hasPendingImport());
         button(status, "Import xiloader.exe", () -> pick("loader")).setEnabled(s.hasClient());
         LinearLayout launch = card("Connection and repair");
         LaunchConfig cfg = s.config(); launch.addView(label("Server address", 14, MUTED)); host = new EditText(this); host.setSingleLine(true); host.setTextColor(TEXT); host.setText(cfg.host); host.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI); launch.addView(host);
         launch.addView(label("Client region", 14, MUTED)); region = new Spinner(this); region.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"US", "EU", "JP"})); region.setSelection(Arrays.asList("US", "EU", "JP").indexOf(cfg.region)); launch.addView(region);
+        playOnlinePaths = s.playOnlineChoices();
+        playOnline = null;
+        if (!playOnlinePaths.isEmpty()) {
+            launch.addView(label("PlayOnline version", 14, MUTED));
+            playOnline = playOnlineSpinner(launch, playOnlinePaths);
+            int selected = playOnlinePaths.indexOf(cfg.polCore); playOnline.setSelection(Math.max(0, selected));
+            followPlayOnlineRegion(playOnline, playOnlinePaths, region);
+        }
         button(launch, "Save connection settings", () -> { try { saveConnection(); toast("Saved"); } catch (Exception e) { error(e); } });
         button(launch, "Validate client and preview repair script", () -> {
             try { saveConnection(); run("Inspecting client", (ctx, p) -> { String script = store(ctx).previewRepair(profile(ctx), p); FilesEx.text(new File(ctx.getFilesDir(), "repair-preview.txt"), script); return "File validation passed. Repair recipe generated; run it inside Wine to test registration. See Diagnostics → Repair script."; }); }
@@ -123,11 +133,45 @@ public final class MainActivity extends Activity {
         launch.addView(label("The exported launch.cmd starts xiloader with the selected server and region. Enter your account in xiloader; the app stores no password.", 13, MUTED));
         LinearLayout backup = card("Backup and recovery");
         button(backup, "Export session backup", () -> create("backup", "lsb-session.zip")).setEnabled(s.hasClient());
-        button(backup, "Restore session backup", () -> confirm("Restore session", "The backup is validated before activation. Your current client becomes the rollback copy.", () -> pick("restore")));
+        button(backup, "Restore session backup", () -> confirm("Restore session", "The backup is validated before activation. Your current client becomes the rollback copy.", () -> pick("restore"))).setEnabled(!s.hasPendingImport());
         button(backup, "Switch to previous client", () -> confirm("Switch client", "Validate the previous client, then swap it with the current client?", () -> run("Validating previous client", (ctx, p) -> { store(ctx).rollback(p); return "Previous client restored. The other copy remains available for rollback."; }))).setEnabled(s.hasPrevious());
         backup.addView(label("A session backup includes imported game files and saved connection settings. The GameHub Wine prefix is separate and is not included. Uninstalling this app removes its managed copies.", 13, MUTED));
     }
-    private void saveConnection() throws IOException { store(this).saveConfig(new LaunchConfig(host.getText().toString().trim(), region.getSelectedItem().toString())); }
+    private void saveConnection() throws IOException {
+        ClientStore s = store(this);
+        String core = playOnline == null ? s.config().polCore : playOnlinePaths.get(playOnline.getSelectedItemPosition());
+        s.saveConfig(new LaunchConfig(host.getText().toString().trim(), region.getSelectedItem().toString(), core));
+    }
+    private Spinner playOnlineSpinner(LinearLayout parent, List<String> paths) {
+        List<String> labels = new ArrayList<>();
+        for (String path : paths) labels.add((path.toLowerCase(Locale.ROOT).endsWith("polcoreeu.dll") ? "EU" : "US / JP") + " · " + path);
+        Spinner spinner = new Spinner(this); spinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, labels)); parent.addView(spinner); return spinner;
+    }
+    private void followPlayOnlineRegion(Spinner versions, List<String> paths, Spinner regions) {
+        versions.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            public void onNothingSelected(AdapterView<?> parent) { }
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                boolean eu = paths.get(position).toLowerCase(Locale.ROOT).endsWith("polcoreeu.dll");
+                if (eu) regions.setSelection(1);
+                else if (regions.getSelectedItemPosition() == 1) regions.setSelection(0);
+            }
+        });
+    }
+    private void pendingImportCard(ClientStore s) throws IOException {
+        LinearLayout card = card("Choose PlayOnline version");
+        card.addView(label("Extraction is complete. Select the version and folder you use in GameHub, then finish the import. The ZIP will not be extracted again.", 15, TEXT));
+        List<String> choices = s.pendingChoices();
+        Spinner versions = playOnlineSpinner(card, choices);
+        card.addView(label("Client region (US and JP share the polcore.dll filename)", 14, MUTED));
+        Spinner regions = new Spinner(this); regions.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"US", "EU", "JP"}));
+        regions.setSelection(Arrays.asList("US", "EU", "JP").indexOf(s.pendingConfig().region)); card.addView(regions);
+        followPlayOnlineRegion(versions, choices, regions);
+        button(card, "Use selected version and finish import", () -> {
+            final String core = choices.get(versions.getSelectedItemPosition()), selectedRegion = regions.getSelectedItem().toString();
+            run("Validating selected PlayOnline version", (ctx, p) -> { store(ctx).finishPendingImport(core, selectedRegion, p); return "Client imported with " + selectedRegion + " PlayOnline. Your selection is saved."; });
+        });
+        button(card, "Discard extracted import", () -> confirm("Discard import", "Remove the extracted files waiting for selection? Your active client is kept.", () -> run("Discarding extracted import", (ctx, p) -> { store(ctx).discardPendingImport(); return "Extracted import discarded."; })));
+    }
     private void profilePage() throws Exception {
         JSONObject data = new JSONObject(profile(this)); JSONObject runtime = data.getJSONObject("runtime");
         LinearLayout runtimeCard = card("Your working GameHub profile");
@@ -181,8 +225,8 @@ public final class MainActivity extends Activity {
                 try (InputStream in = ctx.getContentResolver().openInputStream(uri)) {
                     if (in == null) throw new IOException("Cannot open the selected document");
                     switch (kind) {
-                        case "client": store(ctx).importClient(in, false, preserveFiles, p); return "Client imported and validated. The previous copy, if any, is retained.";
-                        case "restore": store(ctx).importClient(in, true, false, p); return "Session restored and validated.";
+                        case "client": store(ctx).importClient(in, false, preserveFiles, p); return store(ctx).hasPendingImport() ? "Extraction complete. Choose the PlayOnline version on the Client tab to finish import." : "Client imported and validated. The previous copy, if any, is retained.";
+                        case "restore": store(ctx).importClient(in, true, false, p); return store(ctx).hasPendingImport() ? "Backup extracted. Choose the PlayOnline version on the Client tab to finish restore." : "Session restored and validated.";
                         case "loader": store(ctx).importLoader(in, p); return "32-bit xiloader imported. Its runtime compatibility still needs a launch test.";
                         case "source": return SourceImport.stage(new File(storage(ctx), "server"), in, "User-selected ZIP (revision unverified)", p);
                         default: throw new IOException("File operation was lost; please select it again");
@@ -207,7 +251,8 @@ public final class MainActivity extends Activity {
         ClientStore s = store(ctx);
         try (ZipOutputStream zip = new ZipOutputStream(out)) {
             SafeZip.entry(zip, "runtime-profile.json", profile(ctx)); SafeZip.entry(zip, "inventory.json", s.inventory()); SafeZip.entry(zip, "summary.txt", s.summary()); SafeZip.entry(zip, "session.properties", s.config().properties());
-            SafeZip.entry(zip, "device.txt", "app=0.1.0\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=not_bundled\n");
+            if (s.hasPendingImport()) SafeZip.entry(zip, "pending-playonline.txt", "Waiting for PlayOnline selection\n" + String.join("\n", s.pendingChoices()) + "\n");
+            SafeZip.entry(zip, "device.txt", "app=0.1.1\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=not_bundled\n");
             for (String name : new String[]{"operations.log", "server-probe.txt", "repair-preview.txt"}) { File f = new File(ctx.getFilesDir(), name); if (f.exists()) SafeZip.entry(zip, name, FilesEx.read(f, 262144)); }
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }

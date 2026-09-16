@@ -16,4 +16,10 @@
 
 The captured Proton arm64x/FEX environment cannot be truthfully represented by bundling unrelated generic Wine/Box64 binaries. Version strings alone do not prove binary equivalence. This baseline records that boundary explicitly. A future runtime implementation must provide install/verify, create-prefix, x86 Windows process launch, COM-probe results, display/input/audio, process supervision, and exit/crash reporting. It must pass real client startup and world-entry tests before the app enables an in-app Play flow.
 
-The standalone server backend needs an execution strategy compliant with Android's target-SDK restrictions, an ARM64 Linux or Android-native dependency bundle, MariaDB, all LSB processes, backup-aware migration, mesh import, and local-address/port configuration. An isolated toolchain can then compile selected source revisions. No interface in 0.1.0 claims these capabilities exist.
+The standalone server backend needs an execution strategy compliant with Android's target-SDK restrictions, an ARM64 Linux or Android-native dependency bundle, MariaDB, all LSB processes, backup-aware migration, mesh import, and local-address/port configuration. An isolated toolchain can then compile selected source revisions. No interface in 0.1.1 claims these capabilities exist.
+
+## Multiple PlayOnline versions (0.1.1)
+
+Inspection lists every `polcore.dll` / `polcoreeu.dll` relative path. Without a saved choice, multiple candidates create a pending import under `session/incoming`; the active client remains in place. A small metadata file supplies UI choices without rescanning the full installation on the main thread. Finishing validates the explicitly selected DLL before activation. A failed selection or cancelled finish keeps the extracted payload available; discarding it removes only staging.
+
+`session.properties` adds an optional `polCore` relative path. Older settings remain readable. New imports resolve or request a choice, then persist it with inventory and candidate metadata. Validation, backup/restore, rollback, repair and launch exports use that same path. Choosing an EU DLL selects EU; US versus JP remains explicit because both use `polcore.dll`. Unselected DLLs are retained. If several loaders are present, the one beside the selected viewer is used; otherwise a separate loader import may be needed.

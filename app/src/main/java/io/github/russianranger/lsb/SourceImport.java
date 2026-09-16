@@ -31,7 +31,7 @@ final class SourceImport {
         for (int count = 0; count < 6; count++) {
             URL url = new URL(address);
             if (!url.getProtocol().equals("https") || !Arrays.asList("api.github.com", "codeload.github.com", "github.com").contains(url.getHost())) throw new IOException("Unexpected GitHub redirect host");
-            HttpURLConnection c = (HttpURLConnection)url.openConnection(); c.setConnectTimeout(15000); c.setReadTimeout(30000); c.setInstanceFollowRedirects(false); c.setRequestProperty("User-Agent", "LSB-Android/0.1.0");
+            HttpURLConnection c = (HttpURLConnection)url.openConnection(); c.setConnectTimeout(15000); c.setReadTimeout(30000); c.setInstanceFollowRedirects(false); c.setRequestProperty("User-Agent", "LSB-Android/0.1.1");
             int status = c.getResponseCode();
             if (status >= 300 && status < 400) { String location = c.getHeaderField("Location"); c.disconnect(); if (location == null) throw new IOException("Missing redirect location"); address = new URL(url, location).toString(); continue; }
             if (status != 200) { c.disconnect(); throw new IOException("GitHub HTTP " + status + ". Check the repository/ref, rate limit, or use a ZIP."); }
@@ -48,7 +48,7 @@ final class SourceImport {
             SafeZip.extract(in, incoming, progress);
             File source = unwrap(incoming);
             if (!new File(source, "CMakeLists.txt").isFile() || !new File(source, "src").isDirectory() || !new File(source, "sql").isDirectory()) throw new IOException("Expected a LandSandBoat source ZIP containing CMakeLists.txt, src/ and sql/");
-            String report = "Source: " + origin + "\nStatus: source staged; compiler and server runtime are not installed in 0.1.0.\n";
+            String report = "Source: " + origin + "\nStatus: source staged; compiler and server runtime are not installed in 0.1.1.\n";
             for (String mesh : Arrays.asList("navmeshes", "ximeshes")) {
                 File dir = new File(source, mesh); report += mesh + ": " + (dir.isDirectory() && FilesEx.children(dir).length > 0 ? "directory present (content not verified)" : "missing; GitHub source ZIPs do not include submodule contents") + "\n";
             }
