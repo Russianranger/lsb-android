@@ -18,6 +18,9 @@ jobs:
       - name: Core import and recovery checks
         run: python3 scripts/test.py
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Compile, dex, package and verify
