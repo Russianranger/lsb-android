@@ -43,6 +43,7 @@ public final class ClientStore {
         int count = Integer.parseInt(p.getProperty("count", "0"));
         if (count < 0 || count > 500000) throw new IOException("Invalid PlayOnline option count");
         for (int i = 0; i < count; i++) result.add(p.getProperty("choice." + i));
+        ClientInspector.sortPlayOnlineChoices(result);
         return result;
     }
     private static void writeChoices(File file, List<String> choices, boolean restore, boolean preserveUser) throws IOException {

@@ -2,12 +2,13 @@
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
 
-**0.1.1 is an installable preparation and recovery baseline. It does not yet run FFXI inside the app or compile/start LandSandBoat.** The exported Windows scripts are intended for the user's already-working GameHub environment. Their successful execution on the Thor has not yet been verified.
+**0.1.2 is an installable preparation and recovery baseline. It does not yet run FFXI inside the app or compile/start LandSandBoat.** The exported Windows scripts are intended for the user's already-working GameHub environment. Their successful execution on the Thor has not yet been verified.
 
-## Available in 0.1.1
+## Available in 0.1.2
 
 - Full client ZIP import with nested-folder discovery, x86 PE-header validation, selected-file SHA-256 inventory, progress, cancellation and foreground transfers.
 - PlayOnline version/folder selector when an archive contains multiple `polcore.dll` / `polcoreeu.dll` files. Extraction pauses for your choice and survives app restart; finish or discard it without re-extracting. The saved choice follows validation, repair, backup/restore and rollback.
+- PlayOnline installation-root detection for `PlayOnlineViewer/viewer/com/polcore*.dll`, distinct from its COM DLL path. Patch-cache entries are labelled and sorted last; repair/export refuses them while imports and backups stay available.
 - Separate import of the user's x86 `xiloader.exe`.
 - Exact reference profile transcribed from the user's four GameHub screenshots, including all nine component labels. Reference settings do not pretend that binaries are installed in this app.
 - Region-aware repair/diagnostic/launch-script generation, including the 32-bit registry view and COM registration. Export includes the imported client payload; paths are relative to the new export folder.
@@ -19,17 +20,19 @@ Client-first Android companion for a future self-contained LandSandBoat / Final 
 
 ## First Thor test
 
-1. Install `LSB-Android-0.1.1.apk`. No root or Termux permission is requested.
+1. Install `LSB-Android-0.1.2.apk`. No root or Termux permission is requested.
 2. Check **Profile** against the working GameHub settings.
 3. On a PC or file manager, ZIP the complete directory containing both `PlayOnlineViewer/` and `FINAL FANTASY XI/`. Include their contents, especially `polcore.dll` (or `polcoreeu.dll`), `FFXi.dll`, `FFXiMain.dll`, and all ROM data. A common `PlayOnline/SquareEnix/` wrapper is supported. Import the installed game, not the multi-part installer EXEs or an entire Wine prefix.
-4. Choose **Client → Import client ZIP**. If more than one PlayOnline DLL is found, use **Choose PlayOnline version** at the top of the Client tab, select its region, and tap **Use selected version and finish import**. Each option includes the full relative path; `polcoreeu.dll` identifies EU, while `polcore.dll` can be US or JP. Keep sufficient space for the extracted client while retaining your existing GameHub installation. A later update also retains the currently imported client.
-5. If the archive did not contain your working `xiloader.exe`, use **Import xiloader.exe**. Use the same loader you currently run; 0.1.1 does not silently download a newer version.
+4. Choose **Client → Import client ZIP**. If more than one PlayOnline DLL is found, use **Choose PlayOnline version** at the top of the Client tab, select its region, and tap **Use selected version and finish import**. Choose a **Client files** option outside `patchfiles`; **Patch cache** entries are kept in backups but are not suitable for repair/launch packages. Each option includes the full relative path; `polcoreeu.dll` identifies EU, while `polcore.dll` can be US or JP. Keep sufficient space for the extracted client while retaining your existing GameHub installation. A later update also retains the currently imported client.
+5. If the archive did not contain your working `xiloader.exe`, use **Import xiloader.exe**. Use the same loader you currently run; 0.1.2 does not silently download a newer version.
 6. Save the server address, region and PlayOnline version under **Connection and repair**. You can change the saved version here later. For your local server, start with `127.0.0.1` and the correct US/EU/JP installation region.
 7. Choose **Validate client and preview repair script**. This checks files and generates a recipe; it does not execute Windows DLLs on Android.
 8. Export a session backup and test restoring it. The backup includes imported client files, USER/usr data, saved connection settings and the inventory; it excludes GameHub's separate prefix and runtime binaries.
 9. Export a support ZIP from **Diagnostics** and attach it to the next test report.
 
 For the subsequent repair/launch test, **Export prepared client + launch scripts**, extract it into a **new** folder accessible to a backed-up working Wine container, and run `repair.cmd` inside that environment. Inspect `repair.log`, then run `launch.cmd`. Login remains interactive. `registry-before.reg` is a limited install-key snapshot, not a complete undo for COM registration; back up the Wine prefix before applying the recipe. `update-via-playonline.cmd`, when present, opens the official updater interactively. Preparation is source-derived and has not been established as the user's exact historical fix.
+
+Updating from 0.1.1: no re-import is necessary. If your saved selection includes `patchfiles`, choose the **Client files** copy under **Connection and repair → PlayOnline version**, save, and regenerate the repair preview. The installed copy normally has a path such as `PlayOnlineViewer/viewer/com/polcore.dll`; the import root is detected separately at `PlayOnlineViewer/pol.exe`. Export Diagnostics support ZIP after validation. Older repair previews are cleared by this upgrade so a stale registry path is not reused.
 
 Updating from 0.1.0: install the new APK over the existing app. The signing certificate and application ID are unchanged. Retry the ZIP once: 0.1.0 deleted its failed extraction. Version 0.1.1 keeps an ambiguous extraction for selection.
 

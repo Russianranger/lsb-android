@@ -53,7 +53,14 @@ public final class MainActivity extends Activity {
         }
         if (saved != null) { tab = saved.getString("tab", "Client"); pending = saved.getString("pending", ""); preserveOnImport = saved.getBoolean("preserve", true); }
         generation = WorkService.generation;
-        if (!WorkService.busy) { try { store(this).recover(); } catch (Exception e) { WorkService.message = "Recovery needs attention"; WorkService.result = e.getMessage(); } }
+        if (!WorkService.busy) { try {
+            store(this).recover();
+            SharedPreferences prefs = getSharedPreferences("preparation", MODE_PRIVATE);
+            if (prefs.getInt("repairFormat", 0) != 3) {
+                FilesEx.delete(new File(getFilesDir(), "repair-preview.txt"));
+                prefs.edit().putInt("repairFormat", 3).apply();
+            }
+        } catch (Exception e) { WorkService.message = "Recovery needs attention"; WorkService.result = e.getMessage(); } }
         draw();
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 30);
     }
@@ -87,7 +94,7 @@ public final class MainActivity extends Activity {
     private void draw() {
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(18), dp(8), dp(18), dp(8));
         TextView heading = label("LSB Android", 26, TEXT); heading.setTypeface(null, Typeface.BOLD); page.addView(heading);
-        page.addView(label("FFXI client preparation · 0.1.1", 13, ACCENT));
+        page.addView(label("FFXI client preparation · 0.1.2", 13, ACCENT));
         LinearLayout nav = new LinearLayout(this);
         for (String name : new String[]{"Client", "Profile", "Server", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));
@@ -124,9 +131,11 @@ public final class MainActivity extends Activity {
             int selected = playOnlinePaths.indexOf(cfg.polCore); playOnline.setSelection(Math.max(0, selected));
             followPlayOnlineRegion(playOnline, playOnlinePaths, region);
         }
-        button(launch, "Save connection settings", () -> { try { saveConnection(); toast("Saved"); } catch (Exception e) { error(e); } });
+        if (ClientInspector.isPatchCache(cfg.polCore)) launch.addView(label("Your saved selection is a patch-cache copy. Choose a Client files entry outside patchfiles above, then save. Your imported files and backup can be kept.", 15, ACCENT));
+        button(launch, "Save connection settings", () -> { try { saveConnection(); toast("Saved"); draw(); } catch (Exception e) { error(e); } });
+        button(launch, "Refresh file checks", () -> run("Checking imported files", (ctx, p) -> store(ctx).validate(p).summary())).setEnabled(s.hasClient());
         button(launch, "Validate client and preview repair script", () -> {
-            try { saveConnection(); run("Inspecting client", (ctx, p) -> { String script = store(ctx).previewRepair(profile(ctx), p); FilesEx.text(new File(ctx.getFilesDir(), "repair-preview.txt"), script); return "File validation passed. Repair recipe generated; run it inside Wine to test registration. See Diagnostics → Repair script."; }); }
+            try { saveConnection(); run("Inspecting client", (ctx, p) -> { File preview = new File(ctx.getFilesDir(), "repair-preview.txt"); FilesEx.delete(preview); String script = store(ctx).previewRepair(profile(ctx), p); FilesEx.text(preview, script); return "File validation passed. Repair recipe generated; run it inside Wine to test registration. See Diagnostics → Repair script."; }); }
             catch (Exception e) { error(e); }
         }).setEnabled(s.hasClient());
         button(launch, "Export prepared client + launch scripts", () -> { try { saveConnection(); create("prepared", "ffxi-prepared.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
@@ -140,11 +149,13 @@ public final class MainActivity extends Activity {
     private void saveConnection() throws IOException {
         ClientStore s = store(this);
         String core = playOnline == null ? s.config().polCore : playOnlinePaths.get(playOnline.getSelectedItemPosition());
-        s.saveConfig(new LaunchConfig(host.getText().toString().trim(), region.getSelectedItem().toString(), core));
+        LaunchConfig old = s.config(), next = new LaunchConfig(host.getText().toString().trim(), region.getSelectedItem().toString(), core);
+        s.saveConfig(next);
+        if (!old.host.equals(next.host) || !old.region.equals(next.region) || !old.polCore.equals(next.polCore)) FilesEx.delete(new File(getFilesDir(), "repair-preview.txt"));
     }
     private Spinner playOnlineSpinner(LinearLayout parent, List<String> paths) {
         List<String> labels = new ArrayList<>();
-        for (String path : paths) labels.add((path.toLowerCase(Locale.ROOT).endsWith("polcoreeu.dll") ? "EU" : "US / JP") + " · " + path);
+        for (String path : paths) labels.add((ClientInspector.isPatchCache(path) ? "Patch cache — do not use" : "Client files") + " · " + (path.toLowerCase(Locale.ROOT).endsWith("polcoreeu.dll") ? "EU" : "US / JP") + " · " + path);
         Spinner spinner = new Spinner(this); spinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, labels)); parent.addView(spinner); return spinner;
     }
     private void followPlayOnlineRegion(Spinner versions, List<String> paths, Spinner regions) {
@@ -159,7 +170,7 @@ public final class MainActivity extends Activity {
     }
     private void pendingImportCard(ClientStore s) throws IOException {
         LinearLayout card = card("Choose PlayOnline version");
-        card.addView(label("Extraction is complete. Select the version and folder you use in GameHub, then finish the import. The ZIP will not be extracted again.", 15, TEXT));
+        card.addView(label("Extraction is complete. Select the version and folder you use in GameHub. Choose a Client files entry outside patchfiles, then finish the import. The ZIP will not be extracted again.", 15, TEXT));
         List<String> choices = s.pendingChoices();
         Spinner versions = playOnlineSpinner(card, choices);
         card.addView(label("Client region (US and JP share the polcore.dll filename)", 14, MUTED));
@@ -251,8 +262,9 @@ public final class MainActivity extends Activity {
         ClientStore s = store(ctx);
         try (ZipOutputStream zip = new ZipOutputStream(out)) {
             SafeZip.entry(zip, "runtime-profile.json", profile(ctx)); SafeZip.entry(zip, "inventory.json", s.inventory()); SafeZip.entry(zip, "summary.txt", s.summary()); SafeZip.entry(zip, "session.properties", s.config().properties());
+            SafeZip.entry(zip, "playonline-candidates.txt", String.join("\n", s.playOnlineChoices()) + "\n");
             if (s.hasPendingImport()) SafeZip.entry(zip, "pending-playonline.txt", "Waiting for PlayOnline selection\n" + String.join("\n", s.pendingChoices()) + "\n");
-            SafeZip.entry(zip, "device.txt", "app=0.1.1\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=not_bundled\n");
+            SafeZip.entry(zip, "device.txt", "app=0.1.2\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=not_bundled\n");
             for (String name : new String[]{"operations.log", "server-probe.txt", "repair-preview.txt"}) { File f = new File(ctx.getFilesDir(), name); if (f.exists()) SafeZip.entry(zip, name, FilesEx.read(f, 262144)); }
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }
