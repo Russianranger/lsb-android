@@ -65,12 +65,12 @@ public final class CoreTest {
             ok(cmd.contains("--server 192.168.1.50 --lang US") && cmd.contains("pushd") && !cmd.contains("--pass"), "launch recipe selects server and region without storing credentials");
             ok(packageFiles.get("repair.cmd").contains("/reg:32") && packageFiles.get("repair.cmd").contains("SysWOW64") && packageFiles.get("repair.cmd").contains("if errorlevel 1 goto failed"), "repair uses 32-bit registry and stops on registration failure");
             fails(() -> RepairPackage.generate(restored.validate(QUIET), new LaunchConfig("localhost", "EU"), "{}"), "reject client region mismatch");
-            ByteArrayOutputStream prepared = new ByteArrayOutputStream(); restored.exportPrepared(prepared, "{}", QUIET);
+            ByteArrayOutputStream prepared = new ByteArrayOutputStream(); restored.exportPrepared(prepared, "{}", pe(0x14c), true, QUIET);
             File exported = new File(temp, "prepared"); SafeZip.extract(new ByteArrayInputStream(prepared.toByteArray()), exported, QUIET);
             ok(new File(exported, "repair.cmd").isFile() && new File(exported, "launch.cmd").isFile() && new File(exported, "client").isDirectory(), "prepared export contains runnable recipe and client payload");
             ClientInspector.inspect(new File(exported, "client"), QUIET); checks++;
             ClientStore noLoader = new ClientStore(new File(temp, "no-loader")); Map<String, byte[]> without = fixture("30260904_1", false); without.remove("wrapper/PlayOnline/SquareEnix/PlayOnlineViewer/xiloader.exe"); importZip(noLoader, without);
-            fails(() -> noLoader.exportPrepared(new ByteArrayOutputStream(), "{}", QUIET), "refuse launch package without xiloader");
+            fails(() -> noLoader.exportPrepared(new ByteArrayOutputStream(), "{}", pe(0x14c), true, QUIET), "refuse launch package without xiloader");
             noLoader.importLoader(new ByteArrayInputStream(pe(0x14c)), QUIET); ok(noLoader.validate(QUIET).loader != null, "separate x86 bootloader import");
             fails(() -> noLoader.importLoader(new ByteArrayInputStream(pe(0x8664)), QUIET), "reject incompatible replacement bootloader");
             ok(noLoader.validate(QUIET).loader != null, "bad loader import retains working loader");
@@ -103,7 +103,7 @@ public final class CoreTest {
             ok(!dualRestored.hasPendingImport() && dualRestored.config().polCore.equals(polPath + "polcoreeu.dll") && dualRestored.validate(QUIET).polDll.equals("polcoreeu.dll"), "backup restores saved selection without asking or rejecting two versions");
             resumed.saveConfig(new LaunchConfig("localhost", "JP", polPath + "polcore.dll"));
             ok(resumed.validate(QUIET).polDll.equals("polcore.dll") && resumed.previewRepair("{}", QUIET).contains("HKLM\\SOFTWARE\\PlayOnline\\InstallFolder"), "switch existing selection to JP and repair the chosen version");
-            ByteArrayOutputStream mixedExport = new ByteArrayOutputStream(); resumed.exportPrepared(mixedExport, "{}", QUIET);
+            ByteArrayOutputStream mixedExport = new ByteArrayOutputStream(); resumed.exportPrepared(mixedExport, "{}", pe(0x14c), true, QUIET);
             File mixedExportDir = new File(temp, "mixed-export"); SafeZip.extract(new ByteArrayInputStream(mixedExport.toByteArray()), mixedExportDir, QUIET);
             ok(FilesEx.read(new File(mixedExportDir, "launch.cmd"), 10000).contains("--lang JP"), "prepared launch uses selected region with both DLLs present");
             importZip(resumed, fixture("30261101_1", false)); resumed.rollback(QUIET);
@@ -149,7 +149,7 @@ public final class CoreTest {
             ClientInspector.Snapshot cached = layout.validate(QUIET);
             ok(cached.polPatchCache && cached.warning().contains("patch-cache") && layout.config().polCore.equals(cacheCore), "existing patch-cache selection remains readable and gets an actionable warning");
             fails(() -> layout.previewRepair("{}", QUIET), "do not generate registry repair for a patch-cache copy");
-            fails(() -> layout.exportPrepared(new ByteArrayOutputStream(), "{}", QUIET), "do not export a misleading launch package for a patch cache");
+            fails(() -> layout.exportPrepared(new ByteArrayOutputStream(), "{}", pe(0x14c), true, QUIET), "do not export a misleading launch package for a patch cache");
             ByteArrayOutputStream cacheBackup = new ByteArrayOutputStream(); layout.exportBackup(cacheBackup, QUIET);
             ClientStore recoveredLayout = new ClientStore(new File(temp, "device-restored"));
             recoveredLayout.importClient(new ByteArrayInputStream(cacheBackup.toByteArray()), true, false, QUIET);
@@ -176,6 +176,15 @@ public final class CoreTest {
             for (Map.Entry<String,byte[]> e : realLayout.entrySet()) if (!e.getKey().equals(cacheCore)) rootLayout.put(e.getKey().replace("PlayOnlineViewer/", ""), e.getValue());
             ClientStore atRoot = new ClientStore(new File(temp, "viewer-at-root")); importZip(atRoot, rootLayout);
             ok(atRoot.previewRepair("{}", QUIET).contains("set \"POL=%~dp0client\"\r\n"), "support viewer files at archive root without escaping payload");
+            ByteArrayOutputStream launcherOnly = new ByteArrayOutputStream();
+            recoveredLayout.exportPrepared(launcherOnly, "{}", pe(0x14c), false, QUIET);
+            File launcherDir = new File(temp, "launcher-only"); SafeZip.extract(new ByteArrayInputStream(launcherOnly.toByteArray()), launcherDir, QUIET);
+            ok(new File(launcherDir, "LSB-FFXI.exe").isFile() && !new File(launcherDir, "client").exists(), "small launcher update includes EXE without recopying game data");
+            String ini = FilesEx.read(new File(launcherDir, "lsb-launcher.ini"), 10000);
+            ok(ini.contains("pol=client\\PlayOnlineViewer\r\n") && ini.contains("core=client\\PlayOnlineViewer\\viewer\\com\\polcore.dll\r\n"), "native launcher config separates install root and COM DLL");
+            ok(ini.contains("loader=client\\FINAL FANTASY XI\\ashitav4\\bootloader\\xiloader.exe") && ini.contains("host=127.0.0.1") && ini.contains("region=US"), "native launcher config retains nested bootloader and connection");
+            ok(new File(exported, "LSB-FFXI.exe").isFile() && new File(exported, "lsb-launcher.ini").isFile() && new File(exported, "client").isDirectory(), "full prepared export includes EXE, config and client");
+            fails(() -> recoveredLayout.exportPrepared(new ByteArrayOutputStream(), "{}", new byte[0], false, QUIET), "refuse launcher export with a missing packaged helper");
             Thread.currentThread().interrupt(); fails(() -> SafeZip.checkCancelled(), "recognize cancellation"); Thread.interrupted();
             System.out.println("Completed " + checks + " checks.");
         } finally { Thread.interrupted(); FilesEx.delete(temp); }

@@ -31,3 +31,13 @@ The DLL's parent directory is not necessarily the viewer installation root. For 
 This root/COM distinction matches [xiloader's registry folder lookup](https://github.com/LandSandBoat/xiloader/blob/main/src/functions.cpp) and [its separate COM initialization and install-folder callback](https://github.com/LandSandBoat/xiloader/blob/main/src/main.cpp). Wine execution remains unverified.
 
 A path with a `patchfiles` component is labelled as an update cache, sorted after other candidates and rejected by repair/launch export. It remains importable/backuppable; a saved cache selection is not silently replaced. The user can select a live copy without re-extraction. Support reports now include all candidate paths, selected root, `pol.exe` presence and an actionable warning. Only the known cache name `patchfiles` is classified; this is not a universal backup-folder detector.
+
+## GameHub executable entry point (0.1.3)
+
+`windows/launcher.c` builds as a native i386 GUI PE with MinGW-w64 and static GCC support. Only Windows system DLLs are imported. Its INI contains package-relative paths and the validated host/region; no credentials. Android can export a full prepared package or a small launcher-only update.
+
+Registration writes the 32-bit HKLM installation/language values. Each selected client DLL registers in a separate 32-bit helper process via `LoadLibraryExW` and `DllRegisterServer`, with the DLL folder as the working directory. A load error, failed HRESULT, worker crash, or 60-second registration timeout stops the sequence. Existing writes may remain; launch is always a separate button. A first-value diagnostic snapshot is retained but does not claim to restore COM state.
+
+The launcher uses explicit executable paths with `CreateProcessW`, never a command shell. xiloader gets a new console for interactive credentials; console input/output is not copied into the helper log. The GUI stays responsive and alive while waiting for the client process. The updater button similarly starts `pol.exe`.
+
+Windows CI uses only test DLLs and process-local registry overrides, following Microsoft's [RegOverridePredefKey](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regoverridepredefkey) behavior. Production compilation omits the test override and command-line test actions. See also [DllRegisterServer](https://learn.microsoft.com/en-us/windows/win32/api/olectl/nf-olectl-dllregisterserver) and [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw).

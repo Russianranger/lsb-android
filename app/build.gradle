@@ -6,9 +6,18 @@ android {
         applicationId 'io.github.russianranger.lsb'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '0.1.2'
+        versionCode 4
+        versionName '0.1.3'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+    sourceSets.main.assets.srcDir rootProject.file('out/launcher-assets')
     buildTypes { release { minifyEnabled false } }
 }
+
+tasks.register('buildWindowsLauncher', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'scripts/build-launcher.py'
+    inputs.files(rootProject.file('windows/launcher.c'), rootProject.file('scripts/build-launcher.py'))
+    outputs.file(rootProject.file('out/launcher-assets/LSB-FFXI.exe'))
+}
+tasks.named('preBuild').configure { dependsOn 'buildWindowsLauncher' }

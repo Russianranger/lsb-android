@@ -170,13 +170,15 @@ public final class ClientStore {
         validate(progress);
         try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(out))) { zip.setLevel(1); SafeZip.writeTree(zip, current(), "", progress); }
     }
-    public void exportPrepared(OutputStream out, String profile, SafeZip.Progress progress) throws Exception {
+    public void exportPrepared(OutputStream out, String profile, byte[] launcher, boolean includeClient, SafeZip.Progress progress) throws Exception {
         ClientInspector.Snapshot s = validate(progress);
         Map<String, String> scripts = RepairPackage.generate(s, config(), profile);
+        if (launcher == null || launcher.length < 88 || launcher.length > 2 * 1048576 || launcher[0] != 'M' || launcher[1] != 'Z') throw new IOException("The Windows launcher asset is missing or invalid; reinstall the updated APK.");
         if (s.loader == null) throw new IOException("Import xiloader.exe before exporting a launch package");
         try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(out))) {
             zip.setLevel(1); for (Map.Entry<String, String> e : scripts.entrySet()) SafeZip.entry(zip, e.getKey(), e.getValue());
-            SafeZip.writeTree(zip, client(), "client/", progress);
+            SafeZip.entry(zip, "LSB-FFXI.exe", launcher);
+            if (includeClient) SafeZip.writeTree(zip, client(), "client/", progress);
         }
     }
     public String previewRepair(String profile, SafeZip.Progress progress) throws Exception {

@@ -13,7 +13,7 @@ p.add_argument('--android-jar', type=Path, required=True)
 p.add_argument('--build-tools', type=Path, required=True)
 p.add_argument('--keystore', type=Path, required=True)
 p.add_argument('--alias', default='lsb-preview')
-p.add_argument('--output', type=Path, default=root/'out/LSB-Android-0.1.2.apk')
+p.add_argument('--output', type=Path, default=root/'out/LSB-Android-0.1.3.apk')
 args = p.parse_args()
 work = root/'out/apk-build'
 classes = work/'classes'
@@ -23,6 +23,7 @@ dex.mkdir(parents=True, exist_ok=True)
 for f in classes.rglob('*.class'): f.unlink()
 for f in dex.glob('*.dex'): f.unlink()
 def run(*cmd): subprocess.run([str(x) for x in cmd], check=True, cwd=root)
+run('python3', root/'scripts/build-launcher.py')
 java_files = sorted((root/'app/src/main/java').rglob('*.java'))
 run('java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '--release', '8', '-cp', args.android_jar, '-d', classes, *java_files)
 class_jar = work/'classes.jar'
@@ -32,6 +33,7 @@ run('java', '-cp', args.build_tools/'lib/d8.jar', 'com.android.tools.r8.D8', '--
 unsigned = work/'unsigned.apk'
 run(args.build_tools/'aapt2', 'link', '-I', args.android_jar, '--manifest', root/'app/src/main/AndroidManifest.xml', '--min-sdk-version', '26', '--target-sdk-version', '35', '-o', unsigned)
 with zipfile.ZipFile(unsigned, 'a', zipfile.ZIP_DEFLATED) as z:
+    z.write(root/'out/launcher-assets/LSB-FFXI.exe', 'assets/LSB-FFXI.exe')
     for f in sorted(dex.glob('*.dex')): z.write(f, f.name)
     for f in sorted((root/'app/src/main/assets').rglob('*')):
         if f.is_file(): z.write(f, 'assets/'+f.relative_to(root/'app/src/main/assets').as_posix())

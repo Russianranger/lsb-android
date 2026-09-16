@@ -17,6 +17,15 @@ jobs:
           java-version: '17'
       - name: Core import and recovery checks
         run: python3 scripts/test.py
+      - name: Build x86 Windows launcher and native test fixtures
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686-posix
+          python3 scripts/build-launcher.py --tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-launcher-tests
+          path: out/windows-tests/
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
@@ -29,6 +38,18 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.1.2.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.1.3.apk
       - name: Note device build signing
         run: echo 'This is a disposable-certificate build check. Use the separately delivered device APK for updates.' >> "$GITHUB_STEP_SUMMARY"
+  windows-launcher:
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-launcher-tests
+          path: out/windows-tests
+      - name: Native registration and process checks with stub client files
+        run: python tests/windows/run.py

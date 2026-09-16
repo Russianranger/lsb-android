@@ -93,7 +93,10 @@ public final class SafeZip {
         }
     }
     public static void entry(ZipOutputStream zip, String name, String text) throws IOException {
+        entry(zip, name, text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    public static void entry(ZipOutputStream zip, String name, byte[] bytes) throws IOException {
         zip.putNextEntry(new ZipEntry(safeName(name)));
-        zip.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)); zip.closeEntry();
+        zip.write(bytes); zip.closeEntry();
     }
 }

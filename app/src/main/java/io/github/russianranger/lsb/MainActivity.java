@@ -94,7 +94,7 @@ public final class MainActivity extends Activity {
     private void draw() {
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(18), dp(8), dp(18), dp(8));
         TextView heading = label("LSB Android", 26, TEXT); heading.setTypeface(null, Typeface.BOLD); page.addView(heading);
-        page.addView(label("FFXI client preparation · 0.1.2", 13, ACCENT));
+        page.addView(label("FFXI client preparation · 0.1.3", 13, ACCENT));
         LinearLayout nav = new LinearLayout(this);
         for (String name : new String[]{"Client", "Profile", "Server", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));
@@ -138,8 +138,9 @@ public final class MainActivity extends Activity {
             try { saveConnection(); run("Inspecting client", (ctx, p) -> { File preview = new File(ctx.getFilesDir(), "repair-preview.txt"); FilesEx.delete(preview); String script = store(ctx).previewRepair(profile(ctx), p); FilesEx.text(preview, script); return "File validation passed. Repair recipe generated; run it inside Wine to test registration. See Diagnostics → Repair script."; }); }
             catch (Exception e) { error(e); }
         }).setEnabled(s.hasClient());
-        button(launch, "Export prepared client + launch scripts", () -> { try { saveConnection(); create("prepared", "ffxi-prepared.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
-        launch.addView(label("The exported launch.cmd starts xiloader with the selected server and region. Enter your account in xiloader; the app stores no password.", 13, MUTED));
+        button(launch, "Export prepared client + GameHub launcher", () -> { try { saveConnection(); create("prepared", "ffxi-prepared.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
+        button(launch, "Export launcher update only", () -> { try { saveConnection(); create("launcher", "ffxi-launcher-update.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
+        launch.addView(label("In GameHub, add LSB-FFXI.exe from the extracted package. It has Repair registration and Launch FFXI buttons. Enter your account in xiloader. The small launcher update ZIP goes beside an already-exported client folder and contains no game files.", 13, MUTED));
         LinearLayout backup = card("Backup and recovery");
         button(backup, "Export session backup", () -> create("backup", "lsb-session.zip")).setEnabled(s.hasClient());
         button(backup, "Restore session backup", () -> confirm("Restore session", "The backup is validated before activation. Your current client becomes the rollback copy.", () -> pick("restore"))).setEnabled(!s.hasPendingImport());
@@ -220,7 +221,7 @@ public final class MainActivity extends Activity {
         button(d, "View repair script", () -> { try { File f = new File(getFilesDir(), "repair-preview.txt"); showText("Repair recipe · not yet executed", f.exists() ? FilesEx.read(f, 32768) : "Use Client → Validate client and preview repair script first."); } catch (Exception e) { error(e); } });
         button(d, "View operation log", () -> { try { File f = new File(getFilesDir(), "operations.log"); showText("Operation log", f.exists() ? FilesEx.read(f, 262144) : "No operations yet"); } catch (Exception e) { error(e); } });
         LinearLayout next = card("Runtime status");
-        next.addView(label("Client files: managed import available\nRegistry/COM repair: exportable Windows recipe\nWine / Proton / FEX: not bundled\nIn-app graphics, sound, and controller bridge: not implemented\nServer toolchain and database runtime: not bundled\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
+        next.addView(label("Client files: managed import available\nRegistry/COM repair: exportable Windows EXE and optional CMD recipe\nWine / Proton / FEX: not bundled\nIn-app graphics, sound, and controller bridge: not implemented\nServer toolchain and database runtime: not bundled\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
     }
     private void pick(String kind) { pending = kind; Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"); startActivityForResult(i, PICK); }
     private void create(String kind, String name) { pending = kind; Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind.equals("profile") ? "application/json" : "application/zip").putExtra(Intent.EXTRA_TITLE, name); startActivityForResult(i, CREATE); }
@@ -248,7 +249,7 @@ public final class MainActivity extends Activity {
                 if (out == null) throw new IOException("Cannot write to the selected destination");
                 switch (kind) {
                     case "backup": store(ctx).exportBackup(out, p); break;
-                    case "prepared": store(ctx).exportPrepared(out, profile(ctx), p); break;
+                    case "prepared": case "launcher": store(ctx).exportPrepared(out, profile(ctx), windowsLauncher(ctx), kind.equals("prepared"), p); break;
                     case "profile": out.write(profile(ctx).getBytes(StandardCharsets.UTF_8)); break;
                     case "support": support(ctx, out); break;
                     default: throw new IOException("Export operation was lost; please select it again");
@@ -258,13 +259,20 @@ public final class MainActivity extends Activity {
             } finally { try { ctx.getContentResolver().releasePersistableUriPermission(uri, grant); } catch (SecurityException ignored) { } }
         });
     }
+    private static byte[] windowsLauncher(Context ctx) throws IOException {
+        try (InputStream in = ctx.getAssets().open("LSB-FFXI.exe")) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] buffer = new byte[32768]; int n;
+            while ((n = in.read(buffer)) != -1) { if (out.size() + n > 2 * 1048576) throw new IOException("Windows launcher asset exceeds 2 MiB"); out.write(buffer, 0, n); }
+            return out.toByteArray();
+        }
+    }
     private static void support(Context ctx, OutputStream out) throws Exception {
         ClientStore s = store(ctx);
         try (ZipOutputStream zip = new ZipOutputStream(out)) {
             SafeZip.entry(zip, "runtime-profile.json", profile(ctx)); SafeZip.entry(zip, "inventory.json", s.inventory()); SafeZip.entry(zip, "summary.txt", s.summary()); SafeZip.entry(zip, "session.properties", s.config().properties());
             SafeZip.entry(zip, "playonline-candidates.txt", String.join("\n", s.playOnlineChoices()) + "\n");
             if (s.hasPendingImport()) SafeZip.entry(zip, "pending-playonline.txt", "Waiting for PlayOnline selection\n" + String.join("\n", s.pendingChoices()) + "\n");
-            SafeZip.entry(zip, "device.txt", "app=0.1.2\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=not_bundled\n");
+            SafeZip.entry(zip, "device.txt", "app=0.1.3\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=not_bundled\n");
             for (String name : new String[]{"operations.log", "server-probe.txt", "repair-preview.txt"}) { File f = new File(ctx.getFilesDir(), name); if (f.exists()) SafeZip.entry(zip, name, FilesEx.read(f, 262144)); }
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }
