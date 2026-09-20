@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 scripts/prepare-runtime.py --release
 mkdir -p out/runtime-test/backend out/runtime-test/probe out/runtime-test/logs
-cp out/runtime-assets/* runtime/supervisor.py out/runtime-test/backend/
+cp out/runtime-assets/* runtime/*.py out/runtime-test/backend/
 cp out/runtime-probes/* out/runtime-test/probe/
 chmod +x out/runtime-test/backend/vulkan-probe out/runtime-test/backend/wineserver
 # Source package expands to an ordinary GNU tar suitable for Docker import.
@@ -20,8 +20,8 @@ for renderer in software turnip26; do
  docker run --rm --network none "${args[@]}" -e LSB_TEST_RENDERER="$renderer" \
   -v "$PWD/out/runtime-test/backend:/opt/lsb:ro" \
   -v "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
-  -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" \
-  -v "$PWD/out/runtime-test/logs/$renderer:/logs" lsb-runtime:test python3 /tests/integration.py
+  -v "$PWD/out/windows-tests:/fixtures:ro" -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" \
+  -v "$PWD/out/runtime-test/logs/$renderer:/logs" lsb-runtime:test sh -c 'python3 /tests/integration.py && if [ "$LSB_TEST_RENDERER" = software ]; then python3 /tests/initialization.py; fi'
  done
 # Test the same rootfs through patched PRoot; no Android device is claimed by CI.
 sudo apt-get install -y build-essential libtalloc-dev gawk
@@ -36,11 +36,11 @@ make -C out/runtime-test/proot-src/src -j2 PROOT_UNBUNDLE_LOADER=/unused HAS_LOA
 short=$(mktemp -d /tmp/lsb-probe.XXXXXX)
 trap 'rm -rf "$short"' EXIT
 mkdir -p "$short/session" "$short/prefix" "$short/tmp"
-mkdir -p out/runtime-test/proot-root/opt/lsb out/runtime-test/proot-root/probe out/runtime-test/proot-root/tests
+mkdir -p out/runtime-test/proot-root/opt/lsb out/runtime-test/proot-root/probe out/runtime-test/proot-root/tests out/runtime-test/proot-root/fixtures out/runtime-test/proot-root/client
 PROOT_LOADER="$PWD/out/runtime-test/proot-src/src/loader/loader" PROOT_NO_SECCOMP=1 PROOT_TMP_DIR="$short/tmp" \
  out/runtime-test/proot-src/src/proot --link2symlink --kill-on-exit -0 -r "$PWD/out/runtime-test/proot-root" \
  -b /dev -b /proc -b /sys -b "$PWD/out/runtime-test/backend:/opt/lsb" \
  -b "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver" \
- -b "$PWD/out/runtime-test/probe:/probe" -b "$PWD/tests/runtime:/tests" \
+ -b "$PWD/out/runtime-test/probe:/probe" -b "$PWD/tests/runtime:/tests" -b "$PWD/out/windows-tests:/fixtures" \
  -b "$short/session:/session" -b "$short/prefix:/prefix" -b "$short/tmp:/tmp" -b "$PWD/out/runtime-test/proot-logs:/logs" \
- -w /probe /usr/bin/env -i HOME=/root USER=root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 TMPDIR=/tmp PYTHONUNBUFFERED=1 /usr/bin/python3 /tests/integration.py
+ -w /probe /usr/bin/env -i HOME=/root USER=root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 TMPDIR=/tmp PYTHONUNBUFFERED=1 /bin/sh -c 'python3 /tests/integration.py && python3 /tests/initialization.py'

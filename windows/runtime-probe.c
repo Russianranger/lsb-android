@@ -74,7 +74,7 @@ static LRESULT CALLBACK window_proc(HWND window,UINT msg,WPARAM w,LPARAM l){
     case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(window,&ps);WCHAR text[640];
         swprintf(text,640,L"LSB runtime probe - 32-bit Windows\nRegistry: %ls    COM: %ls    D3D8 frames: %lu    Keys: %lu    Clicks: %lu\n%ls",
             registry_ok?L"PASS":L"FAILED",com_ok?L"PASS":L"FAILED",frames,keys,clicks,dll_path);
-        RECT top={32,12,1240,92};SetBkMode(dc,TRANSPARENT);DrawTextW(dc,text,-1,&top,DT_LEFT);
+        RECT top={32,12,1240,92};FillRect(dc,&top,(HBRUSH)(COLOR_WINDOW+1));SetBkMode(dc,TRANSPARENT);DrawTextW(dc,text,-1,&top,DT_LEFT);
         RECT bottom={32,575,1240,620};DrawTextW(dc,L"Tap outside the triangle, send a key, and play a tone. Then exit and relaunch.",-1,&bottom,DT_LEFT);EndPaint(window,&ps);return 0;}
     case WM_CLOSE:DestroyWindow(window);return 0;
     case WM_DESTROY:KillTimer(window,1);report();PostQuitMessage(0);return 0;

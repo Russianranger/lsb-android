@@ -21,7 +21,7 @@ public final class WorkService extends Service {
     private PowerManager.WakeLock wake;
     private long lastNotice;
     public static synchronized boolean submit(Context context, String title, Job job) {
-        if (busy) return false;
+        if (busy || ClientRuntime.get(context).alive()) return false;
         pending = job; busy = true; cancellationRequested = false; message = title; result = "";
         try { context.startForegroundService(new Intent(context, WorkService.class)); return true; }
         catch (RuntimeException e) { pending = null; busy = false; message = "Could not start transfer: " + e.getMessage(); generation++; return false; }

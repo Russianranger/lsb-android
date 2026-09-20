@@ -1,4 +1,4 @@
-"""Isolated open-probe supervisor. No imported game or server paths are mounted."""
+"""App-owned probe or staged client initialization; no managed import/server mounts."""
 import hashlib
 import json
 import os
@@ -46,7 +46,8 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action'}:raise ValueError('Unexpected runtime request field')
+    if req.get('action','probe') not in ('probe','initialize','installer'):raise ValueError('Unsupported runtime action')
     if not isinstance(req.get('audio'),bool):raise ValueError('Invalid audio setting')
     if not isinstance(req.get('session_id'),str) or len(req['session_id'])!=36:raise ValueError('Missing session identity')
     return req
@@ -74,7 +75,7 @@ class Stopped(Exception):pass
 class Supervisor:
     def __init__(self,req):
         self.req=validate_request(req);self.children=[];self.logs=[]
-        self.state={'format':1,'phase':'starting','session_id':req['session_id'],'runtime_candidate':'Wine 10 WoW64 / Box64 0.4.4','renderer_requested':req['renderer'],'started_at':time.time(),'game_files_mounted':False}
+        self.state={'format':1,'phase':'starting','session_id':req['session_id'],'runtime_candidate':'Wine 10 WoW64 / Box64 0.4.4','renderer_requested':req['renderer'],'started_at':time.time(),'game_files_mounted':req.get('action','probe')!='probe','action':req.get('action','probe')}
         self.env=dict(os.environ,HOME='/root',USER='root',DISPLAY=':7',XAUTHORITY=str(SESSION/'Xauthority'),
             WINEPREFIX=str(PREFIX),WINEARCH='win64',WINEDEBUG='-all,+timestamp,+pid,err+all,trace+loaddll',
             WINEDLLOVERRIDES='winemenubuilder,mscoree,mshtml,winegstreamer=',
@@ -90,13 +91,13 @@ class Supervisor:
     def spawn(self,args,name,env=None):
         proc=subprocess.Popen(args,env=env or self.env,cwd=PROBE,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
         writer=BoundedLog(LOGS/name);writer.start(proc.stdout);self.logs.append(writer);self.children.append(proc);return proc
-    def wait(self,proc,timeout,label):
+    def wait(self,proc,timeout,label,accepted=(0,)):
         deadline=time.monotonic()+timeout
         while proc.poll() is None:
             self.stopped()
             if time.monotonic()>deadline:raise RuntimeError(label+' timed out; export Diagnostics')
             time.sleep(.15)
-        if proc.returncode:raise RuntimeError(label+' exited with code '+str(proc.returncode)+'; export Diagnostics')
+        if proc.returncode not in accepted:raise RuntimeError(label+' exited with code '+str(proc.returncode)+'; export Diagnostics')
     def wine(self,args,timeout=180,label='Wine setup'):
         self.wait(self.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',*args],'wine-setup.log'),timeout,label)
     def graphics(self,bundle):
@@ -150,12 +151,14 @@ class Supervisor:
         ready=False
         try:ready=json.loads(marker.read_text())==signature
         except (OSError,ValueError):pass
-        marker.unlink(missing_ok=True)
+        if self.req.get('action','probe')=='probe':marker.unlink(missing_ok=True)
         self.wine(['wineboot','-i' if ready else '-u'],240,'Fresh Windows prefix initialization')
         for name in ('ntdll.dll','kernel32.dll','kernelbase.dll'):
             if not pe32(PREFIX/'drive_c/windows/syswow64'/name):raise RuntimeError('Missing 32-bit Windows system file: '+name)
         devices=PREFIX/'dosdevices';devices.mkdir(exist_ok=True)
-        for name,target in [('p:',PROBE),('z:',Path('/'))]:
+        mappings=[('p:',PROBE),('z:',Path('/'))]
+        if self.req.get('action','probe')!='probe':mappings.append(('d:',Path('/client')))
+        for name,target in mappings:
             p=devices/name
             if p.is_symlink():p.unlink()
             if p.exists():raise RuntimeError('Reserved probe drive is occupied')
@@ -165,6 +168,12 @@ class Supervisor:
             for name in ('d3d8','d3d9'):
                 dest=PREFIX/'drive_c/windows/syswow64'/(name+'.dll')
                 tmp=dest.with_suffix('.lsb-new');shutil.copyfile(BUNDLE/('dxvk-'+name+'.dll'),tmp);tmp.replace(dest)
+        if self.req.get('action','probe')!='probe':
+            self.status('initializing_client',prefix_system_files_verified=True)
+            from client_setup import initialize
+            initialize(self)
+            atomic(marker,signature)
+            return
         self.status('starting_probe',prefix_system_files_verified=True)
         args=['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\runtime-probe.exe']
         if os.environ.get('LSB_TEST_AUTOCLOSE')=='1':args+=['--autotest']

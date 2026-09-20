@@ -24,7 +24,7 @@ public final class MainActivity extends Activity {
     private static final int BG = Color.rgb(12, 20, 31), CARD = Color.rgb(24, 36, 49), TEXT = Color.rgb(232, 239, 247), MUTED = Color.rgb(163, 182, 198), ACCENT = Color.rgb(106, 207, 193);
     private String tab = "Client", pending = "";
     private LinearLayout content;
-    private TextView operation;
+    private TextView operation, runtimeStatus;
     private ProgressBar progress;
     private Button cancel;
     private EditText host;
@@ -41,6 +41,7 @@ public final class MainActivity extends Activity {
                 progress.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE);
                 cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE);
             }
+            if(runtimeStatus!=null)runtimeStatus.setText(ClientRuntime.get(MainActivity.this).status);
             if (generation != WorkService.generation) { generation = WorkService.generation; draw(); }
             handler.postDelayed(this, 600);
         }
@@ -64,7 +65,7 @@ public final class MainActivity extends Activity {
         draw();
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 30);
     }
-    @Override protected void onResume() { super.onResume(); if(tab.equals("Runtime"))draw(); handler.post(poll); }
+    @Override protected void onResume() { super.onResume(); if(tab.equals("Runtime")||tab.equals("Client"))draw(); handler.post(poll); }
     @Override protected void onPause() { handler.removeCallbacks(poll); super.onPause(); }
     @Override public void onSaveInstanceState(Bundle out) { out.putString("tab", tab); out.putString("pending", pending); out.putBoolean("preserve", preserveOnImport); super.onSaveInstanceState(out); }
     static File storage(Context ctx) throws IOException {
@@ -92,9 +93,10 @@ public final class MainActivity extends Activity {
         b.setOnClickListener(v -> { if (WorkService.busy) { toast("Wait for the current operation, or cancel it."); return; } try { action.run(); } catch (Exception e) { error(e); } }); return b;
     }
     private void draw() {
+        runtimeStatus=null;
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(18), dp(8), dp(18), dp(8));
         TextView heading = label("LSB Android", 26, TEXT); heading.setTypeface(null, Typeface.BOLD); page.addView(heading);
-        page.addView(label("FFXI client runtime preview · 0.2.0", 13, ACCENT));
+        page.addView(label("FFXI client runtime preview · 0.3.0", 13, ACCENT));
         LinearLayout nav = new LinearLayout(this);
         for (String name : new String[]{"Client", "Runtime", "Profile", "Server", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));
@@ -112,9 +114,9 @@ public final class MainActivity extends Activity {
     }
     private void runtimePage() throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);
-        LinearLayout panel=card("Windows runtime · first milestone");
+        LinearLayout panel=card("Windows runtime · verified foundation");
         panel.addView(label("A separate environment for testing Windows, Direct3D 8, sound and input. Your imported FFXI files are not mounted or modified by these checks.",16,TEXT));
-        TextView current=label(rt.status,15,ACCENT);panel.addView(current);
+        runtimeStatus=label(rt.status,15,ACCENT);panel.addView(runtimeStatus);
         panel.addView(label("Wine 10 / Box64 0.4.4 · experimental candidate. This is not the former GameHub Proton/FEX environment and does not launch FFXI yet.",14,MUTED));
         button(panel,"Install runtime (338 MiB download)",()->run("Installing Windows runtime",(ctx,p)->ClientRuntime.get(ctx).install(p))).setEnabled(!rt.alive()&&!rt.installed());
         panel.addView(label("Graphics for this test",14,MUTED));
@@ -135,10 +137,11 @@ public final class MainActivity extends Activity {
     }
     private void clientPage() throws Exception {
         ClientStore s = store(this);
+        initializationCard(s);
         if (s.hasPendingImport() && !WorkService.busy) pendingImportCard(s);
         LinearLayout status = card(s.hasClient() ? "Imported client" : "Bring your FFXI installation");
         status.addView(label(s.summary(), 15, TEXT));
-        status.addView(label("Your client is stored separately from the experimental Windows runtime. Use the Runtime tab for the first in-app checks; FFXI gameplay and server integration come next.", 14, MUTED));
+        status.addView(label("Your imported files are the source for a separate working installation. Prepare that installation above; login and gameplay come next.", 14, MUTED));
         status.addView(label("Free space: " + storage(this).getUsableSpace() / 1073741824L + " GiB. Imports need room for a new full copy while retaining the active client.", 13, MUTED));
         preserve = new CheckBox(this); preserve.setText("Preserve current FFXI USER and PlayOnline usr settings on client import"); preserve.setTextColor(TEXT); preserve.setChecked(preserveOnImport); preserve.setOnCheckedChangeListener((b, checked) -> preserveOnImport = checked); status.addView(preserve);
         button(status, s.hasClient() ? "Import a complete client update ZIP" : "Import client ZIP", () -> pick("client")).setEnabled(!s.hasPendingImport());
@@ -170,7 +173,38 @@ public final class MainActivity extends Activity {
         button(backup, "Switch to previous client", () -> confirm("Switch client", "Validate the previous client, then swap it with the current client?", () -> run("Validating previous client", (ctx, p) -> { store(ctx).rollback(p); return "Previous client restored. The other copy remains available for rollback."; }))).setEnabled(s.hasPrevious());
         backup.addView(label("A session backup includes imported game files and saved connection settings. Windows runtime prefixes are separate and are not included. Uninstalling this app removes its managed copies.", 13, MUTED));
     }
+    private void initializationCard(ClientStore source)throws Exception {
+        ClientRuntime rt=ClientRuntime.get(this);JSONObject prepared=rt.preparationState();
+        boolean candidate=prepared.has("candidate"), copied=candidate&&prepared.getJSONObject("candidate").optBoolean("copy_complete");
+        LinearLayout card=card("Prepare PlayOnline and FFXI");
+        runtimeStatus=label(rt.status,15,ACCENT);card.addView(runtimeStatus);
+        card.addView(label("Create a separate working copy and Windows environment, register the selected client, then test its PlayOnline and FFXI interfaces. Successful checks activate both copies together. This step does not log in or start the game.",15,TEXT));
+        card.addView(label("Free runtime storage: "+rt.home.getUsableSpace()/1073741824L+" GiB. Preparation needs room for another full client and Windows copy; space is checked before copying. This may take several minutes.",14,MUTED));
+        if(prepared.has("current"))card.addView(label("A validated preparation is available. A new attempt preserves it until checks pass.",14,ACCENT));
+        if(candidate)card.addView(label(copied?"A staged working copy is available. Retry uses its captured region and files without copying the full import again.":"The previous copy was interrupted. Preparation will replace only that incomplete candidate.",14,MUTED));
+        if(!rt.installed())card.addView(label("Install the Windows runtime on the Runtime tab first.",14,MUTED));
+        button(card,copied?"Retry client initialization":"Prepare imported client",()->{
+            try{if(!copied)saveConnection();startInitialization("initialize");}catch(Exception e){error(e);}
+        }).setEnabled(source.hasClient()&&!source.hasPendingImport()&&rt.installed()&&!rt.alive());
+        button(card,"Open initialization display",()->startActivity(new Intent(this,RuntimeActivity.class))).setEnabled(rt.alive());
+        button(card,"Stop initialization",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());
+        button(card,"View preparation results",()->{try{showText("Prepared client",rt.preparationState().toString(2));}catch(Exception e){error(e);}});
+        if(copied){
+            card.addView(label("If diagnostics identify a missing dependency, select its official x86 prerequisite installer. It runs interactively in the staged copy, then registration checks run again.",14,MUTED));
+            button(card,"Select prerequisite installer (.exe)",()->pick("prerequisite")).setEnabled(!rt.alive());
+            button(card,"Run prerequisite and retry checks",()->startInitialization("installer")).setEnabled(!rt.alive()&&prepared.optBoolean("prerequisite_selected"));
+        }
+        button(card,"Discard staged preparation",()->confirm("Discard staged copy","Remove the unsuccessful working copy and its Windows environment? The original import and validated preparations are kept.",()->run("Discarding staged preparation",(ctx,p)->ClientRuntime.get(ctx).discardPreparation()))).setEnabled(candidate&&!rt.alive());
+        button(card,"Restore previous preparation",()->run("Restoring previous preparation",(ctx,p)->ClientRuntime.get(ctx).rollbackPreparation())).setEnabled(prepared.has("previous")&&!rt.alive());
+        card.addView(label("Session backups currently contain the original import, not prepared Windows environments. The existing Termux server is not needed for these checks.",13,MUTED));
+    }
+    private void startInitialization(String action){
+        String renderer=getSharedPreferences("runtime",MODE_PRIVATE).getString("renderer","turnip26");
+        startForegroundService(new Intent(this,RuntimeService.class).putExtra("operation",action).putExtra("renderer",renderer).putExtra("audio",true));
+        startActivity(new Intent(this,RuntimeActivity.class));
+    }
     private void saveConnection() throws IOException {
+        if(ClientRuntime.get(this).alive())throw new IOException("Stop initialization before changing client settings");
         ClientStore s = store(this);
         String core = playOnline == null ? s.config().polCore : playOnlinePaths.get(playOnline.getSelectedItemPosition());
         LaunchConfig old = s.config(), next = new LaunchConfig(host.getText().toString().trim(), region.getSelectedItem().toString(), core);
@@ -244,7 +278,7 @@ public final class MainActivity extends Activity {
         button(d, "View repair script", () -> { try { File f = new File(getFilesDir(), "repair-preview.txt"); showText("Repair recipe · not yet executed", f.exists() ? FilesEx.read(f, 32768) : "Use Client → Validate client and preview repair script first."); } catch (Exception e) { error(e); } });
         button(d, "View operation log", () -> { try { File f = new File(getFilesDir(), "operations.log"); showText("Operation log", f.exists() ? FilesEx.read(f, 262144) : "No operations yet"); } catch (Exception e) { error(e); } });
         LinearLayout next = card("Runtime status");
-        next.addView(label("Client files: managed import available\nRegistry/COM repair: exportable Windows EXE and optional CMD recipe\nWindows runtime: experimental Wine 10 / Box64 candidate\nDisplay, D3D8 and audio: open-probe checks in Runtime tab\nFFXI initialization, FEX and controller mappings: next milestones\nServer toolchain and database runtime: not bundled\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
+        next.addView(label("Client files: managed import available\nRegistry/COM repair: in-app staged initialization\nWindows runtime: experimental Wine 10 / Box64 candidate\nDisplay, D3D8 and audio: open-probe checks in Runtime tab\nFFXI registration/COM: staged preparation on Client tab\nLogin, FEX and controller mappings: later milestones\nServer toolchain and database runtime: not bundled\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
     }
     private void pick(String kind) { pending = kind; Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"); startActivityForResult(i, PICK); }
     private void create(String kind, String name) { pending = kind; Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind.equals("profile") ? "application/json" : "application/zip").putExtra(Intent.EXTRA_TITLE, name); startActivityForResult(i, CREATE); }
@@ -262,6 +296,7 @@ public final class MainActivity extends Activity {
                     switch (kind) {
                         case "client": store(ctx).importClient(in, false, preserveFiles, p); return store(ctx).hasPendingImport() ? "Extraction complete. Choose the PlayOnline version on the Client tab to finish import." : "Client imported and validated. The previous copy, if any, is retained.";
                         case "restore": store(ctx).importClient(in, true, false, p); return store(ctx).hasPendingImport() ? "Backup extracted. Choose the PlayOnline version on the Client tab to finish restore." : "Session restored and validated.";
+                        case "prerequisite": return ClientRuntime.get(ctx).importPrerequisite(in);
                         case "loader": store(ctx).importLoader(in, p); return "32-bit xiloader imported. Its runtime compatibility still needs a launch test.";
                         case "source": return SourceImport.stage(new File(storage(ctx), "server"), in, "User-selected ZIP (revision unverified)", p);
                         default: throw new IOException("File operation was lost; please select it again");
@@ -296,12 +331,12 @@ public final class MainActivity extends Activity {
             SafeZip.entry(zip, "runtime-profile.json", profile(ctx)); SafeZip.entry(zip, "inventory.json", s.inventory()); SafeZip.entry(zip, "summary.txt", s.summary()); SafeZip.entry(zip, "session.properties", s.config().properties());
             SafeZip.entry(zip, "playonline-candidates.txt", String.join("\n", s.playOnlineChoices()) + "\n");
             if (s.hasPendingImport()) SafeZip.entry(zip, "pending-playonline.txt", "Waiting for PlayOnline selection\n" + String.join("\n", s.pendingChoices()) + "\n");
-            SafeZip.entry(zip, "device.txt", "app=0.2.0\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=experimental_probe\n");
+            SafeZip.entry(zip, "device.txt", "app=0.3.0\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=staged_client_initialization\n");
             for (String name : new String[]{"operations.log", "server-probe.txt", "repair-preview.txt"}) { File f = new File(ctx.getFilesDir(), name); if (f.exists()) SafeZip.entry(zip, name, FilesEx.read(f, 262144)); }
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }
     }
-    private void run(String title, WorkService.Job job) { if (!WorkService.submit(getApplicationContext(), title, job)) toast("An operation is already running or could not start."); draw(); }
+    private void run(String title, WorkService.Job job) { if(ClientRuntime.get(this).alive()){toast("Stop the runtime before file operations or exports.");return;} if (!WorkService.submit(getApplicationContext(), title, job)) toast("An operation is already running or could not start."); draw(); }
     private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_LONG).show(); }
     private void error(Exception e) { new AlertDialog.Builder(this).setTitle("Unable to continue").setMessage(e.getMessage()).setPositiveButton("OK", null).show(); }
     private void confirm(String title, String message, Runnable action) { new AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton("Cancel", null).setPositiveButton("Continue", (d, w) -> action.run()).show(); }
