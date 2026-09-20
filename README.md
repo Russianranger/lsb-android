@@ -2,11 +2,11 @@
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
 
-**0.2.0 adds an experimental in-app Windows runtime probe.** It creates a fresh Windows environment with embedded display, sound and input, then runs an open 32-bit registry/COM/Direct3D8 test. It does not launch FFXI or change imported game data yet. The working Termux server remains the connection target for the next milestone.
+**0.3.0 adds in-app PlayOnline/FFXI preparation.** It makes an independent working installation and cloned Windows prefix, registers the selected client, tests its real COM interface identifiers, and activates the pair only after successful checks. Failed preparations remain retryable; the original import and previous validated preparation are preserved. Login/gameplay and server integration remain later milestones.
 
-Install the update over the existing app, then use **Runtime → Install runtime → Start Windows checks** with **Turnip 26 / DXVK (Thor)**. No GameHub container, client re-import or terminal command is required. See [0.2.0 test instructions and limitations](docs/runtime-milestone-020.md) and [current handoff](docs/HANDOFF.md).
+Install the update over the existing app and use **Client → Prepare imported client**. The 0.2.0 runtime milestone has passed on the Thor; no repeated triangle test, runtime download or client import is needed. Keep Turnip 26. Allow room for another full client plus a Windows prefix (roughly 18 GiB for the current reported import; exact space checked in-app). See [0.3.0 preparation and test instructions](docs/client-initialization-030.md) and [current handoff](docs/HANDOFF.md).
 
-This candidate uses Wine 10 / Box64 0.4.4 with a verified x86 DXVK D3D8+D3D9 pair. It is a distinct candidate from the historical Proton/FEX setup, and passing the open probe does not establish FFXI compatibility. The runtime download is about 338 MiB; keep at least 3 GiB free. Existing session backups do not yet include the experimental Wine prefix.
+The accepted foundation is Wine 10 / Box64 0.4.4 with an x86 DXVK D3D8+D3D9 pair and embedded display/audio/input. It is distinct from the historical Proton/FEX setup; actual proprietary client initialization still needs device testing. Individual user-supplied x86 prerequisite installers can run in a failed staged preparation. Existing session backups retain the original imported client, not prepared Windows generations.
 
 ## Available in 0.1.3
 

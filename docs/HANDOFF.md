@@ -1,3 +1,13 @@
+# Active implementation: client initialization 0.3.0 (2026-09-20)
+
+The user authorized the next step after the Thor completed milestone 1. The 0.3.0 implementation adds a separate full working client and cloned prefix, real registration and client COM checks, per-step reports, prerequisite EXE execution, retry without full recopy, and atomic activation/rollback of matching client/prefix generations. See [client-initialization-030.md](client-initialization-030.md) for device procedure, boundaries and provenance. The selected import survives and remains the source of truth; no GameHub test, fresh prefix or import is requested.
+
+Implementation checkpoint `d0f5acb62727cb82fbe3eb406e3f1c800a78a367` passed all three verification gates in [run 35532787286](https://github.com/Russianranger/lsb-android/actions/runs/35532787286), including synthetic US/EU/JP initialization and failure/prerequisite recovery under ARM64 Wine and PRoot. Local checks pass: existing 90 import/recovery checks, 15 preparation/cancellation/rollback checks and six backend contracts. Following Android-only changes remove the old one-minute display wait during large preparation copies and record a fresh diagnostic state for early copy failures; these compile in the delivered signed APK, whose native/backend bytes are identical to the CI checkpoint. Final APK identity and precise verification boundaries are recorded in [validation.md](validation.md).
+
+**Next device action:** update in place, use **Client → Prepare imported client**, then export support diagnostics. Keep the existing Turnip 26 runtime, imported US installed POL selection and backup. The current stage calls DllRegisterServer for the selected POL core, FFXi.dll and FFXiMain.dll, then constructs region-specific IPOLCoreCom and IFFXiEntry objects. It does not invoke GameStart or xiloader; no credentials or server are needed. A missing dependency should lead to a targeted official x86 prerequisite installer, not blanket installation of historical GameHub packages. Login/world entry remains the subsequent milestone.
+
+---
+
 # Milestone 1 complete: in-app runtime probe 0.2.0 (2026-09-20)
 
 The user confirms **both imported FFXI data and a backup survive**, and authorized the first runtime milestone. Do not ask for them again or request a GameHub test. The current work implements a fresh, isolated runtime with an embedded display/audio/input path and an open x86 registry/COM/D3D8 probe. See [runtime-milestone-020.md](runtime-milestone-020.md) for setup, candidate choice, ownership boundaries and test interpretation.

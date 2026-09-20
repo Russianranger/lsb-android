@@ -192,6 +192,11 @@ final class ClientRuntime {
             if(!installed()||!read(new File(root,"lsb-runtime.sha256"),128).equals(RUNTIME_SHA))throw new IOException("Install the pinned runtime first");
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");
             reapOrphans();
+            TarExtractor.remove(run);TarExtractor.remove(tmp);run.mkdirs();tmp.mkdirs();prefix.mkdirs();assets();
+            File[] old=logs.listFiles();if(old!=null)for(File f:old)if(f.isFile()&&!f.getName().endsWith(".previous"))LogRetention.rotate(f);
+            sessionId=UUID.randomUUID().toString();JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action);
+            write(new File(run,"request.json"),request.toString());
+            write(new File(run,"status.json"),new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",initialize?"copying_client":"preparing_runtime").put("game_files_mounted",false).toString());
             if(initialize){
                 PreparedClientStore s=prepared();File active=s.selected("current");
                 if(action.equals("installer")&&(!s.complete(s.selected("candidate"))||!new File(home,"prerequisite.exe").isFile()))throw new IOException("Select a prerequisite for a staged preparation first");
@@ -200,10 +205,6 @@ final class ClientRuntime {
                 selectedPrefix=new File(candidate,"prefix");
             }
             interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");
-            TarExtractor.remove(run);TarExtractor.remove(tmp);run.mkdirs();tmp.mkdirs();prefix.mkdirs();assets();
-            File[] old=logs.listFiles();if(old!=null)for(File f:old)if(f.isFile()&&!f.getName().endsWith(".previous"))LogRetention.rotate(f);
-            sessionId=UUID.randomUUID().toString();JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action);
-            write(new File(run,"request.json"),request.toString());
             if(initialize){
                 write(new File(run,"client-manifest.json"),clientManifest(candidate).toString(2));
                 if(action.equals("installer"))Files.copy(new File(home,"prerequisite.exe").toPath(),new File(run,"prerequisite.exe").toPath());
@@ -240,6 +241,13 @@ final class ClientRuntime {
             }
             else if(finalState!=null&&finalState.has("error"))status=finalState.getString("error");
             else status="Runtime stopped (exit "+process.exitValue()+"). Export Diagnostics if unexpected.";
+        }catch(Exception error){
+            if(process==null)try{
+                JSONObject failure=new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",stopRequested?"stopped":"error")
+                    .put("error",String.valueOf(error.getMessage())).put("game_files_mounted",false);
+                write(new File(run,"status.json"),failure.toString());write(new File(logs,"runtime-state.json"),failure.toString());
+            }catch(Exception ignored){}
+            throw error;
         }finally{
             preparingThread=null;Thread.interrupted();
             if(process!=null&&process.isAlive()){process.destroy();if(!process.waitFor(5,TimeUnit.SECONDS)){process.destroyForcibly();process.waitFor(5,TimeUnit.SECONDS);}}

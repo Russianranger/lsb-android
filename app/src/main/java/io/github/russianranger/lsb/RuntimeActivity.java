@@ -42,8 +42,13 @@ public final class RuntimeActivity extends Activity {
         new Thread(()->{
             LocalSocket s=null;
             try{
-                for(int n=0;n<300&&viewing&&generation==connectionGeneration;n++){
-                    if(ClientRuntime.get(this).displaySocket().exists())break;Thread.sleep(200);
+                // A full client copy can take minutes before the display server exists.
+                // Wait for the owned operation, not the old one-minute probe deadline.
+                for(int n=0;viewing&&generation==connectionGeneration;n++){
+                    ClientRuntime rt=ClientRuntime.get(this);
+                    if(rt.displaySocket().exists())break;
+                    if(n>25&&!rt.alive())return;
+                    Thread.sleep(200);
                 }
                 if(!viewing||generation!=connectionGeneration)return;
                 s=new LocalSocket();s.connect(new LocalSocketAddress(ClientRuntime.get(this).displaySocket().getPath(),LocalSocketAddress.Namespace.FILESYSTEM));

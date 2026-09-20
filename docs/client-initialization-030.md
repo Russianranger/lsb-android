@@ -1,0 +1,33 @@
+# Client initialization · 0.3.0
+
+The 0.2.0 open runtime milestone is accepted on the Thor. This build prepares the existing managed PlayOnline/FFXI import inside the same app. It does not launch xiloader, request credentials, authenticate, or start/migrate the Termux server.
+
+## Device test
+
+1. Install `LSB-Android-0.3.0.apk` over the current app. Keep the installed runtime, imported client, backup and Turnip 26 setting. No triangle test, runtime download, reinstall or re-import is needed.
+2. On **Client**, check the saved **Client region** and **PlayOnline version** under Connection and repair. The latest report selects US and `PlayOnlineViewer/viewer/com/polcore.dll`, outside `patchfiles`.
+3. Tap **Prepare imported client** at the top of Client. The app checks available internal runtime storage, makes a full independent client copy, and clones the accepted Windows prefix. The reported import is about 14.1 GiB; allow roughly 18 GiB or more for the working client, prefix and reserve. The exact requirement is computed before copying. Copying 66,322 files can take several minutes; progress appears at the bottom of the display. **Back** returns to the app without stopping; **Open initialization display** reconnects.
+4. Registration runs automatically. It may show only the Windows desktop while the status advances. Wait for the success message or a specific failure. Then use **Back → Client → View preparation results**.
+5. Export **Diagnostics → Export support ZIP** and attach it. A success means the selected installation registered and its two COM interfaces could be constructed. It does not yet mean FFXI is playable. A failure keeps the staged copy for analysis/retry and leaves the original import and any previously validated preparation in place.
+
+Do not install all historical GameHub components preemptively. If the report identifies a missing dependency, **Select prerequisite installer (.exe)** accepts a user-supplied official x86 installer (up to 512 MiB). **Run prerequisite and retry checks** opens its interactive wizard in the staged Windows environment, records its hash and full Windows exit code, restarts that environment, and reruns registration. Installer UI/license choices remain visible. Exit 3010 (restart required) is handled by the native worker so it is not truncated to an unrelated Linux status. This is for individual dependency installers; multipart game installers, general MSI/folder import, automatic dependency downloads and official game updating are later work. The current xiloader upstream lists VC2022 x86, but this does not establish the requirements of the user's imported loader binary.
+
+**Retry client initialization** reuses a complete staged copy and its captured region/paths, avoiding another full copy. To change the selection used by a failed candidate, **Discard staged preparation**, choose/save the corrected version, and prepare again. An interrupted incomplete copy is rebuilt automatically on the next preparation. **Restore previous preparation** swaps the validated client and its matching prefix together. Session backup ZIPs still contain the original import/configuration, not prepared runtime generations.
+
+## What is executed
+
+- The app reads the selected import for copying only. Windows sees an independent client under `D:\` and a cloned `/prefix`; it never binds the managed import, GameHub or Termux directories.
+- Space checks, cancellation, symbolic-link rejection for client files and key-file hash comparison precede preparation. Prefix links are copied as links, without walking guest-root links. There are no hardlinks between originals and working files.
+- The initialization manifest pins the selected region, installation roots, core/entry/main/loader hashes and `pol.exe`. The backend verifies paths, x86 PE import tables and key hashes before executing code. Patch-cache cores cannot be selected for initialization.
+- The x86 helper writes and reads back installation values `1000`, `0001`, regional Language, and the captured `win7` Wine setting. Three separate, bounded workers load and call `DllRegisterServer` for the selected POL core, `FFXi.dll` and `FFXiMain.dll`.
+- Two further workers verify the 32-bit `InprocServer32` path and call `CoCreateInstance` with the actual region-specific `IPOLCoreCom` and `IFFXiEntry` identifiers. They release the objects without calling client setup/game-start methods or opening a server connection.
+- Every worker has a bounded execution time and emits a structured receipt with operation, bitness, Win32 error, HRESULT and loaded path. Wine DLL-load diagnostics and PE import names help identify missing dependencies. Success/failure and recent attempts enter the support ZIP; client payloads and prefix registry hives do not.
+- A single atomic pointer-file replacement activates both the fully checked working client and its prefix. A failed/aborted operation never switches those pointers. Previous validated generations are retained; old unreferenced generations are not automatically deleted in this baseline.
+
+Registration is not equivalent to running the complete retail installers. The real client may need installer-created files, additional prerequisites or a different Wine/translation stack even after COM construction succeeds. The RpcSs warning observed during the accepted open probe remains relevant to proprietary testing; the open fixture only proved in-process COM behavior.
+
+## Verification and provenance
+
+The helper is built from `windows/client-init.c` and has no added VC redistributable dependency. Class/interface facts and regional order are verified against [LandSandBoat/xiloader `defines.h` at 370a1a1](https://github.com/LandSandBoat/xiloader/blob/370a1a11e4d3c5b58b793bd83096de34d5942ed6/src/defines.h) and [its COM creation sequence](https://github.com/LandSandBoat/xiloader/blob/370a1a11e4d3c5b58b793bd83096de34d5942ed6/src/main.cpp). The [upstream README](https://github.com/LandSandBoat/xiloader/blob/370a1a11e4d3c5b58b793bd83096de34d5942ed6/README.md) documents its own VC2022 requirement. The imported loader is not replaced or executed in this milestone.
+
+Verification adds actual generation-copy/retry/rollback/interruption tests, backend path/PE/request contracts, and ARM64 Wine/PRoot execution with synthetic client-interface DLLs for US/EU/JP, deliberate registration failure, deliberate COM failure, and a prerequisite/retry returning Windows 3010. Test fixtures are never packaged as game files. No proprietary POL/FFXI DLL is present in the development environment; the device report remains necessary to qualify the imported client.
