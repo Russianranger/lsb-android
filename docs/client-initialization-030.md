@@ -2,6 +2,8 @@
 
 The 0.2.0 open runtime milestone is accepted on the Thor. This build prepares the existing managed PlayOnline/FFXI import inside the same app. It does not launch xiloader, request credentials, authenticate, or start/migrate the Termux server.
 
+**Device result:** the supplied `lsb-support (2).zip` confirms all six checks passed with the actual US client and its preparation was activated. This milestone is complete; keep that preparation for the next login/world-entry build. The following procedure remains a reference for new installations, not a request to repeat the completed test. See [validation.md](validation.md) for evidence and remaining limits.
+
 ## Device test
 
 1. Install `LSB-Android-0.3.0.apk` over the current app. Keep the installed runtime, imported client, backup and Turnip 26 setting. No triangle test, runtime download, reinstall or re-import is needed.
@@ -30,4 +32,4 @@ Registration is not equivalent to running the complete retail installers. The re
 
 The helper is built from `windows/client-init.c` and has no added VC redistributable dependency. Class/interface facts and regional order are verified against [LandSandBoat/xiloader `defines.h` at 370a1a1](https://github.com/LandSandBoat/xiloader/blob/370a1a11e4d3c5b58b793bd83096de34d5942ed6/src/defines.h) and [its COM creation sequence](https://github.com/LandSandBoat/xiloader/blob/370a1a11e4d3c5b58b793bd83096de34d5942ed6/src/main.cpp). The [upstream README](https://github.com/LandSandBoat/xiloader/blob/370a1a11e4d3c5b58b793bd83096de34d5942ed6/README.md) documents its own VC2022 requirement. The imported loader is not replaced or executed in this milestone.
 
-Verification adds actual generation-copy/retry/rollback/interruption tests, backend path/PE/request contracts, and ARM64 Wine/PRoot execution with synthetic client-interface DLLs for US/EU/JP, deliberate registration failure, deliberate COM failure, and a prerequisite/retry returning Windows 3010. Test fixtures are never packaged as game files. No proprietary POL/FFXI DLL is present in the development environment; the device report remains necessary to qualify the imported client.
+Verification adds actual generation-copy/retry/rollback/interruption tests, backend path/PE/request contracts, and ARM64 Wine/PRoot execution with synthetic client-interface DLLs for US/EU/JP, deliberate registration failure, deliberate COM failure, and a prerequisite/retry returning Windows 3010. Test fixtures are never packaged as game files. No proprietary POL/FFXI DLL is present in the development environment; the subsequent Thor report qualifies registration and COM construction for the imported US client, with game startup still pending.

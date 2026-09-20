@@ -6,7 +6,7 @@ Client-first Android companion for a future self-contained LandSandBoat / Final 
 
 Install the update over the existing app and use **Client → Prepare imported client**. The 0.2.0 runtime milestone has passed on the Thor; no repeated triangle test, runtime download or client import is needed. Keep Turnip 26. Allow room for another full client plus a Windows prefix (roughly 18 GiB for the current reported import; exact space checked in-app). See [0.3.0 preparation and test instructions](docs/client-initialization-030.md) and [current handoff](docs/HANDOFF.md).
 
-The accepted foundation is Wine 10 / Box64 0.4.4 with an x86 DXVK D3D8+D3D9 pair and embedded display/audio/input. It is distinct from the historical Proton/FEX setup; actual proprietary client initialization still needs device testing. Individual user-supplied x86 prerequisite installers can run in a failed staged preparation. Existing session backups retain the original imported client, not prepared Windows generations.
+The accepted foundation is Wine 10 / Box64 0.4.4 with an x86 DXVK D3D8+D3D9 pair and embedded display/audio/input. It is distinct from the historical Proton/FEX setup. The user's actual US PlayOnline/FFXI DLL registration and COM construction have now passed on the Thor; the working client/prefix is activated. Login/world entry is next. Individual user-supplied x86 prerequisite installers can run in a failed staged preparation. Existing session backups retain the original imported client, not prepared Windows generations.
 
 ## Available in 0.1.3
 

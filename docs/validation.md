@@ -1,6 +1,6 @@
 # 0.3.0 staged client initialization verification (2026-09-20)
 
-The existing Thor runtime acceptance remains valid. This build adds real-client initialization, which still needs the user's proprietary files on the device; no proprietary DLLs are present in the development environment.
+The existing Thor runtime acceptance remains valid. Real-client registration and COM initialization have now also passed on the device, as recorded below. No proprietary DLLs are present in the development environment.
 
 - Existing 90 JVM import/recovery checks and 15 new preparation checks pass. The new checks exercise separate client/prefix copies, preservation of original files/hives, non-traversed prefix links, no activation without a receipt, atomic selection/rollback, interrupted copying/store recreation, retry and candidate-only discard.
 - Six Python contracts pass, covering request isolation, bounded logs, component inventory, working-copy path boundaries, linked-path rejection and malformed/wrong-architecture PE images.
@@ -10,7 +10,19 @@ The existing Thor runtime acceptance remains valid. This build adds real-client 
 - Follow-up Android-only changes keep the display waiting through a long full copy and write an accurate fresh failure/cancellation state before Windows starts. These are compiled into the delivered APK; the native worker and Python backend remain the CI checkpoint's exact bytes.
 - Delivered APK: `LSB-Android-0.3.0.apk`, **7,677,733 bytes**, SHA-256 `eab9c76be74a5f2d1c02d22822c90e1687ed3a00c5c04fde096395981894b3fd`. The update retains certificate `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e` and needs no uninstall or runtime download.
 
-**Device boundary:** registration and real POL/FFXI COM construction, prerequisite installer behavior with actual vendor installers, original/full working-copy storage behavior and later login/world entry remain unverified until the Thor test. The native tests use synthetic DLLs with the corresponding interface identifiers, not the user's game. See [the preparation procedure](client-initialization-030.md).
+## Thor acceptance: milestone 2 complete
+
+Reviewed `lsb-support (2).zip`, SHA-256 `4e6ec2603829e0add41e36368996abc82559431b1efd261331ec89182cf9d8b8`. It reports app 0.3.0 on AYN Thor / Android 13, using the installed US `PlayOnlineViewer/viewer/com/polcore.dll`, outside `patchfiles`.
+
+- Session `93e77044-aa73-457c-934e-501daa5f0812` ran from **20:21:34 to 20:22:46 UTC** on 2026-09-20, about 72.6 seconds after the full-copy stage. This is not the total copy/preparation duration.
+- All six steps passed with exit code 0, HRESULT 0 and Win32 error 0: 32-bit registry write/readback, registration of `polcore.dll`, `FFXi.dll` and `FFXiMain.dll`, followed by actual region-specific POL and FFXI COM construction.
+- Native DLL-load traces independently confirm the selected proprietary files loaded from the working `D:\\` installation. FFXiMain registration also loaded native `C:\\windows\\system32\\d3d8.dll` and Wine's built-in DINPUT8. No game-rendering performance or full input compatibility is inferred from DLL loading.
+- Current preparation generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505` reports `copy_complete=true`, 66,322 files and `status=passed`. Its saved receipt exactly matches the supervisor and current-preparation results. Source inventory matches the managed import inventory byte-for-byte, and its SHA-256 matches the receipt (`c51540586e4a8039455e3976572f3edb6185468a95c56fa67fbc300ea604bcbc`). The original inventory still reports 15,176,011,583 bytes.
+- Final state is `phase=completed`, `automatic_checks_passed=true`, `initialization_passed=true`, `alive=false`, `starting=false`; display and audio close. `game_files_mounted=true` describes this completed session's working-client mount, not a currently running process. The audio bridge received zero streams because this stage did not play sound; prior runtime audio acceptance remains valid.
+- Hardware preflight confirms Turnip Adreno 740 / Mesa 26.0.0 with DXVK 2.5.3. Its three Vulkan presentation frames are preflight evidence, not FFXI frames. `game_started=false` is expected.
+- No prerequisite was selected or executed. RpcSs, hostname/menu-builder/Bluetooth/Eventlog startup messages and Box64's missing `libXcomposite.so.1` remain in the logs, but none caused a failed initialization step. Preserve those observations for game startup; do not assume all Wine services work.
+
+**Remaining device boundary:** actual xiloader execution, its imported Visual C++ dependencies, authentication, character/world entry, game rendering/audio/controls, vendor prerequisite installers and failure/rollback behavior still need testing. The legacy source inventory's `runtimeTested=false` is not an initialization failure: the separate preparation receipt records the successful checks, and gameplay remains untested. Client version is still unknown because no readable `patch.ver` was found. No repeat of preparation or the open runtime probe is requested. See [the next milestone](HANDOFF.md).
 
 ---
 
