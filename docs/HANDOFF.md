@@ -1,13 +1,13 @@
-# Active implementation: in-app runtime probe 0.2.0 (2026-09-20)
+# Milestone 1 complete: in-app runtime probe 0.2.0 (2026-09-20)
 
 The user confirms **both imported FFXI data and a backup survive**, and authorized the first runtime milestone. Do not ask for them again or request a GameHub test. The current work implements a fresh, isolated runtime with an embedded display/audio/input path and an open x86 registry/COM/D3D8 probe. See [runtime-milestone-020.md](runtime-milestone-020.md) for setup, candidate choice, ownership boundaries and test interpretation.
 
 The first candidate is explicitly Wine 10 WoW64 / Box64 0.4.4, reused from the source-tracked TRASC runtime. This is not a claim that it recreates the captured Proton/FEX environment. FFXI registration, prerequisites and xiloader launch are not part of this probe build. The existing app import and backup are retained and not mounted by the runtime.
 
-Implementation is on the existing `codex/client-baseline` branch / draft PR #1. Implementation commit `e07f29c32a99cec2d26a5f39e3866ccc9369a24b` passed the APK, native Windows and ARM64 runtime gates in [run 35530166981](https://github.com/Russianranger/lsb-android/actions/runs/35530166981). The original-certificate 0.2.0 APK and exact evidence/limitations are recorded in [validation.md](validation.md). The pinned runtime release is published. Thor hardware, registry/COM, input and audible output are now confirmed; normal probe exit and relaunch still need device evidence. Preserve the existing LSB application ID and signing key. The runtime release mirrors only pinned open components/source archives after verification; it is separate from user client data.
+Implementation is on the existing `codex/client-baseline` branch / draft PR #1. Implementation commit `e07f29c32a99cec2d26a5f39e3866ccc9369a24b` passed the APK, native Windows and ARM64 runtime gates in [run 35530166981](https://github.com/Russianranger/lsb-android/actions/runs/35530166981). The original-certificate 0.2.0 APK and exact evidence/limitations are recorded in [validation.md](validation.md). The pinned runtime release is published. Thor hardware, registry/COM, input, audible output, explicit Stop, normal probe exit and relaunch are now confirmed. Milestone 1 is complete; proceed to transactional client initialization. Preserve the existing LSB application ID and signing key. The runtime release mirrors only pinned open components/source archives after verification; it is separate from user client data.
 
 
-## Thor device results (2026-09-20)
+## Initial Thor device results (2026-09-20)
 
 Reviewed the supplied `lsb-support(3).zip`, screenshot `Screenshot_20260920-140524.png`, and the user's report that the triangle and sound worked. The retained session is 0.2.0 on Android 13 / AYN Thor, from 19:01:07 to 19:05:57 UTC.
 
@@ -15,16 +15,29 @@ Reviewed the supplied `lsb-support(3).zip`, screenshot `Screenshot_20260920-1405
 - **Confirmed:** 32-bit registry round-trip and native test-DLL COM activation; `hresult=0`.
 - **Confirmed:** 9 key-down events and 8 pointer/button events reached the Windows probe. This proves key delivery, not complete text entry or gameplay/controller coverage.
 - **Confirmed:** four PCM streams with nonzero audio samples and the user's audible-tone report. Active tone portions have zero reported underruns; some short silent tail streams report one. Do not generalize this short test to sustained game audio stability.
-- **Confirmed:** requested Stop ended the supervisor with exit 0, `phase=stopped`, `alive=false`; display and audio closed. This is not a completed-probe receipt: `probe_exit` and `automatic_checks_passed` are absent, so do not claim normal Exit probe or relaunch has passed on-device. Only the latest session is retained in this bundle.
+- **Confirmed:** requested Stop ended the supervisor with exit 0, `phase=stopped`, `alive=false`; display and audio closed. This initial bundle was not a completed-probe receipt: `probe_exit` and `automatic_checks_passed` were absent. The subsequent lifecycle report below closes that gap.
 - **Confirmed:** `game_files_mounted=false`; current inventory still selects the installed `PlayOnlineViewer/viewer/com/polcore.dll`, with 66,322 imported files and a 32-bit xiloader. Inventory does not establish proprietary runtime compatibility.
 
 The probe intentionally uses a 40 ms draw timer (about 25 FPS). The screenshot's 25 FPS is not a measured FFXI performance ceiling. Its overlapping counter text comes from transparent DrawText on a non-erased invalidated area in `windows/runtime-probe.c`; clear the header rectangle before drawing in the next code build. This cosmetic issue does not invalidate the recorded input counters.
 
 Wine first-prefix setup logged OLE/RpcSs, driver setup and hostname warnings, but subsequently completed and the test COM activation succeeded. No fatal crash or failed HRESULT is shown in the retained probe. The display broken-pipe message coincides with shutdown, not an observed rendering failure. Keep these observations scoped to the open probe; no proprietary registration has been tested.
 
-**Remaining device acceptance:** Start checks, use **Exit probe**, start again, use **Exit probe** again, then export Diagnostics while the final completed session is still current. Explicit Stop is already evidenced and need not be repeated. Foreground/background resume remains unverified. Retain the existing prefix and renderer; do not request a reinstall, fresh prefix, re-import or GameHub test.
+## Lifecycle acceptance: milestone 1 closed (2026-09-20)
 
-**Next implementation milestone:** transactional POL/FFXI initialization against the surviving managed import, preserving its original payload and the tested runtime. The open-probe primitive checks are accepted; the complete lifecycle/device milestone is not yet closed.
+The user reports “exit and restart worked” and supplied `lsb-support (1).zip`. Both the previous and current runtime state records independently report `phase=completed`, `probe_exit=0`, `automatic_checks_passed=true`, verified hardware rendering, passing 32-bit registry/COM checks and HRESULT 0:
+
+| Session (UTC) | D3D8 frames | Result |
+| --- | ---: | --- |
+| 19:12:35–19:14:37 | 116 | Normal probe exit, checks passed |
+| 19:14:52–19:15:28 | 106 | Relaunch and normal probe exit, checks passed |
+
+The final Android state is `alive=false`, `starting=false`; the display and audio close after the probe completes. Both runs use the same Turnip 26 / Adreno 740 candidate. Game files remain unmounted. Input counts in these short lifecycle-only runs are zero; the earlier 9 key and 8 pointer/button events already establish input delivery and need not be retested.
+
+The second run logs `err:ole:start_rpcss Failed to start RpcSs service` despite passing the in-process test COM activation. Preserve this observation for real POL/FFXI initialization; the synthetic class does not test out-of-process COM or RpcSs behavior. Neither run reports a failed probe HRESULT or abnormal probe exit.
+
+**Accepted milestone:** independent Windows runtime, fresh-prefix execution, real hardware D3D8, registry, in-process COM, audible sound, input, explicit Stop and normal exit/relaunch. No more open-probe repetitions are required. Foreground/background resume, sustained gameplay stability and full controller/text input remain later device acceptance work, not completed claims.
+
+**Next implementation milestone:** transactional POL/FFXI initialization against the surviving managed import, preserving its original payload and the tested runtime. Revalidate the selected installed US POL core, create a separate working installation/staged prefix, record registration/prerequisite results and actual proprietary COM activation, and preserve rollback on failure. No FFXI launch compatibility is established yet. Retain the existing prefix and renderer; do not request a reinstall, fresh prefix, re-import or GameHub test.
 
 ---
 

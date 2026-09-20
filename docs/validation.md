@@ -15,11 +15,17 @@ Implementation commit `e07f29c32a99cec2d26a5f39e3866ccc9369a24b`. [Push verifica
 
 `lsb-support(3).zip` and `Screenshot_20260920-140524.png` confirm 0.2.0 execution on AYN Thor / Android 13. The retained run reports actual Turnip Adreno 740 / Mesa 26.0.0 hardware, DXVK 2.5.3 D3D8 mode, 2,000 presented frames, passing 32-bit registry and COM checks, HRESULT 0, 9 keyboard events and 8 pointer/button events. The user saw the triangle and heard sound; audio logs contain four nonzero PCM streams. The app's imported game files were not mounted.
 
-Requested Stop completed (`phase=stopped`, app exit 0, `alive=false`, display/audio closed). It does not establish normal probe exit: the session has no `probe_exit` or `automatic_checks_passed` receipt. No second retained session proves relaunch. Normal Exit probe followed by relaunch, and background/resume behavior, remain device acceptance items; the primitive hardware/input/audio checks have passed. See [HANDOFF.md](HANDOFF.md) for the exact evidence and next targeted check.
+Requested Stop completed (`phase=stopped`, app exit 0, `alive=false`, display/audio closed). That initial bundle did not establish normal probe exit; the later lifecycle bundle below provides both normal-exit receipts. See [HANDOFF.md](HANDOFF.md) for evidence and the next implementation milestone.
 
 The visible counter overlap is a probe paint defect: transparent drawing does not erase previous values. The 25 FPS screenshot matches the deliberate 40 ms probe timer and is not an FFXI performance result. First-prefix Wine warnings did not block this probe's registry/COM/render/audio results; they do not establish that proprietary initialization will succeed.
 
-**Pending:** normal on-device Exit probe/relaunch and foreground/background behavior; all proprietary POL/FFXI DLL registration and game execution. Preserve the tested prefix, imported data and backup. No GameHub transfer or repeated import is needed.
+## Normal exit/relaunch: milestone 1 accepted
+
+The follow-up `lsb-support (1).zip` retains two distinct, consecutive completed sessions (2026-09-20 19:12:35–19:14:37 and 19:14:52–19:15:28 UTC). Both have `probe_exit=0`, `automatic_checks_passed=true`, registry/COM true and HRESULT 0; D3D8 frame totals are 116 and 106. Both verify Adreno 740 / Turnip 26 hardware. The final app state is stopped, with audio/display closed. The user explicitly confirms exit and restart worked. Together with the earlier input/audio/rendering/Stop results, this completes the independent runtime milestone on the Thor.
+
+The second Wine run has an RpcSs service startup error, but the test's in-process COM activation and normal exit still pass. Carry that warning into proprietary COM/registration testing rather than claiming all COM service behavior is verified. Zero input counts in these lifecycle-only sessions do not supersede the earlier successful input test.
+
+**Pending subsequent work:** proprietary POL/FFXI DLL registration, initialization and game execution; foreground/background behavior, sustained stability and gameplay controls. Preserve the tested prefix, imported data and backup. No repeated open-probe test, GameHub transfer or repeated import is needed.
 
 ---
 
