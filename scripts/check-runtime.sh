@@ -21,7 +21,7 @@ for renderer in software turnip26; do
   -v "$PWD/out/runtime-test/backend:/opt/lsb:ro" \
   -v "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
   -v "$PWD/out/windows-tests:/fixtures:ro" -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" \
-  -v "$PWD/out/runtime-test/logs/$renderer:/logs" lsb-runtime:test sh -c 'python3 /tests/integration.py && if [ "$LSB_TEST_RENDERER" = software ]; then python3 /tests/initialization.py; fi'
+  -v "$PWD/out/runtime-test/logs/$renderer:/logs" lsb-runtime:test sh -c 'python3 /tests/integration.py && if [ "$LSB_TEST_RENDERER" = software ]; then python3 /tests/initialization.py && python3 /tests/launching.py; fi'
  done
 # Test the same rootfs through patched PRoot; no Android device is claimed by CI.
 sudo apt-get install -y build-essential libtalloc-dev gawk
@@ -43,4 +43,4 @@ PROOT_LOADER="$PWD/out/runtime-test/proot-src/src/loader/loader" PROOT_NO_SECCOM
  -b "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver" \
  -b "$PWD/out/runtime-test/probe:/probe" -b "$PWD/tests/runtime:/tests" -b "$PWD/out/windows-tests:/fixtures" \
  -b "$short/session:/session" -b "$short/prefix:/prefix" -b "$short/tmp:/tmp" -b "$PWD/out/runtime-test/proot-logs:/logs" \
- -w /probe /usr/bin/env -i HOME=/root USER=root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 TMPDIR=/tmp PYTHONUNBUFFERED=1 /bin/sh -c 'python3 /tests/integration.py && python3 /tests/initialization.py'
+ -w /probe /usr/bin/env -i HOME=/root USER=root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 TMPDIR=/tmp PYTHONUNBUFFERED=1 /bin/sh -c 'python3 /tests/integration.py && python3 /tests/initialization.py && python3 /tests/launching.py'

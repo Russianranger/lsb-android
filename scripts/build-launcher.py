@@ -16,10 +16,11 @@ assets = root/'out/launcher-assets'; assets.mkdir(parents=True, exist_ok=True)
 flags = ['-std=c11', '-Os', '-Wall', '-Wextra', '-Wno-misleading-indentation', '-static', '-static-libgcc', '-municode', '-mwindows', '-Wl,--no-insert-timestamp', '-s']
 libs = ['-luser32', '-ladvapi32', '-lshell32', '-lole32', '-luuid']
 def build(source, output, extra=()):
-    subprocess.run([cc, *flags, *extra, str(root/source), '-o', str(output), *libs], check=True)
+    subprocess.run([cc, *flags, str(root/source), *extra, '-o', str(output), *libs], check=True)
 build('windows/launcher.c', assets/'LSB-FFXI.exe')
 probes = root/'out/runtime-probes'; probes.mkdir(parents=True, exist_ok=True)
 build('windows/client-init.c', probes/'client-init.exe', ['-mconsole'])
+build('windows/client-launch.c', probes/'client-launch.exe', ['-mconsole'])
 build('windows/probe-com.c', probes/'probe-com.dll', ['-shared', '-Wl,--kill-at'])
 subprocess.run([cc, *flags, str(root/'windows/runtime-probe.c'), '-o', str(probes/'runtime-probe.exe'), *libs, '-ld3d8', '-lwinmm', '-luuid', '-lm'], check=True)
 if args.tests:
@@ -29,4 +30,7 @@ if args.tests:
     build('tests/windows/register-stub.c', tests/'register-stub.dll', ['-shared', '-Wl,--kill-at'])
     build('tests/windows/loader-stub.c', tests/'loader-stub.exe')
     build('tests/windows/prerequisite-stub.c', tests/'prerequisite-stub.exe')
+    build('tests/windows/login-stub.c', tests/'login-stub.exe', ['-mconsole'])
+    build('tests/windows/missing-dependency.c', tests/'lsb-missing-fixture.dll', ['-shared', '-Wl,--out-implib,'+str(tests/'libmissing.a')])
+    build('tests/windows/login-stub.c', tests/'login-missing.exe', ['-mconsole','-DMISSING_IMPORT','-L'+str(tests),'-lmissing'])
 print('Built', assets/'LSB-FFXI.exe')

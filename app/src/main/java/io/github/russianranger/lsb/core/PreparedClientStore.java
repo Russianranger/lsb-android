@@ -84,6 +84,27 @@ public final class PreparedClientStore {
         if(!source.inventory.equals(copied.inventory))throw new IOException("Working copy did not match source inventory");
         FilesEx.text(new File(gen,"copy-complete"),"1\n");return gen;
     }
+    /** Repair the activated generation, preserving its user files as well as the prefix. */
+    public File stageRepair(SafeZip.Progress progress)throws Exception {
+        File existing=selected("candidate");
+        if(existing!=null){
+            Properties m=metadata(existing);
+            File active=selected("current");
+            if(active==null||!active.getName().equals(m.getProperty("repairOf")))throw new IOException("Discard the unrelated staged preparation before repairing this launcher");
+            if(complete(existing))return existing;
+            discard();
+        }
+        File current=selected("current");
+        if(!complete(current)||!new File(current,"initialization-passed.json").isFile())throw new IOException("Prepare the client first");
+        long bytes=Math.addExact(size(new File(current,"client"),false,0),size(new File(current,"prefix"),true,0));
+        if(home.getUsableSpace()<bytes+2L*1073741824L)throw new IOException("Repair needs space for a full recovery copy ("+((bytes+3L*1073741824L-1)/1073741824L)+" GiB)");
+        File gen=generation(UUID.randomUUID().toString());FilesEx.mkdir(gen);
+        Properties m=metadata(current);m.setProperty("generation",gen.getName());m.setProperty("repairOf",current.getName());save(new File(gen,"metadata.properties"),m);
+        Properties s=state();s.setProperty("candidate",gen.getName());save(new File(home,"state.properties"),s);
+        Files.copy(new File(current,"source-inventory.json").toPath(),new File(gen,"source-inventory.json").toPath());
+        Copier copier=new Copier(bytes,progress);copier.copy(new File(current,"client"),new File(gen,"client"),false,0);copier.copy(new File(current,"prefix"),new File(gen,"prefix"),true,0);
+        FilesEx.text(new File(gen,"copy-complete"),"1\n");return gen;
+    }
     public void promote(File gen) throws IOException {
         Properties state=state();String id=gen.getName();
         if(!id.equals(state.getProperty("candidate"))||!complete(gen)||!new File(gen,"initialization-passed.json").isFile())throw new IOException("Candidate is not validated");

@@ -34,7 +34,7 @@ class ClientContract(unittest.TestCase):
         sup=importlib.util.module_from_spec(spec);spec.loader.exec_module(sup)
         req={'format':1,'session_id':'0'*36,'renderer':'turnip26','audio':True,'action':'initialize'}
         self.assertEqual(sup.validate_request(req),req)
-        for extra in [{'action':'launch'},{'command':'anything'},{'client':'/original'},{'password':'x'}]:
+        for extra in [{'action':'arbitrary-command'},{'command':'anything'},{'client':'/original'},{'password':'x'}]:
             with self.assertRaises(ValueError):sup.validate_request(dict(req,**extra))
 
 

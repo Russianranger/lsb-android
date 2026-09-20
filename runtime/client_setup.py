@@ -124,7 +124,7 @@ def initialize(supervisor):
         supervisor.status(initialization=report)
     record()
     try:
-        if supervisor.req.get('action') == 'installer':
+        if supervisor.req.get('action') in ('installer','repair-launcher'):
             installer = Path('/session/prerequisite.exe')
             h = hashlib.sha256()
             with installer.open('rb') as f:

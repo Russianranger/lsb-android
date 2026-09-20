@@ -47,20 +47,39 @@ def verify_bundle(folder):
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
     if set(req)-{'format','renderer','audio','session_id','action'}:raise ValueError('Unexpected runtime request field')
-    if req.get('action','probe') not in ('probe','initialize','installer'):raise ValueError('Unsupported runtime action')
+    if req.get('action','probe') not in ('probe','initialize','installer','launch','check-launcher','repair-launcher'):raise ValueError('Unsupported runtime action')
     if not isinstance(req.get('audio'),bool):raise ValueError('Invalid audio setting')
     if not isinstance(req.get('session_id'),str) or len(req['session_id'])!=36:raise ValueError('Missing session identity')
     return req
 
 
+class PrivateEvents:
+    """During login, arbitrary child text is never retained. Only fixed event names
+    are emitted, including when credentials are quoted, split, ANSI or UTF-16."""
+    TOKENS={b'failed to connect':b'connection_failed',b'failed to initialize connection':b'connection_failed',
+            b'logged in':b'login_message_seen',b'login successful':b'login_message_seen',
+            b'incorrect password':b'login_rejected',b'invalid password':b'login_rejected',
+            b'failed to login':b'login_rejected',b'failed to log in':b'login_rejected',
+            b'polcore':b'pol_message_seen',b'ffximain':b'ffxi_module_message_seen',
+            b'launching final fantasy':b'game_launch_message_seen',b'unhandled exception':b'windows_exception',
+            b'err:module:import_dll':b'dll_import_error'}
+    def __init__(self):self.tail=b'';self.seen=set()
+    def feed(self,chunk):
+        data=(self.tail+chunk).lower();self.tail=data[-80:];out=[]
+        for token,event in self.TOKENS.items():
+            if token in data and event not in self.seen:self.seen.add(event);out.append(event)
+        return b''.join(event+b'\n' for event in out)
+
+
 class BoundedLog:
-    def __init__(self,path):self.path=path;self.thread=None
+    def __init__(self,path,private=lambda:False):self.path=path;self.thread=None;self.private=private
     def pump(self,stream):
-        limit=2*1024*1024;written=0
+        limit=2*1024*1024;written=0;events=PrivateEvents()
         with self.path.open('wb') as out:
             while True:
                 chunk=stream.read1(32768)
                 if not chunk:break
+                if self.private():chunk=events.feed(chunk)
                 if written+len(chunk)>limit:
                     out.flush();shutil.copyfile(self.path,self.path.with_suffix('.previous.log'));out.seek(0);out.truncate();written=0
                 out.write(chunk);out.flush();written+=len(chunk)
@@ -74,7 +93,7 @@ class Stopped(Exception):pass
 
 class Supervisor:
     def __init__(self,req):
-        self.req=validate_request(req);self.children=[];self.logs=[]
+        self.req=validate_request(req);self.children=[];self.logs=[];self.private_output=False
         self.state={'format':1,'phase':'starting','session_id':req['session_id'],'runtime_candidate':'Wine 10 WoW64 / Box64 0.4.4','renderer_requested':req['renderer'],'started_at':time.time(),'game_files_mounted':req.get('action','probe')!='probe','action':req.get('action','probe')}
         self.env=dict(os.environ,HOME='/root',USER='root',DISPLAY=':7',XAUTHORITY=str(SESSION/'Xauthority'),
             WINEPREFIX=str(PREFIX),WINEARCH='win64',WINEDEBUG='-all,+timestamp,+pid,err+all,trace+loaddll',
@@ -88,9 +107,9 @@ class Supervisor:
         self.state.update(fields);atomic(SESSION/'status.json',self.state);atomic(LOGS/'runtime-state.json',self.state)
     def stopped(self):
         if STOP or (SESSION/'stop').exists():raise Stopped()
-    def spawn(self,args,name,env=None):
-        proc=subprocess.Popen(args,env=env or self.env,cwd=PROBE,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
-        writer=BoundedLog(LOGS/name);writer.start(proc.stdout);self.logs.append(writer);self.children.append(proc);return proc
+    def spawn(self,args,name,env=None,pipe_input=False):
+        proc=subprocess.Popen(args,env=env or self.env,cwd=PROBE,stdin=subprocess.PIPE if pipe_input else subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+        writer=BoundedLog(LOGS/name,lambda:self.private_output);writer.start(proc.stdout);self.logs.append(writer);self.children.append(proc);return proc
     def wait(self,proc,timeout,label,accepted=(0,)):
         deadline=time.monotonic()+timeout
         while proc.poll() is None:
@@ -168,10 +187,19 @@ class Supervisor:
             for name in ('d3d8','d3d9'):
                 dest=PREFIX/'drive_c/windows/syswow64'/(name+'.dll')
                 tmp=dest.with_suffix('.lsb-new');shutil.copyfile(BUNDLE/('dxvk-'+name+'.dll'),tmp);tmp.replace(dest)
+        if self.req.get('action') in ('launch','check-launcher'):
+            from client_launch import check, run
+            self.status(prefix_system_files_verified=True)
+            if self.req['action']=='launch':run(self,x)
+            else:check(self);self.status('completed')
+            return
         if self.req.get('action','probe')!='probe':
             self.status('initializing_client',prefix_system_files_verified=True)
             from client_setup import initialize
             initialize(self)
+            if self.req['action']=='repair-launcher':
+                from client_launch import check
+                check(self);self.status('completed')
             atomic(marker,signature)
             return
         self.status('starting_probe',prefix_system_files_verified=True)
@@ -217,8 +245,12 @@ def main():
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     s=Supervisor(json.loads((SESSION/'request.json').read_text()))
     try:s.start()
-    except Stopped:s.status('stopped')
-    except Exception as e:s.status('error',error=str(e));raise
+    except Stopped:
+        from client_launch import finish_report
+        finish_report(s,'stopped');s.status('stopped')
+    except Exception as e:
+        from client_launch import finish_report
+        finish_report(s,'error');s.status('error',error=str(e));raise
     finally:s.stop()
 
 if __name__=='__main__':main()

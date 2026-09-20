@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipOutputStream;
 import io.github.russianranger.lsb.core.*;
 
-/** Owns runtime generations. Reads the import only while copying; Wine binds only a candidate. */
+/** Owns runtime generations. Wine binds only a working client, never the original import. */
 final class ClientRuntime {
     static final String RUNTIME_SHA="08c639c26506dc6fbd15464bec475337087bb23cb7c0c5ace2db5240ee36424f";
     static final String URL="https://github.com/Russianranger/lsb-android/releases/download/runtime-probe-v1/runtime-arm64.tar.gz";
@@ -66,6 +66,7 @@ final class ClientRuntime {
             JSONObject entry=new JSONObject().put("generation",gen.getName()).put("copy_complete",store.complete(gen));
             Properties meta=store.metadata(gen);entry.put("region",meta.getProperty("region","")).put("files",meta.getProperty("files",""));
             File result=new File(gen,"last-result.json");if(result.isFile())entry.put("last_result",new JSONObject(read(result,262144)));
+            File launch=new File(gen,"last-launch.json");if(launch.isFile())entry.put("last_launch",new JSONObject(read(launch,262144)));
             out.put(kind,entry);
         }
         out.put("prerequisite_selected",new File(home,"prerequisite.exe").isFile());return out;
@@ -78,12 +79,12 @@ final class ClientRuntime {
     }
     synchronized String importPrerequisite(InputStream input)throws Exception {
         if(alive())throw new IOException("Stop initialization first");
-        PreparedClientStore s=prepared();if(!s.complete(s.selected("candidate")))throw new IOException("Prepare the imported client first. A prerequisite can be added to its staged copy if checks fail.");
+        PreparedClientStore s=prepared();if(!s.complete(s.selected("candidate"))&&!s.complete(s.selected("current")))throw new IOException("Prepare the imported client first");
         File temp=new File(home,"prerequisite.new");long count=0;
         try {
             try(OutputStream out=new FileOutputStream(temp)) {byte[] b=new byte[65536];int n;while((n=input.read(b))!=-1){interrupted();count+=n;if(count>512L*1048576)throw new IOException("Prerequisite installer exceeds 512 MiB");out.write(b,0,n);}}
             ClientInspector.requireX86(temp);Files.move(temp.toPath(),new File(home,"prerequisite.exe").toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
-            return "x86 prerequisite installer selected. Use Run prerequisite and retry checks to open it in the staged environment.";
+            return "x86 prerequisite installer selected. Use the appropriate repair action to run it in a separate staged environment.";
         }finally{temp.delete();}
     }
     private JSONObject clientManifest(File gen)throws Exception {
@@ -108,6 +109,19 @@ final class ClientRuntime {
         write(new File(gen,"last-result.json"),data.toString(2));
         File attempts=new File(gen,"attempts");attempts.mkdirs();write(new File(attempts,sessionId+".json"),data.toString(2));
         File[] prior=attempts.listFiles();if(prior!=null&&prior.length>20){Arrays.sort(prior,Comparator.comparingLong(File::lastModified));for(int i=0;i<prior.length-20;i++)prior[i].delete();}
+    }
+    private File launchGeneration()throws Exception {
+        PreparedClientStore s=prepared();File current=s.selected("current");
+        if(!s.complete(current))throw new IOException("Prepare the imported client first");
+        JSONObject receipt=new JSONObject(read(new File(current,"initialization-passed.json"),262144));
+        if(!"passed".equals(receipt.optString("status"))||!current.getName().equals(receipt.optString("generation")))throw new IOException("Prepared client receipt is invalid");
+        return current;
+    }
+    private void retainLaunch(File gen)throws Exception {
+        File result=new File(logs,"client-launch.json");if(gen==null||!result.isFile())return;
+        JSONObject data=new JSONObject(read(result,262144));
+        if(!gen.getName().equals(data.optString("generation"))||!sessionId.equals(data.optString("session_id")))return;
+        write(new File(gen,"last-launch.json"),data.toString(2));
     }
     private List<Integer> ownedProcesses(){
         List<Integer> found=new ArrayList<>();File[] proc=new File("/proc").listFiles();if(proc==null)return found;
@@ -155,7 +169,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.3.0");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.4.0");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -179,16 +193,18 @@ final class ClientRuntime {
     private void assets()throws Exception {
         backend.mkdirs();probes.mkdirs();
         for(String name:context.getAssets().list("runtime")){
-            File dest=new File(name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")?probes:backend,name);
+            File dest=new File(name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")?probes:backend,name);
             try(InputStream in=context.getAssets().open("runtime/"+name);OutputStream out=new FileOutputStream(dest)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
             if(name.equals("vulkan-probe")||name.equals("wineserver"))Os.chmod(dest.getPath(),0700);
         }
     }
-    void run(String renderer,boolean sound,String action)throws Exception {
-        boolean initialize=!"probe".equals(action);File candidate=null;File selectedPrefix=prefix;
+    void run(String renderer,boolean sound,String action,LoginRequest login)throws Exception {
+        boolean initialize=Arrays.asList("initialize","installer","repair-launcher").contains(action),clientOperation=!"probe".equals(action);
+        File candidate=null;File selectedPrefix=prefix;
         synchronized(WorkService.class){synchronized(this){if(alive()||WorkService.busy)throw new IOException("Wait for the current operation");active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();}}
         try{
-            if(!Arrays.asList("probe","initialize","installer").contains(action))throw new IOException("Unsupported runtime action");
+            if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher").contains(action))throw new IOException("Unsupported runtime action");
+            if(action.equals("launch")&&login==null)throw new IOException("Enter account and password again to launch");
             if(!installed()||!read(new File(root,"lsb-runtime.sha256"),128).equals(RUNTIME_SHA))throw new IOException("Install the pinned runtime first");
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");
             reapOrphans();
@@ -201,13 +217,18 @@ final class ClientRuntime {
                 PreparedClientStore s=prepared();File active=s.selected("current");
                 if(action.equals("installer")&&(!s.complete(s.selected("candidate"))||!new File(home,"prerequisite.exe").isFile()))throw new IOException("Select a prerequisite for a staged preparation first");
                 status="Validating import and preparing an isolated working copy…";
-                candidate=s.prepare(MainActivity.store(context),active==null?prefix:new File(active,"prefix"),text->status=text);
+                if(action.equals("repair-launcher")){
+                    if(!new File(home,"prerequisite.exe").isFile())throw new IOException("Select an official x86 prerequisite installer first");
+                    candidate=s.stageRepair(text->status=text);
+                }else candidate=s.prepare(MainActivity.store(context),active==null?prefix:new File(active,"prefix"),text->status=text);
                 selectedPrefix=new File(candidate,"prefix");
+            }else if(clientOperation){
+                candidate=launchGeneration();selectedPrefix=new File(candidate,"prefix");status="Checking the prepared client…";
             }
             interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");
-            if(initialize){
+            if(clientOperation){
                 write(new File(run,"client-manifest.json"),clientManifest(candidate).toString(2));
-                if(action.equals("installer"))Files.copy(new File(home,"prerequisite.exe").toPath(),new File(run,"prerequisite.exe").toPath());
+                if(action.equals("installer")||action.equals("repair-launcher"))Files.copy(new File(home,"prerequisite.exe").toPath(),new File(run,"prerequisite.exe").toPath());
             }
             new File(root,"client").mkdirs();
             if(sound)audio=AudioBridge.start(context,new File(run,"audio.sock"),new File(logs,"audio.log"));
@@ -218,26 +239,30 @@ final class ClientRuntime {
                 "-b",new File(backend,"wineserver").getPath()+":/opt/wine/bin/wineserver","-w","/probe",
                 "/usr/bin/env","-i","HOME=/root","USER=root","PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","LANG=C.UTF-8","TMPDIR=/tmp","PYTHONUNBUFFERED=1",
                 "LSB_RUNTIME_OWNER="+home.getPath(),"/usr/bin/python3","/opt/lsb/supervisor.py"));
-            if(initialize)command.addAll(command.indexOf("-w"),Arrays.asList("-b",new File(candidate,"client").getPath()+":/client"));
+            if(clientOperation)command.addAll(command.indexOf("-w"),Arrays.asList("-b",new File(candidate,"client").getPath()+":/client"));
             ProcessBuilder pb=new ProcessBuilder(command);pb.environment().put("PROOT_LOADER",new File(nativeDir,"libproot-loader.so").getPath());
             pb.environment().put("PROOT_TMP_DIR",tmp.getPath());pb.environment().put("PROOT_NO_SECCOMP","1");pb.environment().put("LSB_RUNTIME_OWNER",home.getPath());
             pb.redirectErrorStream(true);pb.redirectOutput(new File(logs,"proot.log"));
             interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");
             process=pb.start();starting=false;preparingThread=null;
+            try(OutputStream input=process.getOutputStream()){if(action.equals("launch"))login.send(input);}
             if(stopRequested)write(new File(run,"stop"),"stop\n");status=initialize?"Initializing working client. Open the display for installer prompts.":"Starting Windows checks. Open the display to follow progress.";
             while(!process.waitFor(1,TimeUnit.SECONDS)){
                 if(new File(run,"status.json").isFile())try{JSONObject s=new JSONObject(read(new File(run,"status.json"),131072));status=s.optString("error",s.optString("phase",status)).replace('_',' ');}catch(Exception ignored){}
             }
             JSONObject finalState=state().optJSONObject("launch");
             if(initialize)retainInitialization(candidate);
+            if(clientOperation)retainLaunch(candidate);
             if(finalState!=null&&finalState.optString("phase").equals("completed")&&process.exitValue()==0&&!stopRequested){
                 if(initialize){
                     JSONObject report=finalState.getJSONObject("initialization");
                     if(!report.optString("status").equals("passed")||!candidate.getName().equals(report.optString("generation"))||!sessionId.equals(report.optString("session_id")))throw new IOException("Initialization receipt does not match candidate");
                     // Wine and all owned children must be stopped before atomically switching both paths.
                     reapOrphans();write(new File(candidate,"initialization-passed.json"),report.toString(2));prepared().promote(candidate);
-                    status="Client registration and COM checks passed. Prepared copy activated; login is the next milestone.";
-                }else status="Automatic checks passed. Confirm picture, sound and input, then relaunch.";
+                    status="Client checks passed. Prepared copy activated and ready for launch.";
+                }else if(action.equals("check-launcher"))status="Loader dependencies passed. Enter your account and choose Launch FFXI.";
+                else if(action.equals("launch"))status="Client closed normally. Export Diagnostics and report whether login and world entry worked.";
+                else status="Automatic checks passed. Confirm picture, sound and input, then relaunch.";
             }
             else if(finalState!=null&&finalState.has("error"))status=finalState.getString("error");
             else status="Runtime stopped (exit "+process.exitValue()+"). Export Diagnostics if unexpected.";
@@ -249,6 +274,7 @@ final class ClientRuntime {
             }catch(Exception ignored){}
             throw error;
         }finally{
+            if(login!=null)login.close();
             preparingThread=null;Thread.interrupted();
             if(process!=null&&process.isAlive()){process.destroy();if(!process.waitFor(5,TimeUnit.SECONDS)){process.destroyForcibly();process.waitFor(5,TimeUnit.SECONDS);}}
             try{reapOrphans();}finally{if(audio!=null){audio.close();audio=null;}process=null;starting=false;active=false;}
@@ -264,7 +290,7 @@ final class ClientRuntime {
         PreparedClientStore ps=prepared();
         for(String kind:new String[]{"current","previous","candidate"}){
             File gen=ps.selected(kind);if(gen==null)continue;
-            for(String name:new String[]{"source-inventory.json","last-result.json","initialization-passed.json"}){
+            for(String name:new String[]{"source-inventory.json","last-result.json","initialization-passed.json","last-launch.json"}){
                 File f=new File(gen,name);if(f.isFile())SafeZip.entry(zip,"prepared/"+kind+"/"+name,read(f,262144));
             }
             File[] attempts=new File(gen,"attempts").listFiles();if(attempts!=null)for(File f:attempts)if(f.isFile())SafeZip.entry(zip,"prepared/"+kind+"/attempts/"+f.getName(),read(f,262144));

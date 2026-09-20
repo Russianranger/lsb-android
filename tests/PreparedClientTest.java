@@ -32,6 +32,12 @@ public final class PreparedClientTest {
         File retried=reopened.prepare(imported,seed,CoreTest.QUIET);
         CoreTest.ok(reopened.complete(retried)&&reopened.selected("current").equals(a),"recover interrupted copy after store recreation");
         reopened.discard();CoreTest.ok(reopened.selected("candidate")==null&&reopened.selected("current").equals(a)&&imported.hasClient(),"discard only candidate, following no prefix links");
+        File repair=reopened.stageRepair(CoreTest.QUIET);
+        CoreTest.ok(FilesEx.read(new File(repair,"client/"+PreparedClientStore.relative(working.root,working.game)+"/USER/settings"),100).equals("working settings"),"prerequisite repair retains current user settings rather than recopying import");
+        CoreTest.ok(reopened.stageRepair(CoreTest.QUIET).equals(repair)&&reopened.selected("current").equals(a),"retry repair reuses candidate and preserves accepted generation");
+        FilesEx.text(new File(repair,"prefix/user.reg"),"installer changes");
+        CoreTest.ok(FilesEx.read(new File(a,"prefix/user.reg"),100).equals("working hive"),"prerequisite repair cannot modify active prefix");
+        reopened.discard();
         CoreTest.fails(()->reopened.generation("../imported"),"reject generation traversal");
         File external=new File(home,"external");FilesEx.text(external,"keep");
         Files.createSymbolicLink(new File(imported.client(),"escape").toPath(),external.toPath());
