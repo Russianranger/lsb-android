@@ -1,3 +1,20 @@
+# 0.2.0 runtime probe verification (2026-09-20)
+
+Implementation commit `e07f29c32a99cec2d26a5f39e3866ccc9369a24b`. [Push verification run 35530166981](https://github.com/Russianranger/lsb-android/actions/runs/35530166981) passed APK/core checks, native Windows tests and the ARM64 runtime job. The release publication job follows those gates.
+
+- 90 JVM import/recovery checks pass; three runtime contract tests check request isolation, bounded logging and missing component inventory rejection.
+- The existing native Windows helper checks pass with synthetic DLLs.
+- Real x86 Windows probe runs under ARM64 Wine/Box64: registry round-trip, in-process COM registration/activation, rendered D3D8 triangle pixels, RFB keyboard and mouse input, nonzero audio PCM and a clean exit. Both fresh and reused prefixes pass.
+- Software rendering and DXVK 2.5.3 D3D8+D3D9 pass. CI's Vulkan adapter is explicitly Lavapipe; this is not evidence of a physical Adreno/Turnip run.
+- The actual APK tar extractor installs the pinned rootfs on the ARM64 host, and the patched PRoot route passes the software probe twice plus explicit stop. Direct3D8/Vulkan inside Android remains a device acceptance item.
+- An initial DXVK failure showed black pixels despite successful Present calls. Changing the test surface from a child STATIC to an owned top-level window fixed the presentation path. The pixel assertion remains mandatory.
+- Device APK: `LSB-Android-0.2.0.apk`, **7,636,621 bytes**, SHA-256 `cb2528fa59813fe7730b245f446af0b2b42d22ba583239b467acee334d47f0b9`. Application ID `io.github.russianranger.lsb`, version code 5, minSdk 26, target/compileSdk 35. apksigner verifies v2/v3 with the original certificate `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+- APK inspection verifies ARM64 PRoot executables, x86 probe/COM/DXVK DLLs, the packaged supervisor source and component digests. Runtime files remain separate from managed client data.
+
+**Pending:** Thor install/execution, real Turnip rendering, audible sound, physical input, foreground/background behavior and device relaunch. No proprietary POL/FFXI DLL or game execution has been tested. The user retains the imported client and a backup. Follow [the device test](runtime-milestone-020.md); do not request another GameHub transfer or claim the first milestone is device-accepted yet.
+
+---
+
 # GameHub executable entry point 0.1.3 validation
 
 - Adds a Windows GUI executable because GameHub could not open the exported CMD recipes in the user's setup.
