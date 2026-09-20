@@ -37,9 +37,12 @@ These package labels do not identify the exact Microsoft/Wine DLL builds. A list
 - The user reports installing PlayOnline and FFXI to initialize registry state, then replacing both installed directories with updated contents.
 - Bootloader initialization required additional work.
 - Prior user context identifies GameHub Lite 5.3.3 and xiloader v2.0 CLI autologin.
-- The requested personal-context search was performed. It returned our recent feasibility assessment, not the original successful setup transcript. **No exact historic repair/autologin command or error transcript was recovered.**
+- The initial personal-context search returned the recent feasibility assessment, not the original successful setup transcript.
+- A follow-up search on 2026-09-20 recovered a prior user report dated 2026-01-05: install Gecko, VC++ 2015-2022 and Mono; run the official PlayOnline/FFXI/DirectX installers inside the container to create installation state; replace the PlayOnlineViewer and FFXI payloads with a fully PlayOnline-updated backup. This is recovered conversation evidence, not a fresh device trace or a complete verified component order.
+- That report identifies xiloader 2.0 and the working argument shape `--server 127.0.0.1 --username <account> --password <secret>` because interactive terminal login was unreliable. No credential values were retrieved or stored. The future in-app UI must support account entry without requiring a terminal. The exact successful executable hash and complete invocation/environment remain unverified.
+- On 2026-09-20 the user reported that transferring files corrupted the GameHub Lite container. The external client is unavailable; Termux's LandSandBoat server survives. There are no corruption logs establishing the cause. Do not require the user to reconstruct GameHub before continuing.
 
-Still needed: translator preset internals, component installation order, exact successful bootloader command, DLL overrides not visible in the screenshots, DLL hashes and a successful launch log. The current repair recipe is a new source-derived proposal, not a claim to reproduce a recovered command.
+Still needed: translator preset internals, complete component installation order, exact bootloader binary/environment, DLL overrides not visible in the screenshots, runtime DLL hashes and a successful in-app launch log. Support bundles identified imported game/loader hashes, but do not prove those files launched. The current repair recipe is a new source-derived proposal, not a claim to reproduce a recovered command. See [current handoff](HANDOFF.md) for the fresh-container path.
 
 ## Source findings used for the baseline
 

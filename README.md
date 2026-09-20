@@ -2,7 +2,9 @@
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
 
-**0.1.3 is an installable preparation and recovery baseline. It does not yet run FFXI inside the app or compile/start LandSandBoat.** The exported Windows scripts are intended for the user's already-working GameHub environment. Their successful execution on the Thor has not yet been verified.
+**Current direction (2026-09-20): build a fresh client environment inside LSB Android.** The user reports that transferring files corrupted the GameHub Lite container; there is no longer a working external client available for comparison. The LandSandBoat server still works in Termux. The next milestone must not depend on repairing, importing or testing against that GameHub container. See [current handoff and in-app client plan](docs/HANDOFF.md).
+
+**0.1.3 is still an installable preparation and recovery baseline. It does not yet run FFXI inside the app or compile/start LandSandBoat.** Its exports and repair helper remain available, but their GameHub test procedure below is historical, not the next requested device test. The reported container corruption has not been diagnosed; do not attribute it to a specific file or registry operation without evidence.
 
 ## Available in 0.1.3
 
@@ -19,7 +21,9 @@ Client-first Android companion for a future self-contained LandSandBoat / Final 
 - Server-source staging from a GitHub repository/ref (resolved to a commit before download), or offline ZIP. Missing mesh submodule contents are reported.
 - TCP reachability checks of the saved existing server. These do not prove successful authentication or map/UDP readiness.
 
-## First Thor test
+## Historical 0.1.3 preparation procedure
+
+The GameHub-dependent steps in this section are superseded by the [fresh in-app client milestone](docs/HANDOFF.md). Import, inspection and session backup remain useful if the app-owned files or original ZIP survive. Do not uninstall or clear LSB Android to start this migration.
 
 1. Install `LSB-Android-0.1.3.apk`. No root or Termux permission is requested.
 2. Check **Profile** against the working GameHub settings.
@@ -61,9 +65,9 @@ Host tests use synthetic PE fixtures, not proprietary game files. They cover arc
 
 ## Next milestones
 
-1. Qualify this import/preparation/recovery baseline against the real installation and collect the missing historical initialization details.
-2. Select a source-complete runtime foundation that can reproduce `proton10.0-arm64x-2` + `Fex-20251029`; prototype Wine initialization, x86 COM probing and the display/input/audio bridge in-app.
-3. Reach character selection, world entry, zoning, logout/relaunch and controller operation using the existing server.
+1. Build an app-owned runtime and fresh Windows prefix with in-app display/input/audio. Use open x86 registry/COM, Direct3D 8 and process-lifecycle probes before relying on proprietary client files. Keep the captured Proton/FEX setup as historical evidence; a different runtime is a new compatibility candidate, not an equivalent preset.
+2. Validate any surviving app import or client ZIP, then initialize PlayOnline/FFXI registration and dependencies in a staged prefix. Support official installers inside the app when reconstruction requires them. Preserve a stopped, usable environment before activation or repair.
+3. Provide native account entry for the established xiloader 2.0 autologin flow, then reach character selection, world entry, zoning, logout/relaunch and controller operation against the existing Termux server. Exclude credentials from diagnostics and normal configuration exports.
 4. Add a packaged ARM64 server environment, MariaDB import/migrations, mesh import, foreground process supervision and controlled shutdown.
 5. Add the isolated server compiler/toolchain and coordinated updates/rollback. Source, loader, runtime, client and database revisions must remain separately identifiable.
 
