@@ -41,10 +41,12 @@ def check(s):
     manifest=json.loads(Path('/session/client-manifest.json').read_text())
     imports=validate_manifest(manifest)
     if not manifest['loader']: raise ValueError('Prepared client has no xiloader; import a loader and prepare that installation')
-    loader=client_path(manifest['loader']);flags=cli_flags(loader)
+    loader=client_path(manifest['loader'])
     report={'format':1,'session_id':s.req['session_id'],'generation':manifest['generation'],
             'status':'checking','loader':manifest['loader'],'loader_sha256':manifest['key_files'][manifest['loader']],
-            'region':manifest['region'],'cli_flags':flags,'authentication_verified':False,'world_entry_verified':False}
+            'region':manifest['region'],'cli_flags':[],'authentication_verified':False,'world_entry_verified':False}
+    record(s,report)
+    flags=cli_flags(loader);report['cli_flags']=flags
     record(s,report);s.status('checking_loader_dependencies')
     result=Path('/session/loader-check.json');result.unlink(missing_ok=True)
     dependencies=imports[manifest['loader']]

@@ -5,18 +5,21 @@
 #include <windows.h>
 #include <stdio.h>
 #include <wchar.h>
+#include <string.h>
 #ifdef MISSING_IMPORT
 __declspec(dllimport) int missing_fixture(void);
 #endif
-int wmain(int argc,WCHAR **argv){
+int wmain(int argc,WCHAR **wide){
 #ifdef MISSING_IMPORT
     if(missing_fixture()!=1)return 98;
 #endif
+    char values[16][1024];char *argv[16];if(argc>16)return 94;
+    for(int i=0;i<argc;i++){if(!WideCharToMultiByte(CP_UTF8,0,wide[i],-1,values[i],1024,NULL,NULL))return 94;argv[i]=values[i];}
     const WCHAR *user=L"LSB_private_account",*pass=L"LSB \"quoted\" & % ! \\ tail\\";
     WCHAR cwd[1024];GetCurrentDirectoryW(1024,cwd);
-    BOOL good=argc==9&&!wcscmp(argv[1],L"--server")&&!wcscmp(argv[2],L"127.0.0.1")&&
-        !wcscmp(argv[3],L"--username")&&!wcscmp(argv[4],user)&&!wcscmp(argv[5],L"--password")&&!wcscmp(argv[6],pass)&&
-        !wcscmp(argv[7],L"--lang")&&!wcscmp(argv[8],L"1")&&!wcscmp(cwd,L"D:\\FINAL FANTASY XI\\boot loader");
+    BOOL good=argc==9&&!strcmp(argv[1],"--server")&&!strcmp(argv[2],"127.0.0.1")&&
+        !strcmp(argv[3],"--username")&&!strcmp(argv[4],"LSB_private_account")&&!strcmp(argv[5],"--password")&&!strcmp(argv[6],"LSB \"quoted\" & % ! \\ tail\\")&&
+        !strcmp(argv[7],"--lang")&&!strcmp(argv[8],"1")&&!wcscmp(cwd,L"D:\\FINAL FANTASY XI\\boot loader");
     FILE *f=_wfopen(L"Z:\\session\\login-fixture.json",L"wb");if(!f)return 95;
     fprintf(f,"{\"arguments_and_cwd_match\":%s}\n",good?"true":"false");fclose(f);
     /* Deliberately hostile output shapes must never reach persisted launch logs. */

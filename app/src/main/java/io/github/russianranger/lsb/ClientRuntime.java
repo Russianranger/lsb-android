@@ -35,6 +35,7 @@ final class ClientRuntime {
         context=c;home=new File(c.getFilesDir(),"rt");root=new File(home,"root");prefix=new File(home,"prefix");
         run=new File(home,"run");tmp=new File(home,"tmp");logs=new File(home,"logs");backend=new File(home,"backend");probes=new File(home,"probe");
         for(File f:new File[]{home,run,tmp,logs})f.mkdirs();
+        if(installed())status="Runtime installed. Use the Client tab for your prepared installation.";
     }
     boolean installed(){return new File(root,"lsb-runtime.sha256").isFile();}
     boolean alive(){Process p=process;return active||starting||(p!=null&&p.isAlive());}
@@ -65,6 +66,7 @@ final class ClientRuntime {
             File gen=store.selected(kind);if(gen==null)continue;
             JSONObject entry=new JSONObject().put("generation",gen.getName()).put("copy_complete",store.complete(gen));
             Properties meta=store.metadata(gen);entry.put("region",meta.getProperty("region","")).put("files",meta.getProperty("files",""));
+            if(meta.containsKey("repairOf"))entry.put("repair_of",meta.getProperty("repairOf"));
             File result=new File(gen,"last-result.json");if(result.isFile())entry.put("last_result",new JSONObject(read(result,262144)));
             File launch=new File(gen,"last-launch.json");if(launch.isFile())entry.put("last_launch",new JSONObject(read(launch,262144)));
             out.put(kind,entry);
@@ -242,11 +244,13 @@ final class ClientRuntime {
             if(clientOperation)command.addAll(command.indexOf("-w"),Arrays.asList("-b",new File(candidate,"client").getPath()+":/client"));
             ProcessBuilder pb=new ProcessBuilder(command);pb.environment().put("PROOT_LOADER",new File(nativeDir,"libproot-loader.so").getPath());
             pb.environment().put("PROOT_TMP_DIR",tmp.getPath());pb.environment().put("PROOT_NO_SECCOMP","1");pb.environment().put("LSB_RUNTIME_OWNER",home.getPath());
-            pb.redirectErrorStream(true);pb.redirectOutput(new File(logs,"proot.log"));
+            // PRoot may print tracee command lines on a fatal error. Keep its raw
+            // wrapper stream out of files for login; structured supervisor receipts remain.
+            pb.redirectErrorStream(true);pb.redirectOutput(action.equals("launch")?new File("/dev/null"):new File(logs,"proot.log"));
             interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");
             process=pb.start();starting=false;preparingThread=null;
             try(OutputStream input=process.getOutputStream()){if(action.equals("launch"))login.send(input);}
-            if(stopRequested)write(new File(run,"stop"),"stop\n");status=initialize?"Initializing working client. Open the display for installer prompts.":"Starting Windows checks. Open the display to follow progress.";
+            if(stopRequested)write(new File(run,"stop"),"stop\n");status=initialize?"Initializing working client. Open the display for installer prompts.":clientOperation?"Checking the loader and starting the client…":"Starting Windows checks. Open the display to follow progress.";
             while(!process.waitFor(1,TimeUnit.SECONDS)){
                 if(new File(run,"status.json").isFile())try{JSONObject s=new JSONObject(read(new File(run,"status.json"),131072));status=s.optString("error",s.optString("phase",status)).replace('_',' ');}catch(Exception ignored){}
             }
@@ -257,6 +261,10 @@ final class ClientRuntime {
                 if(initialize){
                     JSONObject report=finalState.getJSONObject("initialization");
                     if(!report.optString("status").equals("passed")||!candidate.getName().equals(report.optString("generation"))||!sessionId.equals(report.optString("session_id")))throw new IOException("Initialization receipt does not match candidate");
+                    if(prepared().metadata(candidate).containsKey("repairOf")){
+                        JSONObject check=finalState.optJSONObject("client_launch");
+                        if(check==null||!"ready".equals(check.optString("status"))||!candidate.getName().equals(check.optString("generation"))||!sessionId.equals(check.optString("session_id")))throw new IOException("Use Repair launcher prerequisites to finish the staged loader check before activation");
+                    }
                     // Wine and all owned children must be stopped before atomically switching both paths.
                     reapOrphans();write(new File(candidate,"initialization-passed.json"),report.toString(2));prepared().promote(candidate);
                     status="Client checks passed. Prepared copy activated and ready for launch.";

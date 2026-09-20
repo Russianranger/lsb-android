@@ -220,6 +220,7 @@ public final class MainActivity extends Activity {
     private void initializationCard(ClientStore source)throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);JSONObject prepared=rt.preparationState();
         boolean candidate=prepared.has("candidate"), copied=candidate&&prepared.getJSONObject("candidate").optBoolean("copy_complete");
+        boolean repair=candidate&&prepared.getJSONObject("candidate").has("repair_of");
         LinearLayout card=card("Prepare PlayOnline and FFXI");
         if(runtimeStatus==null){runtimeStatus=label(rt.status,15,ACCENT);card.addView(runtimeStatus);}
         card.addView(label("Create a separate working copy and Windows environment, register the selected client, then test its PlayOnline and FFXI interfaces. Successful checks activate both copies together. This step does not log in or start the game.",15,TEXT));
@@ -227,8 +228,8 @@ public final class MainActivity extends Activity {
         if(prepared.has("current"))card.addView(label("A validated preparation is available. A new attempt preserves it until checks pass.",14,ACCENT));
         if(candidate)card.addView(label(copied?"A staged working copy is available. Retry uses its captured region and files without copying the full import again.":"The previous copy was interrupted. Preparation will replace only that incomplete candidate.",14,MUTED));
         if(!rt.installed())card.addView(label("Install the Windows runtime on the Runtime tab first.",14,MUTED));
-        button(card,copied?"Retry client initialization":"Prepare imported client",()->{
-            try{if(!copied)saveConnection();startInitialization("initialize");}catch(Exception e){error(e);}
+        button(card,repair?"Retry launcher prerequisite repair":copied?"Retry client initialization":"Prepare imported client",()->{
+            try{if(!copied&&!repair)saveConnection();startInitialization(repair?"repair-launcher":"initialize");}catch(Exception e){error(e);}
         }).setEnabled(source.hasClient()&&!source.hasPendingImport()&&rt.installed()&&!rt.alive());
         button(card,"Open initialization display",()->startActivity(new Intent(this,RuntimeActivity.class))).setEnabled(rt.alive());
         button(card,"Stop initialization",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());
@@ -236,7 +237,7 @@ public final class MainActivity extends Activity {
         if(copied){
             card.addView(label("If diagnostics identify a missing dependency, select its official x86 prerequisite installer. It runs interactively in the staged copy, then registration checks run again.",14,MUTED));
             button(card,"Select prerequisite installer (.exe)",()->pick("prerequisite")).setEnabled(!rt.alive());
-            button(card,"Run prerequisite and retry checks",()->startInitialization("installer")).setEnabled(!rt.alive()&&prepared.optBoolean("prerequisite_selected"));
+            button(card,"Run prerequisite and retry checks",()->startInitialization(repair?"repair-launcher":"installer")).setEnabled(!rt.alive()&&prepared.optBoolean("prerequisite_selected"));
         }
         button(card,"Discard staged preparation",()->confirm("Discard staged copy","Remove the unsuccessful working copy and its Windows environment? The original import and validated preparations are kept.",()->run("Discarding staged preparation",(ctx,p)->ClientRuntime.get(ctx).discardPreparation()))).setEnabled(candidate&&!rt.alive());
         button(card,"Restore previous preparation",()->run("Restoring previous preparation",(ctx,p)->ClientRuntime.get(ctx).rollbackPreparation())).setEnabled(prepared.has("previous")&&!rt.alive());
