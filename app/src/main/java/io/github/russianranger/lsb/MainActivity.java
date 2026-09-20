@@ -64,7 +64,7 @@ public final class MainActivity extends Activity {
         draw();
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 30);
     }
-    @Override protected void onResume() { super.onResume(); handler.post(poll); }
+    @Override protected void onResume() { super.onResume(); if(tab.equals("Runtime"))draw(); handler.post(poll); }
     @Override protected void onPause() { handler.removeCallbacks(poll); super.onPause(); }
     @Override public void onSaveInstanceState(Bundle out) { out.putString("tab", tab); out.putString("pending", pending); out.putBoolean("preserve", preserveOnImport); super.onSaveInstanceState(out); }
     static File storage(Context ctx) throws IOException {
@@ -163,12 +163,12 @@ public final class MainActivity extends Activity {
         }).setEnabled(s.hasClient());
         button(launch, "Export prepared client + GameHub launcher", () -> { try { saveConnection(); create("prepared", "ffxi-prepared.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
         button(launch, "Export launcher update only", () -> { try { saveConnection(); create("launcher", "ffxi-launcher-update.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
-        launch.addView(label("In GameHub, add LSB-FFXI.exe from the extracted package. It has Repair registration and Launch FFXI buttons. Enter your account in xiloader. The small launcher update ZIP goes beside an already-exported client folder and contains no game files.", 13, MUTED));
+        launch.addView(label("Legacy external export tools remain available. They are not required for the new in-app runtime checks.", 13, MUTED));
         LinearLayout backup = card("Backup and recovery");
         button(backup, "Export session backup", () -> create("backup", "lsb-session.zip")).setEnabled(s.hasClient());
         button(backup, "Restore session backup", () -> confirm("Restore session", "The backup is validated before activation. Your current client becomes the rollback copy.", () -> pick("restore"))).setEnabled(!s.hasPendingImport());
         button(backup, "Switch to previous client", () -> confirm("Switch client", "Validate the previous client, then swap it with the current client?", () -> run("Validating previous client", (ctx, p) -> { store(ctx).rollback(p); return "Previous client restored. The other copy remains available for rollback."; }))).setEnabled(s.hasPrevious());
-        backup.addView(label("A session backup includes imported game files and saved connection settings. The GameHub Wine prefix is separate and is not included. Uninstalling this app removes its managed copies.", 13, MUTED));
+        backup.addView(label("A session backup includes imported game files and saved connection settings. Windows runtime prefixes are separate and are not included. Uninstalling this app removes its managed copies.", 13, MUTED));
     }
     private void saveConnection() throws IOException {
         ClientStore s = store(this);
@@ -194,7 +194,7 @@ public final class MainActivity extends Activity {
     }
     private void pendingImportCard(ClientStore s) throws IOException {
         LinearLayout card = card("Choose PlayOnline version");
-        card.addView(label("Extraction is complete. Select the version and folder you use in GameHub. Choose a Client files entry outside patchfiles, then finish the import. The ZIP will not be extracted again.", 15, TEXT));
+        card.addView(label("Extraction is complete. Select the installed PlayOnline version and folder. Choose a Client files entry outside patchfiles, then finish the import. The ZIP will not be extracted again.", 15, TEXT));
         List<String> choices = s.pendingChoices();
         Spinner versions = playOnlineSpinner(card, choices);
         card.addView(label("Client region (US and JP share the polcore.dll filename)", 14, MUTED));
@@ -209,7 +209,7 @@ public final class MainActivity extends Activity {
     }
     private void profilePage() throws Exception {
         JSONObject data = new JSONObject(profile(this)); JSONObject runtime = data.getJSONObject("runtime");
-        LinearLayout runtimeCard = card("Your working GameHub profile");
+        LinearLayout runtimeCard = card("Historical GameHub reference profile");
         runtimeCard.addView(label("Captured from your four screenshots. These components are reference requirements, not installed components in LSB Android.", 14, MUTED));
         String[][] fields = {{"Proton", "compatibilityLayer"}, {"CPU translator", "cpuTranslator"}, {"Translation parameters", "translationParams"}, {"GPU driver", "gpuDriver"}, {"DXVK", "dxvk"}, {"VKD3D", "vkd3d"}, {"Audio", "audio"}, {"CPU cores", "cpuCoreLimit"}, {"DInput", "dinput"}, {"Skip audio/video", "skipAudioVideoDecode"}};
         for (String[] f : fields) runtimeCard.addView(label(f[0] + "\n" + runtime.get(f[1]), 15, TEXT));
@@ -244,7 +244,7 @@ public final class MainActivity extends Activity {
         button(d, "View repair script", () -> { try { File f = new File(getFilesDir(), "repair-preview.txt"); showText("Repair recipe · not yet executed", f.exists() ? FilesEx.read(f, 32768) : "Use Client → Validate client and preview repair script first."); } catch (Exception e) { error(e); } });
         button(d, "View operation log", () -> { try { File f = new File(getFilesDir(), "operations.log"); showText("Operation log", f.exists() ? FilesEx.read(f, 262144) : "No operations yet"); } catch (Exception e) { error(e); } });
         LinearLayout next = card("Runtime status");
-        next.addView(label("Client files: managed import available\nRegistry/COM repair: exportable Windows EXE and optional CMD recipe\nWine / Proton / FEX: not bundled\nIn-app graphics, sound, and controller bridge: not implemented\nServer toolchain and database runtime: not bundled\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
+        next.addView(label("Client files: managed import available\nRegistry/COM repair: exportable Windows EXE and optional CMD recipe\nWindows runtime: experimental Wine 10 / Box64 candidate\nDisplay, D3D8 and audio: open-probe checks in Runtime tab\nFFXI initialization, FEX and controller mappings: next milestones\nServer toolchain and database runtime: not bundled\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
     }
     private void pick(String kind) { pending = kind; Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"); startActivityForResult(i, PICK); }
     private void create(String kind, String name) { pending = kind; Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind.equals("profile") ? "application/json" : "application/zip").putExtra(Intent.EXTRA_TITLE, name); startActivityForResult(i, CREATE); }

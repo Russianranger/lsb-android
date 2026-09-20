@@ -84,8 +84,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR args,int show){
     (void)previous;autotest=wcsstr(args,L"--autotest")!=NULL;CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
     BOOL registered=registration();report();if(!registered)return 10;
     WNDCLASSW wc={0};wc.lpfnWndProc=window_proc;wc.hInstance=instance;wc.lpszClassName=L"LSBOpenProbe";wc.hCursor=LoadCursor(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);RegisterClassW(&wc);
-    main_window=CreateWindowW(wc.lpszClassName,L"LSB runtime probe",WS_POPUP|WS_VISIBLE,0,0,1280,720,NULL,NULL,instance,NULL);
-    canvas=CreateWindowW(L"STATIC",L"",WS_CHILD|WS_VISIBLE,40,100,1200,470,main_window,NULL,instance,NULL);
+    main_window=CreateWindowW(wc.lpszClassName,L"LSB runtime probe",WS_POPUP|WS_VISIBLE|WS_CLIPCHILDREN,0,0,1280,720,NULL,NULL,instance,NULL);
+    /* Wine Vulkan presents to a top-level drawable without XComposite.
+     * Keep the render surface owned by the probe, rather than a child STATIC. */
+    canvas=CreateWindowW(L"STATIC",L"",WS_POPUP|WS_VISIBLE,40,100,1200,470,main_window,NULL,instance,NULL);
     CreateWindowW(L"BUTTON",L"Play tone",WS_CHILD|WS_VISIBLE,32,635,190,48,main_window,(HMENU)1,instance,NULL);
     CreateWindowW(L"BUTTON",L"Exit probe",WS_CHILD|WS_VISIBLE,240,635,190,48,main_window,(HMENU)2,instance,NULL);
     ShowWindow(main_window,show);SetForegroundWindow(main_window);SetFocus(main_window);

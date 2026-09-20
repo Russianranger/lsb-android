@@ -26,6 +26,7 @@ final class ClientRuntime {
     volatile String status="Install the runtime, then start the Windows checks.";
     volatile boolean starting;
     private volatile Process process;
+    private volatile boolean stopRequested;
     private AudioBridge audio;
     private String sessionId;
     private ClientRuntime(Context c){
@@ -131,7 +132,7 @@ final class ClientRuntime {
         }
     }
     void run(String renderer,boolean sound)throws Exception {
-        synchronized(this){if(alive())throw new IOException("Runtime is already running");starting=true;}
+        synchronized(this){if(alive())throw new IOException("Runtime is already running");starting=true;stopRequested=false;}
         try{
             if(!installed()||!read(new File(root,"lsb-runtime.sha256"),128).equals(RUNTIME_SHA))throw new IOException("Install the pinned runtime first");
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");
@@ -150,7 +151,8 @@ final class ClientRuntime {
             ProcessBuilder pb=new ProcessBuilder(command);pb.environment().put("PROOT_LOADER",new File(nativeDir,"libproot-loader.so").getPath());
             pb.environment().put("PROOT_TMP_DIR",tmp.getPath());pb.environment().put("PROOT_NO_SECCOMP","1");pb.environment().put("LSB_RUNTIME_OWNER",home.getPath());
             pb.redirectErrorStream(true);pb.redirectOutput(new File(logs,"proot.log"));
-            process=pb.start();starting=false;status="Starting Windows checks. Open the display to follow progress.";
+            process=pb.start();starting=false;
+            if(stopRequested)write(new File(run,"stop"),"stop\n");status="Starting Windows checks. Open the display to follow progress.";
             while(!process.waitFor(1,TimeUnit.SECONDS)){
                 if(new File(run,"status.json").isFile())try{JSONObject s=new JSONObject(read(new File(run,"status.json"),131072));status=s.optString("error",s.optString("phase",status)).replace('_',' ');}catch(Exception ignored){}
             }
@@ -161,10 +163,11 @@ final class ClientRuntime {
         }finally{
             starting=false;
             if(process!=null&&process.isAlive()){process.destroy();if(!process.waitFor(5,TimeUnit.SECONDS)){process.destroyForcibly();process.waitFor(5,TimeUnit.SECONDS);}}
-            reapOrphans();if(audio!=null){audio.close();audio=null;}process=null;
+            try{reapOrphans();}finally{if(audio!=null){audio.close();audio=null;}process=null;}
         }
     }
     void requestStop()throws Exception {
+        stopRequested=true;
         write(new File(run,"stop"),"stop\n");status="Stopping Windows checks…";
         Process active=process;if(active!=null&&!active.waitFor(30,TimeUnit.SECONDS)){active.destroy();if(!active.waitFor(5,TimeUnit.SECONDS))active.destroyForcibly();}
     }

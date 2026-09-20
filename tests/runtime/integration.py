@@ -46,9 +46,7 @@ def pixels(s):
         for _ in range(n):
             x,y,w,h,encoding=struct.unpack('>HHHHi',recv(s,12));assert encoding==0
             raw=recv(s,w*h*4);colors.update(raw[i:i+3] for i in range(0,len(raw),4))
-        assert colors[bytes([72,48,24])]>50000,colors.most_common(4)
-        assert len(colors)>1000,'Triangle color interpolation was not visible'
-        return
+        return colors[bytes([72,48,24])]>50000 and len(colors)>1000
 
 def main():
     for folder in ('/prefix','/session','/logs'):Path(folder).mkdir(exist_ok=True)
@@ -64,7 +62,8 @@ def main():
                 try:return json.loads(Path('/session/probe.json').read_text()).get('d3d8_frames',0)>=25
                 except (OSError,ValueError):return False
             wait(ready,'32-bit probe did not render')
-            with display() as s:key(s);pixels(s)
+            with display() as s:
+                key(s);wait(lambda:pixels(s),'Triangle did not reach the display',6)
             wait(lambda:sum(r['nonzero_samples'] for r in receiver.reports)>100,'Wine did not produce PCM',20)
             p.wait(timeout=40);assert p.returncode==0
             result=json.loads(Path('/session/status.json').read_text());probe=result['probe']

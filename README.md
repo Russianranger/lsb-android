@@ -2,9 +2,11 @@
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
 
-**Current direction (2026-09-20): build a fresh client environment inside LSB Android.** The user reports that transferring files corrupted the GameHub Lite container; there is no longer a working external client available for comparison. The LandSandBoat server still works in Termux. The next milestone must not depend on repairing, importing or testing against that GameHub container. See [current handoff and in-app client plan](docs/HANDOFF.md).
+**0.2.0 adds an experimental in-app Windows runtime probe.** It creates a fresh Windows environment with embedded display, sound and input, then runs an open 32-bit registry/COM/Direct3D8 test. It does not launch FFXI or change imported game data yet. The working Termux server remains the connection target for the next milestone.
 
-**0.1.3 is still an installable preparation and recovery baseline. It does not yet run FFXI inside the app or compile/start LandSandBoat.** Its exports and repair helper remain available, but their GameHub test procedure below is historical, not the next requested device test. The reported container corruption has not been diagnosed; do not attribute it to a specific file or registry operation without evidence.
+Install the update over the existing app, then use **Runtime → Install runtime → Start Windows checks** with **Turnip 26 / DXVK (Thor)**. No GameHub container, client re-import or terminal command is required. See [0.2.0 test instructions and limitations](docs/runtime-milestone-020.md) and [current handoff](docs/HANDOFF.md).
+
+This candidate uses Wine 10 / Box64 0.4.4 with a verified x86 DXVK D3D8+D3D9 pair. It is a distinct candidate from the historical Proton/FEX setup, and passing the open probe does not establish FFXI compatibility. The runtime download is about 338 MiB; keep at least 3 GiB free. Existing session backups do not yet include the experimental Wine prefix.
 
 ## Available in 0.1.3
 

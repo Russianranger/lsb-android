@@ -22,6 +22,7 @@ final class TarExtractor {
         try(InputStream in=new BufferedInputStream(new GZIPInputStream(new FileInputStream(archive)),1024*1024)) {
             byte[] header=new byte[512];
             while(true) {
+                if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("Runtime extraction cancelled");
                 full(in,header,512);
                 boolean zero=true; for(byte b:header)if(b!=0){zero=false;break;} if(zero)break;
                 long checksum=octal(header,148,8), actual=0;
@@ -65,7 +66,7 @@ final class TarExtractor {
         }
         progress.update(count);
     }
-    static void transfer(InputStream in,OutputStream out,long size)throws IOException {byte[] b=new byte[1024*1024];while(size>0){int n=in.read(b,0,(int)Math.min(size,b.length));if(n<0)throw new EOFException("Truncated runtime archive");out.write(b,0,n);size-=n;}}
+    static void transfer(InputStream in,OutputStream out,long size)throws IOException {byte[] b=new byte[1024*1024];while(size>0){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("Runtime extraction cancelled");int n=in.read(b,0,(int)Math.min(size,b.length));if(n<0)throw new EOFException("Truncated runtime archive");out.write(b,0,n);size-=n;}}
     static void full(InputStream in,byte[] b,int length)throws IOException {int offset=0;while(offset<length){int n=in.read(b,offset,length-offset);if(n<0)throw new EOFException("Truncated runtime archive");offset+=n;}}
     static void skip(InputStream in,long n)throws IOException {while(n-->0)if(in.read()<0)throw new EOFException();}
     static String text(byte[] b,int at,int length){int end=at;while(end<at+length&&b[end]!=0)end++;return new String(b,at,end-at,StandardCharsets.UTF_8);}
