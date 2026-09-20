@@ -16,7 +16,14 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Core import and recovery checks
-        run: python3 scripts/test.py
+        run: |
+          python3 scripts/test.py
+          python3 -m unittest discover -s tests/runtime -p 'test_*.py'
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+
       - name: Build x86 Windows launcher and native test fixtures
         run: |
           sudo apt-get update -qq
@@ -38,7 +45,14 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.1.3.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.2.0.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-device-build
+          path: |
+            out/LSB-Android-0.2.0.apk
+            out/runtime-probes/
+            out/runtime-assets/
       - name: Note device build signing
         run: echo 'This is a disposable-certificate build check. Use the separately delivered device APK for updates.' >> "$GITHUB_STEP_SUMMARY"
   windows-launcher:
@@ -53,3 +67,64 @@ jobs:
           path: out/windows-tests
       - name: Native registration and process checks with stub client files
         run: python tests/windows/run.py
+
+  runtime:
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-device-build
+          path: out
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+      - name: Execute PE32 registry COM D3D8 audio and input checks on ARM64
+        run: bash scripts/check-runtime.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-evidence
+          path: |
+            out/runtime-test/logs/
+            out/runtime-test/proot-logs/
+      - name: Show runtime failure evidence
+        if: failure()
+        run: |
+          python3 - <<'PYLOG'
+          from pathlib import Path
+          for path in Path('out/runtime-test').rglob('*.log'):
+              print(path, path.read_text(errors='replace')[-6000:])
+          PYLOG
+  runtime-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/codex/client-baseline'
+    needs: [verify, windows-launcher, runtime]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+      - run: python3 scripts/prepare-runtime.py --release
+      - name: Publish immutable open runtime and corresponding sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view runtime-probe-v1 >/dev/null 2>&1; then
+            gh release create runtime-probe-v1 --target "$GITHUB_SHA" --prerelease --title 'LSB experimental Windows runtime v1' --notes 'Pinned Wine 10 WoW64 / Box64 0.4.4 runtime and corresponding source archives, reused from the owner’s TRASC project. No game files. This is an independent compatibility candidate, not the GameHub Proton/FEX environment.'
+          fi
+          for file in components.apk runtime-arm64.tar.gz runtime-sources.tar.gz launcher-sources.tar.gz; do
+            if ! gh release view runtime-probe-v1 --json assets --jq '.assets[].name' | grep -qx "$file"; then
+              gh release upload runtime-probe-v1 ".tools/runtime/$file"
+            fi
+          done

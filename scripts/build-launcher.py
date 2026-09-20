@@ -14,10 +14,13 @@ if not cc:
 if not cc: raise SystemExit('Install gcc-mingw-w64-i686-posix, or set LSB_MINGW_CC to its compiler.')
 assets = root/'out/launcher-assets'; assets.mkdir(parents=True, exist_ok=True)
 flags = ['-std=c11', '-Os', '-Wall', '-Wextra', '-Wno-misleading-indentation', '-static', '-static-libgcc', '-municode', '-mwindows', '-Wl,--no-insert-timestamp', '-s']
-libs = ['-luser32', '-ladvapi32', '-lshell32', '-lole32']
+libs = ['-luser32', '-ladvapi32', '-lshell32', '-lole32', '-luuid']
 def build(source, output, extra=()):
     subprocess.run([cc, *flags, *extra, str(root/source), '-o', str(output), *libs], check=True)
 build('windows/launcher.c', assets/'LSB-FFXI.exe')
+probes = root/'out/runtime-probes'; probes.mkdir(parents=True, exist_ok=True)
+build('windows/probe-com.c', probes/'probe-com.dll', ['-shared', '-Wl,--kill-at'])
+subprocess.run([cc, *flags, str(root/'windows/runtime-probe.c'), '-o', str(probes/'runtime-probe.exe'), *libs, '-ld3d8', '-lwinmm', '-luuid', '-lm'], check=True)
 if args.tests:
     tests = root/'out/windows-tests'; tests.mkdir(parents=True, exist_ok=True)
     build('windows/launcher.c', tests/'LSB-FFXI-test.exe', ['-DLSB_TEST_MODE', '-Wno-unused-function'])

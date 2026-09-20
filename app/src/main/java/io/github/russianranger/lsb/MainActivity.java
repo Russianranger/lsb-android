@@ -94,9 +94,9 @@ public final class MainActivity extends Activity {
     private void draw() {
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(18), dp(8), dp(18), dp(8));
         TextView heading = label("LSB Android", 26, TEXT); heading.setTypeface(null, Typeface.BOLD); page.addView(heading);
-        page.addView(label("FFXI client preparation · 0.1.3", 13, ACCENT));
+        page.addView(label("FFXI client runtime preview · 0.2.0", 13, ACCENT));
         LinearLayout nav = new LinearLayout(this);
-        for (String name : new String[]{"Client", "Profile", "Server", "Diagnostics"}) {
+        for (String name : new String[]{"Client", "Runtime", "Profile", "Server", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));
             nav.addView(b, new LinearLayout.LayoutParams(0, -2, 1));
             b.setOnClickListener(v -> { tab = name; draw(); });
@@ -107,15 +107,38 @@ public final class MainActivity extends Activity {
         cancel = new Button(this); cancel.setText("Cancel operation"); cancel.setAllCaps(false); cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE); cancel.setOnClickListener(v -> { WorkService.cancel(); toast("Cancelling; waiting for the current file operation to stop."); }); page.addView(cancel);
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); content = column(); scroll.addView(content); page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(page);
-        try { switch (tab) { case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
+        try { switch (tab) { case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
         catch (Exception e) { content.addView(label("Cannot read app state: " + e.getMessage(), 16, TEXT)); }
+    }
+    private void runtimePage() throws Exception {
+        ClientRuntime rt=ClientRuntime.get(this);
+        LinearLayout panel=card("Windows runtime · first milestone");
+        panel.addView(label("A separate environment for testing Windows, Direct3D 8, sound and input. Your imported FFXI files are not mounted or modified by these checks.",16,TEXT));
+        TextView current=label(rt.status,15,ACCENT);panel.addView(current);
+        panel.addView(label("Wine 10 / Box64 0.4.4 · experimental candidate. This is not the former GameHub Proton/FEX environment and does not launch FFXI yet.",14,MUTED));
+        button(panel,"Install runtime (338 MiB download)",()->run("Installing Windows runtime",(ctx,p)->ClientRuntime.get(ctx).install(p))).setEnabled(!rt.alive()&&!rt.installed());
+        panel.addView(label("Graphics for this test",14,MUTED));
+        Spinner graphics=new Spinner(this);graphics.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Turnip 26 / DXVK (Thor)","Turnip 24 / DXVK","Software diagnostic"}));
+        String[] modes={"turnip26","turnip24","software"};
+        graphics.setSelection(Arrays.asList(modes).indexOf(getSharedPreferences("runtime",MODE_PRIVATE).getString("renderer","turnip26")));panel.addView(graphics);
+        CheckBox audio=new CheckBox(this);audio.setText("Enable sound test");audio.setTextColor(TEXT);audio.setChecked(true);panel.addView(audio);
+        button(panel,"Start Windows checks",()->{
+            String renderer=modes[graphics.getSelectedItemPosition()];getSharedPreferences("runtime",MODE_PRIVATE).edit().putString("renderer",renderer).apply();
+            startForegroundService(new Intent(this,RuntimeService.class).putExtra("renderer",renderer).putExtra("audio",audio.isChecked()));startActivity(new Intent(this,RuntimeActivity.class));
+        }).setEnabled(rt.installed()&&!rt.alive());
+        button(panel,"Open runtime display",()->startActivity(new Intent(this,RuntimeActivity.class))).setEnabled(rt.alive());
+        button(panel,"Stop runtime",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());
+        panel.addView(label("Look for the colored triangle and Registry/COM PASS labels. Tap outside the triangle, send keys using Keyboard, and try Play tone. Exit the probe, then start it again. Export Diagnostics after the test.",15,TEXT));
+        button(panel,"View runtime details",()->{try{showText("Runtime details",rt.state().toString(2));}catch(Exception e){error(e);}});
+        button(panel,"Create fresh Windows prefix",()->confirm("Fresh Windows environment","The current prefix will be preserved in a separate backup. Your imported client and session backups stay in place.",()->run("Preserving Windows prefix",(ctx,p)->ClientRuntime.get(ctx).freshPrefix()))).setEnabled(rt.installed()&&!rt.alive());
+        panel.addView(label("Current session backups contain your imported client, not this experimental runtime. A fresh-prefix action preserves its previous folder. Keep at least 3 GiB free for first setup.",14,MUTED));
     }
     private void clientPage() throws Exception {
         ClientStore s = store(this);
         if (s.hasPendingImport() && !WorkService.busy) pendingImportCard(s);
         LinearLayout status = card(s.hasClient() ? "Imported client" : "Bring your FFXI installation");
         status.addView(label(s.summary(), 15, TEXT));
-        status.addView(label("This first build prepares and exports your client for the working GameHub environment. In-app gameplay and the standalone server runtime are not included yet.", 14, MUTED));
+        status.addView(label("Your client is stored separately from the experimental Windows runtime. Use the Runtime tab for the first in-app checks; FFXI gameplay and server integration come next.", 14, MUTED));
         status.addView(label("Free space: " + storage(this).getUsableSpace() / 1073741824L + " GiB. Imports need room for a new full copy while retaining the active client.", 13, MUTED));
         preserve = new CheckBox(this); preserve.setText("Preserve current FFXI USER and PlayOnline usr settings on client import"); preserve.setTextColor(TEXT); preserve.setChecked(preserveOnImport); preserve.setOnCheckedChangeListener((b, checked) -> preserveOnImport = checked); status.addView(preserve);
         button(status, s.hasClient() ? "Import a complete client update ZIP" : "Import client ZIP", () -> pick("client")).setEnabled(!s.hasPendingImport());
@@ -269,10 +292,11 @@ public final class MainActivity extends Activity {
     private static void support(Context ctx, OutputStream out) throws Exception {
         ClientStore s = store(ctx);
         try (ZipOutputStream zip = new ZipOutputStream(out)) {
+            ClientRuntime.get(ctx).exportLogs(zip);
             SafeZip.entry(zip, "runtime-profile.json", profile(ctx)); SafeZip.entry(zip, "inventory.json", s.inventory()); SafeZip.entry(zip, "summary.txt", s.summary()); SafeZip.entry(zip, "session.properties", s.config().properties());
             SafeZip.entry(zip, "playonline-candidates.txt", String.join("\n", s.playOnlineChoices()) + "\n");
             if (s.hasPendingImport()) SafeZip.entry(zip, "pending-playonline.txt", "Waiting for PlayOnline selection\n" + String.join("\n", s.pendingChoices()) + "\n");
-            SafeZip.entry(zip, "device.txt", "app=0.1.3\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=not_bundled\n");
+            SafeZip.entry(zip, "device.txt", "app=0.2.0\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=experimental_probe\n");
             for (String name : new String[]{"operations.log", "server-probe.txt", "repair-preview.txt"}) { File f = new File(ctx.getFilesDir(), name); if (f.exists()) SafeZip.entry(zip, name, FilesEx.read(f, 262144)); }
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }
