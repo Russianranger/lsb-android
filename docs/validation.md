@@ -6,12 +6,20 @@ Implementation commit `e07f29c32a99cec2d26a5f39e3866ccc9369a24b`. [Push verifica
 - The existing native Windows helper checks pass with synthetic DLLs.
 - Real x86 Windows probe runs under ARM64 Wine/Box64: registry round-trip, in-process COM registration/activation, rendered D3D8 triangle pixels, RFB keyboard and mouse input, nonzero audio PCM and a clean exit. Both fresh and reused prefixes pass.
 - Software rendering and DXVK 2.5.3 D3D8+D3D9 pass. CI's Vulkan adapter is explicitly Lavapipe; this is not evidence of a physical Adreno/Turnip run.
-- The actual APK tar extractor installs the pinned rootfs on the ARM64 host, and the patched PRoot route passes the software probe twice plus explicit stop. Direct3D8/Vulkan inside Android remains a device acceptance item.
+- The actual APK tar extractor installs the pinned rootfs on the ARM64 host, and the patched PRoot route passes the software probe twice plus explicit stop. The later Thor report below supplies physical Android/Adreno evidence.
 - An initial DXVK failure showed black pixels despite successful Present calls. Changing the test surface from a child STATIC to an owned top-level window fixed the presentation path. The pixel assertion remains mandatory.
 - Device APK: `LSB-Android-0.2.0.apk`, **7,636,621 bytes**, SHA-256 `cb2528fa59813fe7730b245f446af0b2b42d22ba583239b467acee334d47f0b9`. Application ID `io.github.russianranger.lsb`, version code 5, minSdk 26, target/compileSdk 35. apksigner verifies v2/v3 with the original certificate `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
 - APK inspection verifies ARM64 PRoot executables, x86 probe/COM/DXVK DLLs, the packaged supervisor source and component digests. Runtime files remain separate from managed client data.
 
-**Pending:** Thor install/execution, real Turnip rendering, audible sound, physical input, foreground/background behavior and device relaunch. No proprietary POL/FFXI DLL or game execution has been tested. The user retains the imported client and a backup. Follow [the device test](runtime-milestone-020.md); do not request another GameHub transfer or claim the first milestone is device-accepted yet.
+## Thor result supplied after delivery
+
+`lsb-support(3).zip` and `Screenshot_20260920-140524.png` confirm 0.2.0 execution on AYN Thor / Android 13. The retained run reports actual Turnip Adreno 740 / Mesa 26.0.0 hardware, DXVK 2.5.3 D3D8 mode, 2,000 presented frames, passing 32-bit registry and COM checks, HRESULT 0, 9 keyboard events and 8 pointer/button events. The user saw the triangle and heard sound; audio logs contain four nonzero PCM streams. The app's imported game files were not mounted.
+
+Requested Stop completed (`phase=stopped`, app exit 0, `alive=false`, display/audio closed). It does not establish normal probe exit: the session has no `probe_exit` or `automatic_checks_passed` receipt. No second retained session proves relaunch. Normal Exit probe followed by relaunch, and background/resume behavior, remain device acceptance items; the primitive hardware/input/audio checks have passed. See [HANDOFF.md](HANDOFF.md) for the exact evidence and next targeted check.
+
+The visible counter overlap is a probe paint defect: transparent drawing does not erase previous values. The 25 FPS screenshot matches the deliberate 40 ms probe timer and is not an FFXI performance result. First-prefix Wine warnings did not block this probe's registry/COM/render/audio results; they do not establish that proprietary initialization will succeed.
+
+**Pending:** normal on-device Exit probe/relaunch and foreground/background behavior; all proprietary POL/FFXI DLL registration and game execution. Preserve the tested prefix, imported data and backup. No GameHub transfer or repeated import is needed.
 
 ---
 

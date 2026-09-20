@@ -4,11 +4,33 @@ The user confirms **both imported FFXI data and a backup survive**, and authoriz
 
 The first candidate is explicitly Wine 10 WoW64 / Box64 0.4.4, reused from the source-tracked TRASC runtime. This is not a claim that it recreates the captured Proton/FEX environment. FFXI registration, prerequisites and xiloader launch are not part of this probe build. The existing app import and backup are retained and not mounted by the runtime.
 
-Implementation is on the existing `codex/client-baseline` branch / draft PR #1. Implementation commit `e07f29c32a99cec2d26a5f39e3866ccc9369a24b` passed the APK, native Windows and ARM64 runtime gates in [run 35530166981](https://github.com/Russianranger/lsb-android/actions/runs/35530166981). The original-certificate 0.2.0 APK and exact evidence/limitations are recorded in [validation.md](validation.md). Runtime publication follows the passing gates. Thor acceptance is still pending. Preserve the existing LSB application ID and signing key. The runtime release mirrors only pinned open components/source archives after verification; it is separate from user client data.
+Implementation is on the existing `codex/client-baseline` branch / draft PR #1. Implementation commit `e07f29c32a99cec2d26a5f39e3866ccc9369a24b` passed the APK, native Windows and ARM64 runtime gates in [run 35530166981](https://github.com/Russianranger/lsb-android/actions/runs/35530166981). The original-certificate 0.2.0 APK and exact evidence/limitations are recorded in [validation.md](validation.md). The pinned runtime release is published. Thor hardware, registry/COM, input and audible output are now confirmed; normal probe exit and relaunch still need device evidence. Preserve the existing LSB application ID and signing key. The runtime release mirrors only pinned open components/source archives after verification; it is separate from user client data.
+
+
+## Thor device results (2026-09-20)
+
+Reviewed the supplied `lsb-support(3).zip`, screenshot `Screenshot_20260920-140524.png`, and the user's report that the triangle and sound worked. The retained session is 0.2.0 on Android 13 / AYN Thor, from 19:01:07 to 19:05:57 UTC.
+
+- **Confirmed:** actual Turnip Adreno 740, Mesa 26.0.0, hardware verification true, DXVK 2.5.3 in D3D8 compatibility mode; 2,000 presented frames in the final retained probe sample. The screenshot independently shows the colored triangle.
+- **Confirmed:** 32-bit registry round-trip and native test-DLL COM activation; `hresult=0`.
+- **Confirmed:** 9 key-down events and 8 pointer/button events reached the Windows probe. This proves key delivery, not complete text entry or gameplay/controller coverage.
+- **Confirmed:** four PCM streams with nonzero audio samples and the user's audible-tone report. Active tone portions have zero reported underruns; some short silent tail streams report one. Do not generalize this short test to sustained game audio stability.
+- **Confirmed:** requested Stop ended the supervisor with exit 0, `phase=stopped`, `alive=false`; display and audio closed. This is not a completed-probe receipt: `probe_exit` and `automatic_checks_passed` are absent, so do not claim normal Exit probe or relaunch has passed on-device. Only the latest session is retained in this bundle.
+- **Confirmed:** `game_files_mounted=false`; current inventory still selects the installed `PlayOnlineViewer/viewer/com/polcore.dll`, with 66,322 imported files and a 32-bit xiloader. Inventory does not establish proprietary runtime compatibility.
+
+The probe intentionally uses a 40 ms draw timer (about 25 FPS). The screenshot's 25 FPS is not a measured FFXI performance ceiling. Its overlapping counter text comes from transparent DrawText on a non-erased invalidated area in `windows/runtime-probe.c`; clear the header rectangle before drawing in the next code build. This cosmetic issue does not invalidate the recorded input counters.
+
+Wine first-prefix setup logged OLE/RpcSs, driver setup and hostname warnings, but subsequently completed and the test COM activation succeeded. No fatal crash or failed HRESULT is shown in the retained probe. The display broken-pipe message coincides with shutdown, not an observed rendering failure. Keep these observations scoped to the open probe; no proprietary registration has been tested.
+
+**Remaining device acceptance:** Start checks, use **Exit probe**, start again, use **Exit probe** again, then export Diagnostics while the final completed session is still current. Explicit Stop is already evidenced and need not be repeated. Foreground/background resume remains unverified. Retain the existing prefix and renderer; do not request a reinstall, fresh prefix, re-import or GameHub test.
+
+**Next implementation milestone:** transactional POL/FFXI initialization against the surviving managed import, preserving its original payload and the tested runtime. The open-probe primitive checks are accepted; the complete lifecycle/device milestone is not yet closed.
 
 ---
 
-# Current scope: fresh in-app FFXI client (2026-09-20)
+# Historical scope/audit before 0.2.0: fresh in-app FFXI client (2026-09-20)
+
+The following is the pre-implementation audit. Current progress and surviving-data confirmation above supersede its pending-state statements.
 
 The user reports that file transfer into GameHub Lite corrupted the container. There is no working external client for testing. The LandSandBoat server remains available in Termux. Continue toward a client that starts inside LSB Android and connects to that existing server. Server integration/compiler work remains later in the original project scope.
 
