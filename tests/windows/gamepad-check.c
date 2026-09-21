@@ -12,7 +12,13 @@ static BOOL CALLBACK found(const DIDEVICEINSTANCEA *info,void *unused){
     printf("Controller: %s\n",info->tszProductName);
     return SUCCEEDED(IDirectInput8_CreateDevice(input,&info->guidInstance,&device,NULL))?DIENUM_STOP:DIENUM_CONTINUE;
 }
-static void stage(int n){FILE *f=fopen("Z:\\session\\gamepad-stage","w");if(f){fprintf(f,"%d",n);fclose(f);}}
+static BOOL stage(int n){
+    /* Readers must never mistake a partially written stage for initial neutral. */
+    const char *temp="Z:\\session\\gamepad-stage.new";
+    FILE *f=fopen(temp,"w");if(!f)return FALSE;
+    int written=fprintf(f,"%d",n);int closed=fclose(f);
+    return written>0&&!closed&&MoveFileExA(temp,"Z:\\session\\gamepad-stage",MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
+}
 int wmain(void){
     if(FAILED(DirectInput8Create(GetModuleHandle(NULL),DIRECTINPUT_VERSION,&IID_IDirectInput8A,(void**)&input,NULL)))return 1;
     for(int i=0;i<160&&!device;i++){IDirectInput8_EnumDevices(input,DI8DEVCLASS_GAMECTRL,found,NULL,DIEDFL_ATTACHEDONLY);Sleep(250);}
@@ -24,7 +30,8 @@ int wmain(void){
     if(FAILED(IDirectInputDevice8_SetCooperativeLevel(device,GetDesktopWindow(),DISCL_BACKGROUND|DISCL_NONEXCLUSIVE)))return 5;
     IDirectInputDevice8_Acquire(device);
     for(int step=0;step<4;step++){
-        stage(step);BOOL ok=FALSE;
+        if(!stage(step))return 6;
+        BOOL ok=FALSE;
         DIJOYSTATE2 last={0};HRESULT last_hr=E_FAIL;
         for(int i=0;i<200;i++){
             DIJOYSTATE2 s={0};IDirectInputDevice8_Poll(device);
