@@ -1,6 +1,6 @@
 # LSB Android
 
-0.4.7 narrows the captured GameMain failure (`0x88770000`) to startup file, directory, Windows, DirectPlay and display API results. Client data inventories now distinguish a missing file from an encrypted version file that has no readable version text. Leave **Capture FFXI startup result** checked, install in place and launch once with the existing prepared client and Termux server. This is a targeted diagnostic build; game startup remains unresolved. See [DLL findings and the next test](docs/startup-files-047.md).
+0.4.7 narrows the captured GameMain failure (`0x88770000`) to startup file, directory, Windows, DirectPlay and display API results. Client data inventories now distinguish a missing file from a present file with no readable version text. Leave **Capture FFXI startup result** checked, install in place and launch once with the existing prepared client and Termux server. This is a targeted diagnostic build; game startup remains unresolved. See [DLL findings and the next test](docs/startup-files-047.md).
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
 

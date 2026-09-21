@@ -1,3 +1,13 @@
+# Active milestone 3: pinpoint the pre-window operation (0.4.7)
+
+The supplied `ffxi_lsb.zip` matches both recorded DLL hashes. Offline inspection confirms that `0x88770000` is a shared early-startup failure result, not a specific Direct3D/Windows error. GameMain checks its file manager (including FTABLE.DAT, VTABLE.DAT and patch.ver), Windows version, DirectPlay and window creation before its main loop. The pinned runtime contains dpnhpast.dll. The old unknown-version label does not establish that patch.ver is missing. See [static findings, RVAs and trace interpretation](startup-files-047.md).
+
+0.4.7 retains the prepared client and adds fixed, numeric observation of the actual FFXiMain file/platform/window API results, plus a metadata-only inventory of three startup files. No proprietary DLL is bundled or committed. No game instruction, data file, registry setting or renderer is changed. The existing opt-in temporary-loader mode is retained. Reporting includes the earlier inner-HRESULT correction.
+
+Implementation `8ef8234edb9f1c64eabfd9b1bef4a5a2cf53535e` passes [all gates](https://github.com/Russianranger/lsb-android/actions/runs/35634762962): 116 JVM checks, 33 Python contracts, 36 native Windows checks and 26 launch cases in each of Wine/Box64 and PRoot. The signed device APK identity is in [validation](validation.md).
+
+Next device action: install in place, leave **Capture FFXI startup result** checked, start the existing Termux server, launch once and export Diagnostics. No re-import, preparation or additional DLL upload is requested. This is targeted diagnosis, not a confirmed startup fix. Use the next receipt to identify a concrete failing operation before repairing client files or changing runtime components. In particular, do not fabricate patch.ver or claim DirectPlay is absent based only on its dynamic load name.
+
 # Active milestone 3: identify the inner GameMain failure (0.4.6 device result)
 
 The newest report `lsb-support (3)(2).zip` records successful FFXI and GameMain COM creation, followed by **GameMain HRESULT `0x88770000` after 1,441 ms**. Outer GameStart returns S_OK after 1,983 ms, and the loader exits 0 without an observed game window. This is the captured failing boundary; its underlying cause is not yet known. See [exact evidence, reporting correction and next input](game-main-failure-046.md).

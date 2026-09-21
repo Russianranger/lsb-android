@@ -1,3 +1,17 @@
+# Startup file/API observation: 0.4.7 (2026-09-21)
+
+**Binary evidence.** The two DLLs in `ffxi_lsb.zip` match the prepared generation's hashes. Offline unpacking and static inspection locate the shared `0x88770000` return path and the earlier file-manager, Windows/DirectPlay and window checks. The report's old unknown-version text cannot distinguish an absent patch.ver from a present file whose version is not readable as text. See [analysis and numeric event schema](startup-files-047.md).
+
+**Implementation.** `8ef8234edb9f1c64eabfd9b1bef4a5a2cf53535e` adds a three-file metadata inventory and observes the actual FFXiMain file/platform/window imports using the existing opt-in diagnostic mode. Runtime, client files and preparation remain unchanged. The original inner-HRESULT reporting correction is included. Local checks pass: 116 JVM checks, 33 Python contracts, PE32 helper/fixture compilation and Android packaging/signing. The ARM64 gate runs the existing suite plus `trace-data`, which verifies a successful read/size query, missing FTABLE error 2, successful dpnhpast/OS checks and inner failure masked by outer success.
+
+**Full validation passed.** [Run 35634762962](https://github.com/Russianranger/lsb-android/actions/runs/35634762962) passes the build, native Windows and ARM64 gates for implementation `8ef8234edb9f1c64eabfd9b1bef4a5a2cf53535e`: 116 JVM checks, 33 Python contracts, 36 native Windows checks, and all 26 launch cases separately under Wine/Box64 and PRoot (52 launch PASS records). The new `trace-data` case passes in both environments. Existing synthetic D3D8 rendering, registry/COM, input/audio, preparation/recovery, dependency lifetime, authentication failure, privacy and Stop/relaunch checks also pass. Graphics CI uses software/Lavapipe; these results do not establish actual FFXI rendering on the Thor.
+
+**Device artifact.** `LSB-Android-0.4.7.apk`, versionCode 14, 7,747,758 bytes, SHA-256 `f54de83554832ba7011cef3c797835d2c17a5caeac31b67f5448349af7292c0d`. Original signer SHA-256 `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`; observer DLL SHA-256 `d144c864e970e21236bbdf36ddec3446580d6edf6ffc42fbb5fddb1d5d408686`. Packaged source/native bytes match the implementation; ZIP integrity and v2/v3 signatures verify.
+
+**Next device action.** Install in place, use the same prepared client and Termux server with Capture checked, launch once, then export Diagnostics. A confirmed game-startup fix and actual FFXI rendering are still outstanding. No re-import, full preparation or replacement client DLL is requested.
+
+---
+
 # 0.4.6 device result and inner-error reporting correction (2026-09-21)
 
 The new device trace confirms `IGameMain::FFXiGameMain` returns `0x88770000` after 1,441 ms; both COM activations and outer GameStart report S_OK. The source now selects the failed inner HRESULT for the observed child and latest attempt. All 31 Python contracts pass; replay of the uploaded receipt also yields the correct code/duration. The existing native launch fixture's expected reason is updated. No new device APK or claim of fixed gameplay accompanies this change. See [evidence and remaining input](game-main-failure-046.md). The older full CI result below describes the previously delivered 0.4.6 build.
