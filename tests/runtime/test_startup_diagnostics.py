@@ -17,7 +17,7 @@ class StartupContracts(unittest.TestCase):
 
     def test_real_wine_formats_retain_only_fixed_metadata(self):
         raw=(b'13429.313:00fc:0100:trace:loaddll:build_module Loaded L"D:\\private_account\\FFXiMain.dll" at 7BE70000: native\n'
-             b'00fc:warn:module:LdrLoadDll Failed to load module L"private_password.dll"; status=c0000135\n'
+             b'00fc:warn:module:load_dll Failed to load module L"private_password.dll"; status=c0000135\n'
              b'1.234:00fc:0100:fixme:ole:CoCreateInstanceEx no instance created for interface {secret} of class {secret}, hr 0x80004002.\n'
              b'1.236:00fc:0100:trace:seh:dispatch_exception code=c0000005 (EXCEPTION_ACCESS_VIOLATION) flags=0 addr=deadbeef\n'
              b'1.236:00fc:0100:trace:seh:dispatch_exception  info[0]=private_password\n')
@@ -25,6 +25,7 @@ class StartupContracts(unittest.TestCase):
         self.assertEqual(events.snapshot(),[])
         self.assertIn({'source':'wine','event':'module_loaded','module':'FFXiMain.dll','origin':'native','process_id':252,'thread_id':256},report['records'])
         self.assertEqual({r['code'] for r in report['records'] if 'code' in r},{0xc0000135,0x80004002,0xc0000005})
+        self.assertTrue(any(r.get('category')=='dll_load' and r.get('code')==0xc0000135 for r in report['records']))
         self.assertNotIn('private',json.dumps(report));self.assertNotIn('secret',json.dumps(report))
         self.assertEqual(client_launch.progress(events.snapshot(),1)[2],'')
 

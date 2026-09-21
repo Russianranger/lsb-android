@@ -15,7 +15,7 @@ class StartupDiagnostics:
     # Only fixed source labels leave this parser, never unknown function names.
     FUNCTIONS = {'import_dll': 'dll_import', 'find_forwarded_export': 'forwarded_export',
                  'process_attach': 'dll_initialization', 'ldrgetprocedureaddress': 'dll_export',
-                 'ldrloaddll': 'dll_load', 'com_get_class_object': 'com_class',
+                 'ldrloaddll': 'dll_load', 'load_dll': 'dll_load', 'com_get_class_object': 'com_class',
                  'cocreateinstanceex': 'com_create', 'apartment_get_inproc_class_object': 'com_inproc',
                  'start_rpcss': 'rpc_service', 'virtual_setup_exception': 'exception',
                  'dispatch_exception': 'exception', 'show_exception': 'exception'}
