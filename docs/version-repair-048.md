@@ -78,9 +78,12 @@ and byte-for-byte source preservation. The synthetic record contains no user
 or game data. The launch suite adds first repair and subsequent preservation
 cases, executed under both ARM64 Wine/Box64 and PRoot.
 
-Local compilation and 34 Python contracts pass. Full CI and APK identity are
-recorded in validation after the build completes. No actual game rendering is
-claimed by the synthetic tests or offline decoder checks.
+Local checks and all three CI gates pass: 116 JVM checks, 34 Python contracts,
+36 native Windows checks, the version-registry fixture and 28 launch cases in
+each of Wine/Box64 and PRoot. Both repair and subsequent preservation pass in
+each environment. See [validation](validation.md) for the exact run and signed
+APK identity. No actual game rendering is claimed by synthetic tests or offline
+decoder checks.
 
 ## Device test
 
