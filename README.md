@@ -2,7 +2,7 @@
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
 
-**0.4.0 adds in-app FFXI login and launch.** Enter the server/account/password and launch the xiloader from your accepted preparation. Startup checks the imported loader's CLI markers and Windows dependencies, while the app owns its display, audio and process lifecycle. Credentials are used once and kept out of persisted launch diagnostics. Actual login and world entry now need the Thor test; server integration remains later work.
+**0.4.1 fixes the dependency-checker exit before in-app FFXI launch.** Enter the server/account/password and launch the xiloader from your accepted preparation. Startup checks the imported loader's CLI markers and Windows dependencies, while the app owns its display, audio and process lifecycle. Credentials are used once and kept out of persisted launch diagnostics. The 0.4.0 device attempt loaded all 20 normal-import DLLs, then the checker crashed before xiloader started. The checker now retains loaded modules and terminates only its own disposable process after publishing a complete result. A crash or missing dependency still blocks launch. Actual login/world entry need the next Thor test; server integration remains later work.
 
 Install the update over the existing app, start the existing Termux server and use **Client → Launch FFXI** with host `127.0.0.1`. Keep Turnip 26 and the accepted preparation; no repeated triangle test, runtime download, import or preparation copy is needed. See [0.4.0 launch instructions](docs/client-launch-040.md) and [current handoff](docs/HANDOFF.md). New installations still use [client preparation](docs/client-initialization-030.md) first.
 

@@ -1,4 +1,5 @@
 import importlib.util
+import copy
 import io
 from pathlib import Path
 import sys
@@ -11,6 +12,23 @@ import supervisor
 
 
 class LaunchContracts(unittest.TestCase):
+    def test_checker_receipt_cannot_hide_crash_or_missing_import(self):
+        names=['CRYPT32.dll','MSVCP140.dll']
+        report={'format':1,'bits':32,'check_policy':'load_only','ok':True,
+                'dependencies':[{'name':n,'ok':True,'win32_error':0,'loaded_path':'C:\\windows\\system32\\'+n} for n in names]}
+        client_launch.validate_check(report,names,0)
+        # The supplied device report had all successful loads but exit -11.
+        for code in [-11,1,86,None]:
+            with self.assertRaises(RuntimeError):client_launch.validate_check(report,names,code)
+        for mutation in ['missing','reordered','failed','wrong-policy','wrong-bits']:
+            bad=copy.deepcopy(report)
+            if mutation=='missing':bad['dependencies'].pop()
+            elif mutation=='reordered':bad['dependencies'].reverse()
+            elif mutation=='failed':bad['dependencies'][0].update(ok=False,win32_error=126)
+            elif mutation=='wrong-policy':bad.pop('check_policy')
+            else:bad['bits']=64
+            with self.assertRaises(RuntimeError):client_launch.validate_check(bad,names,0)
+
     def test_pipe_validates_without_echoing_secrets(self):
         payload=b'LSBLOGIN1\n127.0.0.1\naccount\nPa"ss&\\word \n'
         self.assertEqual(client_launch.credentials(io.BytesIO(payload)),(payload,'127.0.0.1'))

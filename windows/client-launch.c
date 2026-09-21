@@ -22,16 +22,19 @@ static BOOL directory(const WCHAR *path,WCHAR *out){
 static int check(int argc,WCHAR **argv){
     WCHAR dir[1024];if(argc<4||!directory(argv[2],dir))return 80;
     FILE *f=_wfopen(L"Z:\\session\\loader-check.new",L"wb");if(!f)return 81;
-    fputs("{\"format\":1,\"bits\":32,\"dependencies\":[",f);BOOL passed=TRUE;
+    fputs("{\"format\":1,\"bits\":32,\"check_policy\":\"load_only\",\"dependencies\":[",f);BOOL passed=TRUE;
     for(int i=3;i<argc;i++){
         for(const WCHAR *p=argv[i];*p;p++)if(!((*p>=L'a'&&*p<=L'z')||(*p>=L'A'&&*p<=L'Z')||(*p>=L'0'&&*p<=L'9')||*p==L'.'||*p==L'_'||*p==L'-')){fclose(f);return 82;}
         HMODULE dll=LoadLibraryW(argv[i]);DWORD error=dll?0:GetLastError();WCHAR loaded[1024]={0};
         if(dll)GetModuleFileNameW(dll,loaded,1024);else passed=FALSE;
         if(i!=3)fputc(',',f);fputs("{\"name\":",f);quoted(f,argv[i]);
         fprintf(f,",\"ok\":%s,\"win32_error\":%lu,\"loaded_path\":",dll?"true":"false",(unsigned long)error);quoted(f,loaded);fputc('}',f);
-        if(dll)FreeLibrary(dll);
+        /* Keep references until this disposable process is terminated. Unloading
+         * each import exercises a different lifetime/order than an executable's
+         * import table, including Wine/Box64 CRT and crypto detach callbacks. */
     }
-    fprintf(f,"],\"ok\":%s}\n",passed?"true":"false");fclose(f);
+    fprintf(f,"],\"ok\":%s}\n",passed?"true":"false");BOOL written=!ferror(f);
+    if(fclose(f))written=FALSE;if(!written)return 81;
     if(!MoveFileExW(L"Z:\\session\\loader-check.new",L"Z:\\session\\loader-check.json",MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))return 83;
     return passed?0:1;
 }
@@ -82,7 +85,14 @@ static int launch(int argc,WCHAR **argv){
 }
 int wmain(int argc,WCHAR **argv){
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|SEM_NOOPENFILEERRORBOX);
-    if(argc>1&&!wcscmp(argv[1],L"check"))return check(argc,argv);
+    if(argc>1&&!wcscmp(argv[1],L"check")){
+        int code=check(argc,argv);
+        /* Only the load-only checker skips CRT/DLL detach. Its receipt is closed
+         * and atomically published before success. The OS reclaims its handles
+         * and memory. Never use this path for the loader/game or an installer.
+         * A failed load, receipt write or termination still has a nonzero exit. */
+        TerminateProcess(GetCurrentProcess(),(UINT)code);return 86;
+    }
     if(argc>1&&!wcscmp(argv[1],L"launch"))return launch(argc,argv);
     return 79;
 }

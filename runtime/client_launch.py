@@ -37,6 +37,19 @@ def record(s, report):
     s.status(client_launch=report)
 
 
+def validate_check(report, expected, exit_code):
+    # A success-looking receipt never overrides an abnormal process exit.
+    if exit_code != 0:
+        raise RuntimeError('Loader dependency checker exited with code '+str(exit_code)+'. xiloader has not started; export Diagnostics.')
+    rows=report.get('dependencies',[])
+    if (not expected or report.get('format')!=1 or report.get('bits')!=32 or
+        report.get('check_policy')!='load_only' or report.get('ok') is not True or
+        not isinstance(rows,list) or len(rows)!=len(expected) or
+        any(not isinstance(row,dict) or row.get('name')!=name or row.get('ok') is not True or
+            row.get('win32_error')!=0 or not row.get('loaded_path') for row,name in zip(rows,expected))):
+        raise RuntimeError('Loader dependencies did not pass. View launch results for missing DLLs.')
+
+
 def check(s):
     manifest=json.loads(Path('/session/client-manifest.json').read_text())
     imports=validate_manifest(manifest)
@@ -53,12 +66,12 @@ def check(s):
     if not dependencies: raise ValueError('Loader has no normal imports; unsupported loader image')
     p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','check',windows_path(manifest['loader']),*dependencies],'loader-check.log')
     try:
-        s.wait(p,90,'Loader dependency check')
+        # Keep genuine DLL failures in the structured report for the UI.
+        s.wait(p,90,'Loader dependency check (xiloader has not started)',accepted=(0,1))
     finally:
         if result.is_file(): report['dependencies']=json.loads(result.read_text())
         report['check_exit']=p.poll();record(s,report)
-    if report.get('dependencies',{}).get('ok') is not True or report['dependencies'].get('bits')!=32:
-        raise RuntimeError('Loader dependencies did not pass. View launch results for missing DLLs.')
+    validate_check(report.get('dependencies',{}),dependencies,report['check_exit'])
     report['status']='ready';record(s,report)
     return manifest,report,flags
 

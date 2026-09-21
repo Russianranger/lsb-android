@@ -1,3 +1,26 @@
+# 0.4.1: dependency checker lifetime fix (2026-09-21)
+
+The user reported immediate exit and supplied `lsb-support(4).zip` (SHA-256 `e42eba5c0ed242258fc664b5b0038751c3669e79e48048d43e94b76690420cfa`). Both retained 0.4.0 attempts fail **before xiloader starts**:
+
+| Session | UTC interval | Result |
+| --- | --- | --- |
+| `01a99a45-4c54-4bba-8957-7aabc988877c` | 00:15:48–00:16:16 | Load checker exit -11 |
+| `ed7720c6-4bc8-438e-b073-2feaf8b7da33` | 00:17:53–00:18:10 | Load checker exit -11 |
+
+All 20 DLL rows in both completed native receipts have `ok=true`, Win32 error 0 and resolved system paths, including MSVCP140, VCRUNTIME140 and UCRT. Python sees SIGSEGV (-11) after the checker wrote its receipt. No loader process receipt or authentication event exists. Turnip 26 / Adreno 740 presentation succeeds first. The accepted client/prefix generation remains `768f3a6d-8dfb-462f-8b9d-46cdd7101505`; registration is not rerun.
+
+**Diagnosis and scope:** the receipt establishes that DLL loading and result publication completed; the crash follows in helper shutdown. The old helper repeatedly called FreeLibrary and then normal CRT/process exit. Its unload/reload and detach lifetime is a likely trigger in Wine/Box64. The report has no native stack identifying a particular DLL or proving the precise engine defect. GnuTLS missing-wrapper warnings alone are not evidence of a missing loader import.
+
+**Fix:** keep all loaded import modules referenced, close and atomically publish the load result, then use TerminateProcess on the disposable checker itself. This avoids CRT/DLL detach callbacks in a process that owns no game session. The real loader, game and installer retain their existing supervision/lifetime. The supervisor still requires exit 0, the new load-only policy and a complete ordered list of successful DLL results. A success-looking receipt never overrides a signal or other nonzero exit. This is a loadability check, not DLL export/API compatibility, login or world-entry proof.
+
+The isolated worker policy follows Microsoft's documented [process termination behavior](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process) and [DLL lifetime constraints](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices). Only the disposable checker skips DLL cleanup; client state is not saved this way.
+
+**Regression coverage:** reproduce the device's exact 20-import order twice, prove a test DLL fails on both explicit unload and ordinary process exit, verify that the corrected checker loads it without invoking detach, keep missing DLL error 126, and keep initialization crashes as failed/no-completed-receipt outcomes. The runtime suite exercises these under ARM64 Wine/Box64 and PRoot before the existing launch/credential/Stop tests. Tests use open synthetic DLLs, not proprietary game files. Execution status will be recorded after CI completes.
+
+**Next device step:** install 0.4.1 over the existing app; start the Termux server and use Client → Launch FFXI with the same host/account and Turnip 26. Keep the current preparation; no reinstall, re-import, prerequisite repair or full copy. If it exits, export the new support ZIP and report the last visible screen. Actual xiloader startup/login/world entry remain pending.
+
+---
+
 # 0.4.0 prepared-client launch verification (2026-09-20)
 
 The prior Thor runtime and actual client registration/COM acceptance remain valid. The new native launcher and Android account/server flow are intended to exercise login and world entry with that accepted preparation. Neither is yet device-verified.

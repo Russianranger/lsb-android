@@ -1,3 +1,5 @@
+> Update for 0.4.1: use the replacement APK in place. It fixes the load-check worker lifetime after the 0.4.0 pre-launch crash. The same device procedure and accepted preparation apply; no prerequisite installer, runtime download or new client copy is requested. See [validation](validation.md) for the evidence and limits.
+
 # Prepared-client launch · 0.4.0
 
 Milestones 1 and 2 are accepted on the Thor: the independent Windows runtime, followed by registration and actual COM construction using the imported US client. This build adds the next device test: execute that installation's xiloader, authenticate to the existing Termux server and attempt character/world entry. Actual game compatibility remains a device acceptance item.

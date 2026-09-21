@@ -33,4 +33,7 @@ if args.tests:
     build('tests/windows/login-stub.c', tests/'login-stub.exe', ['-mconsole'])
     build('tests/windows/missing-dependency.c', tests/'lsb-missing-fixture.dll', ['-shared', '-Wl,--out-implib,'+str(tests/'libmissing.a')])
     build('tests/windows/login-stub.c', tests/'login-missing.exe', ['-mconsole','-DMISSING_IMPORT','-L'+str(tests),'-lmissing'])
+    build('tests/windows/dependency-lifetime.c', tests/'dependency-detach.dll', ['-shared'])
+    build('tests/windows/dependency-lifetime.c', tests/'dependency-attach.dll', ['-shared','-DFAIL_ATTACH'])
+    build('tests/windows/dependency-cycle.c', tests/'dependency-cycle.exe', ['-mconsole'])
 print('Built', assets/'LSB-FFXI.exe')
