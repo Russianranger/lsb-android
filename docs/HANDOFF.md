@@ -1,3 +1,13 @@
+# Active milestone 4: controller, performance and existing-server migration (0.5.0)
+
+The user confirmed 0.4.8 works: login succeeds and audio is clean. Preserve accepted generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, the original nested Ashita xiloader (SHA-256 `78fe8ab1dee5aaac3f866001b706d19d233996e584cf78f3a47b26a0d62cdaf8`), runtime and version repair. Client patch.ver is `30251204_1`; current upstream source expects `30260904_1`, so test the existing matching server before any source update.
+
+0.5.0 implements a virtual SDL/DirectInput gamepad bridge, configurable Android button mappings, RGB565 bitmap transfer, optional 960×540, reduced steady-state launcher polling, separate server/database generations and crystal artwork. New device behavior and actual FFXI performance remain unverified. See [implementation, test boundaries and device sequence](milestone-050.md).
+
+Local JVM and server unit checks pass. ARM64 Wine input and real MariaDB recovery CI are pending; do not claim these have passed until their results are recorded. Full actual LSB compilation and world entry on the managed server require the user's source/database and Thor testing.
+
+---
+
 # Active milestone 3: restore the missing version registry value (0.4.8)
 
 The new `patch_pol.zip` matches the selected polcore.dll. Its unchanged patch.ver decodes as `30251204_1` with Interface string `"0"`. The exact original callback returns -1 for a missing registry value and 0 for `"0"` in isolated x86 emulation; input bytes are preserved. The app had created InstallFolder/language keys but omitted Interface. See [evidence, implementation and limits](version-repair-048.md).

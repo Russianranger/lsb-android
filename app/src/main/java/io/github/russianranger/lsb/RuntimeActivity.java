@@ -22,9 +22,15 @@ public final class RuntimeActivity extends Activity {
     private TextView status;
     private String displayError="";
     private boolean failureShown;
+    private ControllerInput controller;
+    private String padSession="";
+    private final Runnable padTick=new Runnable(){public void run(){if(!viewing)return;try{ClientRuntime rt=ClientRuntime.get(RuntimeActivity.this);if(!padSession.equals(rt.sessionKey())){controller.close();padSession=rt.sessionKey();}if(hasWindowFocus())controller.publish(rt.gamepadState());}catch(IOException ignored){}ui.postDelayed(this,20);}};
+    private long lastStats;
     private final Runnable refresh=new Runnable(){public void run(){
         if(!viewing)return;ClientRuntime rt=ClientRuntime.get(RuntimeActivity.this);
         status.setText(rt.status+(displayError.isEmpty()||!rt.launchError.isEmpty()?"":"\n"+displayError));
+        RfbConnection c=connection;
+        if(c!=null&&System.currentTimeMillis()-lastStats>5000){lastStats=System.currentTimeMillis();double[] sample=c.stats.sample(System.nanoTime());if(sample!=null)rt.recordFrames(sample);}
         if(!rt.alive()&&!rt.launchError.isEmpty()&&!failureShown){
             failureShown=true;
             new AlertDialog.Builder(RuntimeActivity.this).setTitle("Client launch stopped").setMessage(rt.launchError)
@@ -34,16 +40,18 @@ public final class RuntimeActivity extends Activity {
     }};
     @Override public void onCreate(Bundle state){
         super.onCreate(state);setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        LinearLayout layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setBackgroundColor(Color.BLACK);
-        LinearLayout controls=new LinearLayout(this);
-        button(controls,"Back",()->finish());button(controls,"Keyboard",this::keyboard);button(controls,"Esc",()->tapKey(0xff1b));
-        button(controls,"Stop",()->{startForegroundService(new android.content.Intent(this,RuntimeService.class).setAction("stop"));finish();});
-        layout.addView(controls);screen=new Screen();layout.addView(screen,new LinearLayout.LayoutParams(-1,0,1));
-        status=new TextView(this);status.setTextColor(Color.WHITE);status.setTextSize(14);status.setMaxLines(4);layout.addView(status);setContentView(layout);
+        controller=new ControllerInput(this);
+        FrameLayout layout=new FrameLayout(this);layout.setBackgroundColor(Color.BLACK);screen=new Screen();layout.addView(screen,new FrameLayout.LayoutParams(-1,-1));
+        Button menu=new Button(this);menu.setText("☰");menu.setTextColor(Color.WHITE);menu.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xcc15334c));
+        int size=Math.round(48*getResources().getDisplayMetrics().density);FrameLayout.LayoutParams place=new FrameLayout.LayoutParams(size,size,Gravity.TOP|Gravity.RIGHT);place.setMargins(0,8,8,0);layout.addView(menu,place);
+        menu.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("FFXI").setItems(new String[]{"Back to launcher","Keyboard","Send Esc","Controller mapping","Stop client"},(d,which)->{switch(which){case 0:finish();break;case 1:keyboard();break;case 2:tapKey(0xff1b);break;case 3:startActivity(new android.content.Intent(this,MainActivity.class).putExtra("tab","Controller"));break;case 4:startForegroundService(new android.content.Intent(this,RuntimeService.class).setAction("stop"));finish();break;}}).show());
+        status=new TextView(this);status.setTextColor(Color.WHITE);status.setTextSize(11);status.setBackgroundColor(0x88000000);status.setMaxLines(3);layout.addView(status,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));setContentView(layout);
     }
     private void button(LinearLayout row,String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setOnClickListener(v->action.run());row.addView(b,new LinearLayout.LayoutParams(0,-2,1));}
-    @Override protected void onResume(){super.onResume();viewing=true;connect();ui.post(refresh);}
-    @Override protected void onPause(){viewing=false;ui.removeCallbacks(refresh);releaseAndClose();super.onPause();}
+    @Override protected void onResume(){super.onResume();viewing=true;connect();ui.post(refresh);ui.post(padTick);}
+    @Override protected void onPause(){viewing=false;ui.removeCallbacks(refresh);ui.removeCallbacks(padTick);controller.close();releaseAndClose();super.onPause();}
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus&&controller!=null){controller.reset();try{controller.publish(ClientRuntime.get(this).gamepadState());}catch(IOException ignored){}}}
+    @Override public boolean dispatchGenericMotionEvent(MotionEvent e){if(hasWindowFocus()&&controller!=null&&controller.motion(e))return true;return super.dispatchGenericMotionEvent(e);}
     @Override protected void onDestroy(){releaseAndClose();input.shutdown();super.onDestroy();}
     private void connect(){
         final int generation=++connectionGeneration;
@@ -61,7 +69,7 @@ public final class RuntimeActivity extends Activity {
                 if(!viewing||generation!=connectionGeneration)return;
                 s=new LocalSocket();s.connect(new LocalSocketAddress(ClientRuntime.get(this).displaySocket().getPath(),LocalSocketAddress.Namespace.FILESYSTEM));
                 if(s.getPeerCredentials().getUid()!=android.os.Process.myUid())throw new IOException("Display owner mismatch");
-                RfbConnection c=new RfbConnection(s.getInputStream(),s.getOutputStream(),screen);c.handshake();
+                RfbConnection c=new RfbConnection(s.getInputStream(),s.getOutputStream(),screen,getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("fast_display",true));c.handshake();
                 if(!viewing||generation!=connectionGeneration)return;
                 socket=s;connection=c;ui.post(()->displayError="");
                 while(viewing&&generation==connectionGeneration)c.readUpdate();
@@ -95,20 +103,31 @@ public final class RuntimeActivity extends Activity {
         }
     }
     @Override public boolean dispatchKeyEvent(KeyEvent e){
+        if(hasWindowFocus()&&controller!=null&&controller.key(e))return true;
         if(e.getKeyCode()==KeyEvent.KEYCODE_BACK||e.getKeyCode()==KeyEvent.KEYCODE_VOLUME_UP||e.getKeyCode()==KeyEvent.KEYCODE_VOLUME_DOWN||!hasWindowFocus())return super.dispatchKeyEvent(e);
         if(e.getAction()==KeyEvent.ACTION_UP){Integer sym=held.remove(e.getKeyCode());if(sym!=null){send(c->c.key(sym,false));return true;}}
         if(e.getAction()==KeyEvent.ACTION_DOWN){int sym=keysym(e);if(sym!=0){held.put(e.getKeyCode(),sym);send(c->c.key(sym,true));return true;}}
         return super.dispatchKeyEvent(e);
     }
     private final class Screen extends View implements RfbConnection.Screen {
-        private Bitmap bitmap;private final Object lock=new Object();private final RectF destination=new RectF();private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);private int fw=1280,fh=720;private int[] copy=new int[0];
+        private Bitmap bitmap;private Canvas bitmapCanvas;private final Object lock=new Object();private final RectF destination=new RectF();private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);private int fw=1280,fh=720;private int[] copy=new int[0];
+        private final java.util.LinkedHashMap<Long,Bitmap> staging=new java.util.LinkedHashMap<Long,Bitmap>(4,.75f,true);
+        private byte[] wrapped;private java.nio.ByteBuffer bytes;
         Screen(){super(RuntimeActivity.this);setFocusable(true);setFocusableInTouchMode(true);}
-        public void resize(int w,int h){synchronized(lock){bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);fw=w;fh=h;}postInvalidate();}
+        public void resize(int w,int h){synchronized(lock){bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);bitmapCanvas=new Canvas(bitmap);fw=w;fh=h;for(Bitmap old:staging.values())old.recycle();staging.clear();}postInvalidate();}
+        public boolean raw565(int x,int y,int w,int h,byte[] data,int length){synchronized(lock){
+            if(bitmap==null)return false;
+            if(wrapped!=data){wrapped=data;bytes=java.nio.ByteBuffer.wrap(data);}
+            long key=((long)w<<32)|h;Bitmap tile=staging.get(key);
+            if(tile==null){if(staging.size()>=3){Long old=staging.keySet().iterator().next();staging.remove(old).recycle();}tile=Bitmap.createBitmap(w,h,Bitmap.Config.RGB_565);staging.put(key,tile);}
+            if(tile.getRowBytes()!=w*2)return false;
+            bytes.position(0);bytes.limit(length);tile.copyPixelsFromBuffer(bytes);bitmapCanvas.drawBitmap(tile,x,y,null);return true;
+        }}
         public void pixels(int x,int y,int w,int h,int[] argb){synchronized(lock){if(bitmap!=null)bitmap.setPixels(argb,0,w,x,y,w,h);}}
         public void copy(int x,int y,int w,int h,int sx,int sy){synchronized(lock){if(bitmap==null)return;if(copy.length<w*h)copy=new int[w*h];bitmap.getPixels(copy,0,w,sx,sy,w,h);bitmap.setPixels(copy,0,w,x,y,w,h);}}
         public void updated(){postInvalidateOnAnimation();}
         private void arrange(){float scale=Math.min(getWidth()/(float)fw,getHeight()/(float)fh);float w=fw*scale,h=fh*scale;destination.set((getWidth()-w)/2,(getHeight()-h)/2,(getWidth()+w)/2,(getHeight()+h)/2);}
-        @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);synchronized(lock){arrange();if(bitmap!=null)canvas.drawBitmap(bitmap,null,destination,paint);}}
+        @Override protected void onDraw(Canvas canvas){long begin=System.nanoTime();super.onDraw(canvas);synchronized(lock){arrange();if(bitmap!=null)canvas.drawBitmap(bitmap,null,destination,paint);}RfbConnection c=connection;if(c!=null)c.stats.drawn(System.nanoTime()-begin);}
         private void point(MotionEvent e,int mask){int x,y;synchronized(lock){arrange();if(destination.width()<=0)return;x=(int)((e.getX()-destination.left)*fw/destination.width());y=(int)((e.getY()-destination.top)*fh/destination.height());}send(c->c.pointer(x,y,mask));}
         @Override public boolean onTouchEvent(MotionEvent e){switch(e.getActionMasked()){case MotionEvent.ACTION_DOWN:requestFocus();point(e,1);return true;case MotionEvent.ACTION_MOVE:point(e,1);return true;case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:point(e,0);return true;default:return true;}}
         @Override public boolean onGenericMotionEvent(MotionEvent e){if(e.isFromSource(InputDevice.SOURCE_MOUSE)){int mask=((e.getButtonState()&MotionEvent.BUTTON_PRIMARY)!=0?1:0)|((e.getButtonState()&MotionEvent.BUTTON_SECONDARY)!=0?4:0);point(e,mask);return true;}return super.onGenericMotionEvent(e);}

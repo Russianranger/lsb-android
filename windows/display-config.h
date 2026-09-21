@@ -1,6 +1,7 @@
 /* Five FFXI display DWORDs only. Backups live in this prepared Wine prefix. */
 static const WCHAR *setting_names[]={L"0001",L"0002",L"0003",L"0004",L"0034"};
 static const DWORD windowed_values[]={1280,720,1280,720,1};
+static const DWORD windowed_small[]={960,540,960,540,1};
 static DWORD setting_values[5],setting_before[5],config_rollback_error;
 static BOOL setting_present[5],setting_before_present[5],setting_changed[5];
 static BOOL config_checked,config_backup_ready;
@@ -39,7 +40,7 @@ static LONG display_backup(HKEY key,BOOL create){
 }
 static LONG display_config(const WCHAR *language,const WCHAR *policy){
     if((wcscmp(language,L"0")&&wcscmp(language,L"1")&&wcscmp(language,L"2"))||
-       (wcscmp(policy,L"preserve")&&wcscmp(policy,L"windowed720")&&wcscmp(policy,L"restore")))return ERROR_INVALID_PARAMETER;
+       (wcscmp(policy,L"preserve")&&wcscmp(policy,L"windowed720")&&wcscmp(policy,L"windowed540")&&wcscmp(policy,L"restore")))return ERROR_INVALID_PARAMETER;
     config_policy=policy;config_checked=FALSE;config_backup_ready=FALSE;config_rollback_error=0;
     memset(setting_changed,0,sizeof(setting_changed));memset(setting_values,0,sizeof(setting_values));memset(setting_present,0,sizeof(setting_present));
     memset(setting_before,0,sizeof(setting_before));memset(setting_before_present,0,sizeof(setting_before_present));
@@ -56,15 +57,15 @@ static LONG display_config(const WCHAR *language,const WCHAR *policy){
     if(!wcscmp(policy,L"preserve")){RegCloseKey(key);config_checked=TRUE;return 0;}
     HKEY backup;
     rc=RegOpenKeyExW(HKEY_LOCAL_MACHINE,backup_branch,0,KEY_QUERY_VALUE|KEY_SET_VALUE|KEY_WOW64_32KEY,&backup);
-    if(rc==ERROR_FILE_NOT_FOUND&&!wcscmp(policy,L"windowed720"))
+    if(rc==ERROR_FILE_NOT_FOUND&&(!wcscmp(policy,L"windowed720")||!wcscmp(policy,L"windowed540")))
         rc=RegCreateKeyExW(HKEY_LOCAL_MACHINE,backup_branch,0,NULL,0,KEY_QUERY_VALUE|KEY_SET_VALUE|KEY_WOW64_32KEY,NULL,&backup,NULL);
     if(rc){RegCloseKey(key);return rc==ERROR_FILE_NOT_FOUND?ERROR_NOT_FOUND:rc;}
-    rc=display_backup(backup,!wcscmp(policy,L"windowed720"));
+    rc=display_backup(backup,(!wcscmp(policy,L"windowed720")||!wcscmp(policy,L"windowed540")));
     DWORD target[5];BOOL target_present[5];
     /* Validate a completed backup before applying or restoring the profile. */
     if(!rc)rc=display_read(backup,target,target_present);RegCloseKey(backup);
     if(rc){RegCloseKey(key);return rc;}
-    if(!wcscmp(policy,L"windowed720"))for(int i=0;i<5;i++){target[i]=windowed_values[i];target_present[i]=TRUE;}
+    if((!wcscmp(policy,L"windowed720")||!wcscmp(policy,L"windowed540")))for(int i=0;i<5;i++){target[i]=!wcscmp(policy,L"windowed540")?windowed_small[i]:windowed_values[i];target_present[i]=TRUE;}
     BOOL written[5]={0};
     for(int i=0;i<5;i++){
         if(target_present[i]==setting_before_present[i]&&(!target_present[i]||target[i]==setting_before[i]))continue;

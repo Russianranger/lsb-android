@@ -130,7 +130,7 @@ static int launch(int argc,WCHAR **argv){
     CloseHandle(pi.hThread);child_pid=pi.dwProcessId;launched_at=GetTickCount64();
     if(!receipt("running",0,0)){TerminateProcess(pi.hProcess,90);CloseHandle(pi.hProcess);return 90;}
     DWORD waited,code=0;
-    while((waited=WaitForSingleObject(pi.hProcess,250))==WAIT_TIMEOUT){
+    while((waited=WaitForSingleObject(pi.hProcess,game_window_seen&&GetTickCount64()-launched_at>10000?3000:250))==WAIT_TIMEOUT){
         observe();
         if(!receipt("running",0,0)){TerminateProcess(pi.hProcess,90);CloseHandle(pi.hProcess);return 90;}
     }

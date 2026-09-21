@@ -19,6 +19,7 @@ jobs:
         run: |
           python3 scripts/test.py
           python3 -m unittest discover -s tests/runtime -p 'test_*.py'
+          python3 -m unittest discover -s tests/server -p 'test_*.py'
       - uses: actions/cache@v4
         with:
           path: .tools/runtime
@@ -27,7 +28,7 @@ jobs:
       - name: Build x86 Windows launcher and native test fixtures
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686-posix
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686-posix clang lld
           python3 scripts/build-launcher.py --tests
       - uses: actions/upload-artifact@v4
         with:
@@ -45,12 +46,12 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.4.8.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.0.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.4.8.apk
+            out/LSB-Android-0.5.0.apk
             out/runtime-probes/
             out/runtime-assets/
             out/windows-tests/client-com-stub.dll
@@ -59,6 +60,7 @@ jobs:
             out/windows-tests/login-stub.exe
             out/windows-tests/display-config.exe
             out/windows-tests/version-registry.exe
+            out/windows-tests/gamepad-check.exe
             out/windows-tests/login-missing.exe
             out/windows-tests/dependency-detach.dll
             out/windows-tests/dependency-attach.dll
@@ -113,6 +115,14 @@ jobs:
           for path in Path('out/runtime-test').rglob('*.log'):
               print(path, path.read_text(errors='replace')[-6000:])
           PYLOG
+  server-deployment:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Real MariaDB deployment and recovery on ARM64
+        run: docker run --rm -v "$PWD:/src:ro" ubuntu:26.04 bash /src/tests/server/check.sh
+
   runtime-release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/codex/client-baseline'
     needs: [verify, windows-launcher, runtime]

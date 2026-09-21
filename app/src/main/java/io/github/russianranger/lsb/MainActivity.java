@@ -24,12 +24,13 @@ public final class MainActivity extends Activity {
     private static final int BG = Color.rgb(12, 20, 31), CARD = Color.rgb(24, 36, 49), TEXT = Color.rgb(232, 239, 247), MUTED = Color.rgb(163, 182, 198), ACCENT = Color.rgb(106, 207, 193);
     private String tab = "Client", pending = "";
     private LinearLayout content;
-    private TextView operation, runtimeStatus;
+    private TextView operation, runtimeStatus,serverStatus;
     private ProgressBar progress;
     private Button cancel;
     private EditText host;
     private EditText loginPassword;
-    private boolean showPreparation;
+    private boolean showPlaySettings;
+    private boolean showPreparation,showClientFiles,showConnection,showClientBackup;
     private Spinner region, playOnline;
     private List<String> playOnlinePaths = Collections.emptyList();
     private CheckBox preserve;
@@ -44,6 +45,7 @@ public final class MainActivity extends Activity {
                 cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE);
             }
             if(runtimeStatus!=null)runtimeStatus.setText(ClientRuntime.get(MainActivity.this).status);
+            if(serverStatus!=null)serverStatus.setText(ServerRuntime.get(MainActivity.this).status);
             if (generation != WorkService.generation) { generation = WorkService.generation; draw(); }
             handler.postDelayed(this, 600);
         }
@@ -55,6 +57,7 @@ public final class MainActivity extends Activity {
             getWindow().getDecorView().setOnApplyWindowInsetsListener((v, insets) -> { v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom()); return insets; });
         }
         if (saved != null) { tab = saved.getString("tab", "Client"); pending = saved.getString("pending", ""); preserveOnImport = saved.getBoolean("preserve", true); }
+        else if(getIntent().hasExtra("tab"))tab=getIntent().getStringExtra("tab");
         generation = WorkService.generation;
         if (!WorkService.busy) { try {
             store(this).recover();
@@ -91,17 +94,21 @@ public final class MainActivity extends Activity {
     }
     private Button button(LinearLayout parent, String text, Runnable action) {
         Button b = new Button(this); b.setText(text); b.setAllCaps(false); b.setTextColor(TEXT); b.setMinHeight(dp(48));
+        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(36,66,88)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, dp(4), 0, dp(4)); parent.addView(b, lp);
         b.setOnClickListener(v -> { if (WorkService.busy) { toast("Wait for the current operation, or cancel it."); return; } try { action.run(); } catch (Exception e) { error(e); } }); return b;
     }
     private void draw() {
-        runtimeStatus=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;
+        runtimeStatus=null;serverStatus=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(18), dp(8), dp(18), dp(8));
-        TextView heading = label("LSB Android", 26, TEXT); heading.setTypeface(null, Typeface.BOLD); page.addView(heading);
-        page.addView(label("FFXI client runtime preview · 0.4.8", 13, ACCENT));
+        FrameLayout hero=new FrameLayout(this);hero.setBackground(background(Color.rgb(15,35,58)));
+        try(InputStream in=getAssets().open("art/"+(tab.equals("Server")?"server-background.png":"client-background.png"))){ImageView art=new ImageView(this);art.setImageDrawable(android.graphics.drawable.Drawable.createFromStream(in,null));art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));}catch(IOException ignored){}
+        View shade=new View(this);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xe5091526,0x66091526,0x11091526}));hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout title=column();title.setPadding(dp(20),dp(12),dp(16),dp(8));TextView heading=label("LSB",30,TEXT);heading.setTypeface(android.graphics.Typeface.create("serif",Typeface.BOLD));title.addView(heading);title.addView(label("A world of adventure, on your device",13,Color.rgb(175,219,255)));hero.addView(title);page.addView(hero,new LinearLayout.LayoutParams(-1,dp(106)));
+        page.addView(label("Client & server launcher · 0.5.0",11,MUTED));
         LinearLayout nav = new LinearLayout(this);
-        for (String name : new String[]{"Client", "Runtime", "Profile", "Server", "Diagnostics"}) {
-            Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));
+        for (String name : new String[]{"Client", "Controller", "Server", "Runtime", "Profile", "Diagnostics"}) {
+            Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(44));b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(name.equals(tab)?Color.rgb(38,80,111):Color.rgb(23,41,60)));
             nav.addView(b, new LinearLayout.LayoutParams(0, -2, 1));
             b.setOnClickListener(v -> { tab = name; draw(); });
         }
@@ -111,7 +118,7 @@ public final class MainActivity extends Activity {
         cancel = new Button(this); cancel.setText("Cancel operation"); cancel.setAllCaps(false); cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE); cancel.setOnClickListener(v -> { WorkService.cancel(); toast("Cancelling; waiting for the current file operation to stop."); }); page.addView(cancel);
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); content = column(); scroll.addView(content); page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(page);
-        try { switch (tab) { case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
+        try { switch (tab) { case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Controller": controllerPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
         catch (Exception e) { content.addView(label("Cannot read app state: " + e.getMessage(), 16, TEXT)); }
     }
     private void runtimePage() throws Exception {
@@ -147,6 +154,8 @@ public final class MainActivity extends Activity {
         }
         if(!ready||showPreparation)initializationCard(s);
         if (s.hasPendingImport() && !WorkService.busy) pendingImportCard(s);
+        if(ready){LinearLayout fileToggle=column();content.addView(fileToggle);button(fileToggle,showClientFiles?"Hide client files":"Client files and updates",()->{showClientFiles=!showClientFiles;draw();});}
+        if(!ready||showClientFiles){
         LinearLayout status = card(s.hasClient() ? "Imported client" : "Bring your FFXI installation");
         status.addView(label(s.summary(), 15, TEXT));
         status.addView(label("Your imported files are the source for a separate working installation. Launch uses the activated preparation above.", 14, MUTED));
@@ -154,6 +163,9 @@ public final class MainActivity extends Activity {
         preserve = new CheckBox(this); preserve.setText("Preserve current FFXI USER and PlayOnline usr settings on client import"); preserve.setTextColor(TEXT); preserve.setChecked(preserveOnImport); preserve.setOnCheckedChangeListener((b, checked) -> preserveOnImport = checked); status.addView(preserve);
         button(status, s.hasClient() ? "Import a complete client update ZIP" : "Import client ZIP", () -> pick("client")).setEnabled(!s.hasPendingImport());
         button(status, "Import xiloader.exe", () -> pick("loader")).setEnabled(s.hasClient());
+        }
+        LinearLayout connectionToggle=column();content.addView(connectionToggle);button(connectionToggle,showConnection?"Hide connection and recovery tools":"Connection and recovery tools",()->{showConnection=!showConnection;draw();});
+        if(showConnection){
         LinearLayout launch = card("Connection and repair");
         LaunchConfig cfg = s.config(); launch.addView(label("Server address", 14, MUTED)); host = new EditText(this); host.setSingleLine(true); host.setTextColor(TEXT); host.setText(cfg.host); host.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI); launch.addView(host);
         launch.addView(label("Client region", 14, MUTED)); region = new Spinner(this); region.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"US", "EU", "JP"})); region.setSelection(Arrays.asList("US", "EU", "JP").indexOf(cfg.region)); launch.addView(region);
@@ -175,11 +187,15 @@ public final class MainActivity extends Activity {
         button(launch, "Export prepared client + GameHub launcher", () -> { try { saveConnection(); create("prepared", "ffxi-prepared.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
         button(launch, "Export launcher update only", () -> { try { saveConnection(); create("launcher", "ffxi-launcher-update.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
         launch.addView(label("Legacy external export tools remain available. They are not required for the new in-app runtime checks.", 13, MUTED));
+        }
+        LinearLayout backupToggle=column();content.addView(backupToggle);button(backupToggle,showClientBackup?"Hide backups":"Client backups",()->{showClientBackup=!showClientBackup;draw();});
+        if(showClientBackup){
         LinearLayout backup = card("Backup and recovery");
         button(backup, "Export session backup", () -> create("backup", "lsb-session.zip")).setEnabled(s.hasClient());
         button(backup, "Restore session backup", () -> confirm("Restore session", "The backup is validated before activation. Your current client becomes the rollback copy.", () -> pick("restore"))).setEnabled(!s.hasPendingImport());
         button(backup, "Switch to previous client", () -> confirm("Switch client", "Validate the previous client, then swap it with the current client?", () -> run("Validating previous client", (ctx, p) -> { store(ctx).rollback(p); return "Previous client restored. The other copy remains available for rollback."; }))).setEnabled(s.hasPrevious());
         backup.addView(label("A session backup includes imported game files and saved connection settings. Windows runtime prefixes are separate and are not included. Uninstalling this app removes its managed copies.", 13, MUTED));
+    }
     }
     private EditText loginField(LinearLayout card,String title,String value,int type){
         card.addView(label(title,14,MUTED));EditText field=new EditText(this);field.setSingleLine(true);field.setTextColor(TEXT);field.setInputType(type);field.setText(value);
@@ -190,17 +206,23 @@ public final class MainActivity extends Activity {
     private void loginCard(ClientStore source)throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);JSONObject state=rt.preparationState();
         LinearLayout card=card("Play FINAL FANTASY XI");runtimeStatus=label(rt.status,15,ACCENT);card.addView(runtimeStatus);
-        card.addView(label("Start your existing Termux server, then log in with your server account. The prepared client is reused.",15,TEXT));
+        card.addView(label("Start your Termux or managed server, then log in. Your working client and loader are kept together.",15,TEXT));
+        int optionsStart=card.getChildCount();
         card.addView(label("FFXI display setting",14,MUTED));
-        final String[] displayProfiles={"windowed720","preserve","restore"};
+        final String[] displayProfiles={"windowed720","windowed540","preserve","restore"};
         Spinner display=new Spinner(this);display.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,
-            new String[]{"Windowed 1280×720 (recommended)","Keep current display settings","Restore saved original display settings"}));
+            new String[]{"Windowed 1280×720","Windowed 960×540 (lighter)","Keep current display settings","Restore saved original display settings"}));
         int selected=Arrays.asList(displayProfiles).indexOf(getSharedPreferences("runtime",MODE_PRIVATE).getString("display_profile","windowed720"));
         display.setSelection(Math.max(0,selected));card.addView(display);
         card.addView(label("Applied when you launch. Windowed mode saves the original display settings once, so you can restore them later. Your client files are retained.",13,MUTED));
         CheckBox startupTrace=new CheckBox(this);startupTrace.setText("Capture FFXI startup result");startupTrace.setTextColor(TEXT);
-        startupTrace.setChecked(getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("startup_trace",true));card.addView(startupTrace);
+        startupTrace.setChecked(getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("startup_trace",false));card.addView(startupTrace);
         card.addView(label("Runs a temporary diagnostic copy to identify where startup stops. Your original loader stays unchanged. Turn off to launch the original directly.",13,MUTED));
+        LinearLayout performance=column();card.addView(performance);
+        CheckBox fast=new CheckBox(this);fast.setText("Fast display · lower color depth");fast.setTextColor(TEXT);fast.setChecked(getSharedPreferences("runtime",0).getBoolean("fast_display",true));fast.setOnCheckedChangeListener((b,v)->getSharedPreferences("runtime",0).edit().putBoolean("fast_display",v).apply());performance.addView(fast);
+        CheckBox hud=new CheckBox(this);hud.setText("Show DXVK game FPS");hud.setTextColor(TEXT);hud.setChecked(getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));hud.setOnCheckedChangeListener((b,v)->getSharedPreferences("runtime",0).edit().putBoolean("dxvk_hud",v).apply());performance.addView(hud);
+        performance.addView(label("Fast display halves transfer size and uses native bitmap copying. Switch it off for full color. 960×540 also reduces game rendering load. Keep startup capture off during normal play unless investigating a failure.",13,MUTED));
+        LinearLayout playOptions=column();int optionCount=card.getChildCount()-optionsStart;for(int i=0;i<optionCount;i++){View view=card.getChildAt(optionsStart);card.removeView(view);playOptions.addView(view);}playOptions.setVisibility(showPlaySettings?View.VISIBLE:View.GONE);
         EditText server=loginField(card,"Server address",source.config().host,android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
         EditText account=loginField(card,"Account","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         EditText secret=loginField(card,"Password","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);loginPassword=secret;
@@ -221,6 +243,7 @@ public final class MainActivity extends Activity {
         }).setEnabled(rt.installed()&&!rt.alive());
         button(card,"Open client display",()->startActivity(new Intent(this,RuntimeActivity.class))).setEnabled(rt.alive());
         button(card,"Stop client",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());
+        button(card,"Graphics and launch options",()->{showPlaySettings=!showPlaySettings;playOptions.setVisibility(showPlaySettings?View.VISIBLE:View.GONE);});card.addView(playOptions);
         button(card,"Check launcher dependencies",()->startInitialization("check-launcher")).setEnabled(!rt.alive());
         button(card,"View launch results",()->{try{JSONObject current=rt.preparationState().getJSONObject("current");showText("Launch results",current.has("last_launch")?current.getJSONObject("last_launch").toString(2):"No launch check has run yet.");}catch(Exception e){error(e);}});
         if(showPreparation){
@@ -311,21 +334,58 @@ public final class MainActivity extends Activity {
         notes.addView(label("Reported working process: install PlayOnline/FFXI to initialize registration, replace their folders with updated files, then resolve xiloader initialization. Prior context identifies xiloader v2.0 and CLI autologin.\n\nThe chat-history search returned the recent assessment, not the old command transcript. Exact DLL overrides, installer order, translator preset internals, and the successful initialization command remain unverified.", 14, TEXT));
         button(notes, "Export compatibility profile", () -> create("profile", "ffxi-working-profile.json"));
     }
-    private void serverPage() throws IOException {
-        LinearLayout source = card("LandSandBoat source");
-        source.addView(label("Import source now for the later compiler/launcher milestone. This build does not compile, import a database, or start server processes.", 14, MUTED));
-        File report = new File(storage(this), "server/current/source-report.txt"); if (report.exists()) source.addView(label(FilesEx.read(report, 8192), 14, TEXT));
-        EditText repo = new EditText(this); repo.setTextColor(TEXT); repo.setSingleLine(true); repo.setText("https://github.com/Russianranger/LSB-server"); source.addView(repo);
-        EditText ref = new EditText(this); ref.setTextColor(TEXT); ref.setSingleLine(true); ref.setHint("Branch, tag, or commit"); ref.setText("base"); source.addView(ref);
-        button(source, "Download source from GitHub", () -> { final String r = repo.getText().toString().trim(), branch = ref.getText().toString().trim(); run("Resolving source revision", (ctx, p) -> SourceImport.download(new File(storage(ctx), "server"), r, branch, p)); });
-        button(source, "Import source ZIP", () -> pick("source"));
-        LinearLayout connect = card("Test your existing server");
-        connect.addView(label("Probe TCP ports 54231 (authentication), 54230 (login data), and 54001 (view) at the saved Client address. This does not verify authentication, the UDP map port, or world entry.", 14, MUTED));
-        button(connect, "Probe saved server address", () -> run("Checking server TCP ports", (ctx, p) -> {
-            String address = store(ctx).config().host; StringBuilder reportText = new StringBuilder("TCP reachability only: " + address + "\n");
-            for (int port : new int[]{54231, 54230, 54001}) { SafeZip.checkCancelled(); p.update("Checking TCP " + port); try (Socket socket = new Socket()) { socket.connect(new InetSocketAddress(address, port), 2500); reportText.append(port).append(": reachable\n"); } catch (IOException e) { reportText.append(port).append(": unavailable (").append(e.getClass().getSimpleName()).append(")\n"); } }
-            FilesEx.text(new File(ctx.getFilesDir(), "server-probe.txt"), reportText.toString()); return reportText.toString();
-        }));
+    private void controllerPage() throws Exception {
+        SharedPreferences prefs=getSharedPreferences("controller",0);
+        LinearLayout pad=card("Controller mapping");
+        pad.addView(label("Send physical controls as a Windows joystick so FFXI can use its native gamepad settings. Button numbers below are the joystick buttons presented to the game.",15,TEXT));
+        CheckBox enabled=new CheckBox(this);enabled.setText("Enable native gamepad");enabled.setTextColor(TEXT);enabled.setChecked(prefs.getBoolean("enabled",true));pad.addView(enabled);
+        String[] targets=new String[21];targets[0]="Unmapped";for(int i=1;i<=16;i++)targets[i]="Gamepad button "+i;targets[17]="D-pad up";targets[18]="D-pad right";targets[19]="D-pad down";targets[20]="D-pad left";
+        Spinner[] maps=new Spinner[ControllerInput.NAMES.length];
+        for(int i=0;i<maps.length;i++){LinearLayout row=new LinearLayout(this);TextView name=label(ControllerInput.NAMES[i],15,TEXT);row.addView(name,new LinearLayout.LayoutParams(0,-2,1));maps[i]=new Spinner(this);maps[i].setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,targets));maps[i].setSelection(Math.max(0,Math.min(20,prefs.getInt("button_"+i,i<12?i+1:17+i-12))));row.addView(maps[i],new LinearLayout.LayoutParams(0,-2,2));pad.addView(row);}
+        CheckBox swap=new CheckBox(this);swap.setText("Swap left and right sticks");swap.setTextColor(TEXT);swap.setChecked(prefs.getBoolean("swap_sticks",false));pad.addView(swap);
+        CheckBox left=new CheckBox(this);left.setText("Invert left stick Y");left.setTextColor(TEXT);left.setChecked(prefs.getBoolean("invert_left_y",false));pad.addView(left);
+        CheckBox right=new CheckBox(this);right.setText("Invert right stick Y");right.setTextColor(TEXT);right.setChecked(prefs.getBoolean("invert_right_y",false));pad.addView(right);
+        pad.addView(label("Stick dead zone",14,MUTED));SeekBar dead=new SeekBar(this);dead.setMax(35);dead.setProgress(prefs.getInt("deadzone",18));pad.addView(dead);
+        button(pad,"Save controller mapping",()->{SharedPreferences.Editor edit=prefs.edit().putBoolean("enabled",enabled.isChecked()).putBoolean("swap_sticks",swap.isChecked()).putBoolean("invert_left_y",left.isChecked()).putBoolean("invert_right_y",right.isChecked()).putInt("deadzone",dead.getProgress());for(int i=0;i<maps.length;i++)edit.putInt("button_"+i,maps[i].getSelectedItemPosition());edit.apply();toast("Controller mapping saved. Reopen the client display to apply it.");});
+        button(pad,"Restore default mapping",()->{prefs.edit().clear().apply();draw();});
+        button(pad,"Open FFXI gamepad setup",()->startInitialization("gamepad-config")).setEnabled(!ClientRuntime.get(this).alive());
+        pad.addView(label("The sticks provide X/Y and Z/Rz axes. Triggers default to buttons 11 and 12. Held inputs are released when the display loses focus. Set movement, camera and actions in FFXI’s gamepad configuration after testing detection.",13,MUTED));
+    }
+    private void serverPage() throws Exception {
+        ServerRuntime sr=ServerRuntime.get(this);boolean running=sr.alive();
+        LinearLayout live=card("Your LandSandBoat server");serverStatus=label(sr.status,15,ACCENT);live.addView(serverStatus);
+        JSONObject active=sr.deployment();
+        if(active.has("generation"))live.addView(label("Active server · "+active.optInt("accounts")+" accounts · "+active.optInt("characters")+" characters\nExpected client: "+active.optString("expected_client"),15,TEXT));
+        else live.addView(label("First deploy the server folder and SQL backup that already work with this client. Client files and xiloader are never updated by these server actions.",15,TEXT));
+        button(live,"Start managed server",()->startForegroundService(new Intent(this,ServerService.class))).setEnabled(sr.installed()&&active.has("generation")&&!running);
+        button(live,"Stop managed server",()->startForegroundService(new Intent(this,ServerService.class).setAction("stop"))).setEnabled(running);
+        live.addView(label("Stop the Termux server before starting this one: they use the same login/map ports. The managed server can keep running while you play. Use 127.0.0.1 in the Client tab.",13,MUTED));
+        LinearLayout existing=card("Import your working server");
+        button(existing,sr.installed()?"Server runtime installed":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(!running&&!sr.installed());
+        button(existing,"Export Termux packaging helper",()->create("server-helper","export-existing-lsb.py"));
+        existing.addView(label("Run the helper inside your existing server’s Linux distro: python3 export-existing-lsb.py /path/to/server. It creates the server ZIP and SQL.gz without updating them.",13,MUTED));
+        button(existing,"Import existing server folder ZIP",()->pick("source")).setEnabled(!running);
+        button(existing,"Import existing database (.sql / .sql.gz)",()->pick("server-sql")).setEnabled(!running);
+        existing.addView(label(sr.hasDatabaseImport()?"SQL backup imported and ready for deployment.":"Use a full SQL dump of your game database, including accounts and characters. Raw MariaDB data folders are not imported.",13,MUTED));
+        EditText database=new EditText(this);database.setTextColor(TEXT);database.setSingleLine(true);database.setHint("Original database name");database.setText(getSharedPreferences("server",0).getString("database","xidb"));existing.addView(database);
+        CheckBox local=new CheckBox(this);local.setText("Configure all zones for one local map process");local.setTextColor(TEXT);local.setChecked(getSharedPreferences("server",0).getBoolean("local_zones",true));existing.addView(local);
+        Runnable save=()->{String name=database.getText().toString().trim();if(!name.matches("[A-Za-z][A-Za-z0-9_]{0,47}"))throw new IllegalArgumentException("Enter a database name using letters, digits and underscores");getSharedPreferences("server",0).edit().putString("database",name).putBoolean("local_zones",local.isChecked()).apply();};
+        button(existing,"Deploy imported Linux ARM64 server + database",()->{save.run();run("Deploying existing server",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",false,p));}).setEnabled(sr.installed()&&sr.hasDatabaseImport()&&!running);
+        button(existing,"Build imported source and deploy database",()->{save.run();run("Building existing server revision",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",true,p));}).setEnabled(sr.installed()&&sr.hasDatabaseImport()&&!running);
+        existing.addView(label("Import the complete server folder: settings, scripts, modules, sql, tools, meshes and matching binaries/source. Linux ARM64 binaries may be reused; Windows or Termux-native binaries must be rebuilt from the same source. Deployment stages an independent database before switching.",13,MUTED));
+        LinearLayout source=card("Source and database updates");
+        File report=new File(storage(this),"server/current/source-report.txt");if(report.exists())source.addView(label(FilesEx.read(report,8192),13,MUTED));
+        EditText repo=new EditText(this);repo.setTextColor(TEXT);repo.setSingleLine(true);repo.setText(getSharedPreferences("server",0).getString("repository","https://github.com/Russianranger/LSB-server"));source.addView(repo);
+        EditText ref=new EditText(this);ref.setTextColor(TEXT);ref.setSingleLine(true);ref.setHint("Branch, tag or exact commit");ref.setText(getSharedPreferences("server",0).getString("ref","base"));source.addView(ref);
+        button(source,"Fetch selected source revision",()->{String repository=repo.getText().toString().trim(),revision=ref.getText().toString().trim();getSharedPreferences("server",0).edit().putString("repository",repository).putString("ref",revision).apply();run("Fetching source snapshot",(ctx,p)->SourceImport.download(new File(storage(ctx),"server"),repository,revision,p));}).setEnabled(!running);
+        button(source,"Inspect selected source",()->run("Inspecting source",(ctx,p)->ServerRuntime.get(ctx).perform("inspect",false,p))).setEnabled(sr.installed()&&!running);
+        button(source,"Build and apply source + database update",()->confirm("Stage a server update","First verify the existing server deployment works. This builds the selected source and runs its database migrations on a separate copy. Your current server/database pair stays available for rollback. Client and loader versions must be compatible with the selected revision.",()->run("Staging server and database update",(ctx,p)->ServerRuntime.get(ctx).perform("update",true,p)))).setEnabled(sr.installed()&&active.has("generation")&&!running);
+        source.addView(label("Fetching source only changes the selected snapshot. It never updates the running deployment. Updates keep a complete previous server/database pair; rolling back also rolls player progress back to that copy.",13,MUTED));
+        LinearLayout recovery=card("Server backups and logs");
+        button(recovery,"Export full database backup",()->create("server-db","lsb-database.sql.gz")).setEnabled(active.has("generation")&&!running);
+        button(recovery,"Restore previous server + database",()->confirm("Restore previous deployment","This switches both server files and player data to the retained previous generation. Progress made after that snapshot remains in the other generation.",()->run("Switching server generation",(ctx,p)->ServerRuntime.get(ctx).perform("rollback",false,p)))).setEnabled(active.has("generation")&&!running);
+        button(recovery,"View server operation log",()->{try{showText("Server log",sr.operationLog());}catch(Exception e){error(e);}});
+        button(recovery,"Probe saved server address",()->run("Checking server TCP ports",(ctx,p)->{String address=store(ctx).config().host;StringBuilder result=new StringBuilder("TCP reachability only: "+address+"\n");for(int port:new int[]{54231,54230,54001})try(Socket socket=new Socket()){socket.connect(new InetSocketAddress(address,port),2500);result.append(port).append(": reachable\n");}catch(IOException e){result.append(port).append(": unavailable\n");}FilesEx.text(new File(ctx.getFilesDir(),"server-probe.txt"),result.toString());return result.toString();}));
     }
     private void diagnosticsPage() throws IOException {
         LinearLayout d = card("Support and validation");
@@ -335,10 +395,10 @@ public final class MainActivity extends Activity {
         button(d, "View repair script", () -> { try { File f = new File(getFilesDir(), "repair-preview.txt"); showText("Repair recipe · not yet executed", f.exists() ? FilesEx.read(f, 32768) : "Use Client → Validate client and preview repair script first."); } catch (Exception e) { error(e); } });
         button(d, "View operation log", () -> { try { File f = new File(getFilesDir(), "operations.log"); showText("Operation log", f.exists() ? FilesEx.read(f, 262144) : "No operations yet"); } catch (Exception e) { error(e); } });
         LinearLayout next = card("Runtime status");
-        next.addView(label("Client files: managed import available\nRegistry/COM repair: in-app staged initialization\nWindows runtime: experimental Wine 10 / Box64 candidate\nDisplay, D3D8 and audio: open-probe checks in Runtime tab\nFFXI registration/COM: staged preparation on Client tab\nLogin: prepared-client launch on Client tab\nFEX and controller mappings: later milestones\nServer toolchain and database runtime: not bundled\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
+        next.addView(label("Client files: managed import available\nRegistry/COM repair: in-app staged initialization\nWindows runtime: experimental Wine 10 / Box64 candidate\nDisplay, D3D8 and audio: open-probe checks in Runtime tab\nFFXI registration/COM: staged preparation on Client tab\nLogin: prepared-client launch on Client tab\nController: native joystick mapping\nServer: isolated source/database deployment\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
     }
     private void pick(String kind) { pending = kind; Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"); startActivityForResult(i, PICK); }
-    private void create(String kind, String name) { pending = kind; Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind.equals("profile") ? "application/json" : "application/zip").putExtra(Intent.EXTRA_TITLE, name); startActivityForResult(i, CREATE); }
+    private void create(String kind, String name) { pending = kind; Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind.equals("profile") ? "application/json" : kind.equals("server-helper")?"text/x-python":kind.equals("server-db")?"application/gzip":"application/zip").putExtra(Intent.EXTRA_TITLE, name); startActivityForResult(i, CREATE); }
     @Override protected void onActivityResult(int request, int response, Intent data) {
         super.onActivityResult(request, response, data);
         if ((request != PICK && request != CREATE) || response != RESULT_OK || data == null || data.getData() == null) { pending = ""; return; }
@@ -355,7 +415,8 @@ public final class MainActivity extends Activity {
                         case "restore": store(ctx).importClient(in, true, false, p); return store(ctx).hasPendingImport() ? "Backup extracted. Choose the PlayOnline version on the Client tab to finish restore." : "Session restored and validated.";
                         case "prerequisite": return ClientRuntime.get(ctx).importPrerequisite(in);
                         case "loader": store(ctx).importLoader(in, p); return "32-bit xiloader imported. Its runtime compatibility still needs a launch test.";
-                        case "source": return SourceImport.stage(new File(storage(ctx), "server"), in, "User-selected ZIP (revision unverified)", p);
+                        case "server-sql": return ServerRuntime.get(ctx).importDatabase(in,p);
+                        case "source": if(ServerRuntime.get(ctx).alive())throw new IOException("Stop the managed server before importing source"); return SourceImport.stage(new File(storage(ctx), "server"), in, "User-selected ZIP (revision unverified)", p);
                         default: throw new IOException("File operation was lost; please select it again");
                     }
                 }
@@ -363,6 +424,8 @@ public final class MainActivity extends Activity {
             try (OutputStream out = ctx.getContentResolver().openOutputStream(uri, "wt")) {
                 if (out == null) throw new IOException("Cannot write to the selected destination");
                 switch (kind) {
+                    case "server-helper": try(InputStream helper=ctx.getAssets().open("server/export_existing.py")){byte[] b=new byte[8192];int n;while((n=helper.read(b))!=-1)out.write(b,0,n);} break;
+                    case "server-db": ServerRuntime.get(ctx).exportDatabase(out,p); break;
                     case "backup": store(ctx).exportBackup(out, p); break;
                     case "prepared": case "launcher": store(ctx).exportPrepared(out, profile(ctx), windowsLauncher(ctx), kind.equals("prepared"), p); break;
                     case "profile": out.write(profile(ctx).getBytes(StandardCharsets.UTF_8)); break;
@@ -385,10 +448,11 @@ public final class MainActivity extends Activity {
         ClientStore s = store(ctx);
         try (ZipOutputStream zip = new ZipOutputStream(out)) {
             ClientRuntime.get(ctx).exportLogs(zip);
+            ServerRuntime.get(ctx).exportLogs(zip);
             SafeZip.entry(zip, "runtime-profile.json", profile(ctx)); SafeZip.entry(zip, "inventory.json", s.inventory()); SafeZip.entry(zip, "summary.txt", s.summary()); SafeZip.entry(zip, "session.properties", s.config().properties());
             SafeZip.entry(zip, "playonline-candidates.txt", String.join("\n", s.playOnlineChoices()) + "\n");
             if (s.hasPendingImport()) SafeZip.entry(zip, "pending-playonline.txt", "Waiting for PlayOnline selection\n" + String.join("\n", s.pendingChoices()) + "\n");
-            SafeZip.entry(zip, "device.txt", "app=0.4.8\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=prepared_client_launch\n");
+            SafeZip.entry(zip, "device.txt", "app=0.5.0\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=prepared_client_launch\n");
             for (String name : new String[]{"operations.log", "server-probe.txt", "repair-preview.txt"}) { File f = new File(ctx.getFilesDir(), name); if (f.exists()) SafeZip.entry(zip, name, FilesEx.read(f, 262144)); }
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }

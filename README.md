@@ -1,14 +1,12 @@
 # LSB Android
 
-0.4.8 repairs a missing FFXI `Interface\0001` registry value when the unchanged `patch.ver` verifies with the supported `"0"` key. It checks the full record, restores only a missing value in the selected region's 32-bit registry view, and preserves existing values and client files. Install in place and launch with the existing prepared client and Termux server. The supplied file now passes isolated PlayOnline decoding; device game startup still needs verification. See [evidence and repair limits](docs/version-repair-048.md).
+The user confirmed successful in-app login and clean audio with 0.4.8 on the AYN Thor. 0.5.0 adds physical-controller mapping through a native Wine joystick bridge, a lower-cost display path, an optional 960×540 game profile, and an isolated server deployment workflow. Device acceptance of these new features is pending.
 
-Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
+Install over the existing app. Keep the accepted client preparation, original xiloader and current Termux server for the first controller/performance test. No client re-import or runtime replacement is required. See [0.5.0 testing and server migration](docs/milestone-050.md) and [current handoff](docs/HANDOFF.md).
 
-Login now succeeds on the Thor, but the loader exits before an observed game window. The app reports recognized login failures, preserves credential-free diagnostics and retains the accepted client preparation. Character selection, world entry and server integration remain pending.
+The server workflow imports an existing source/binary folder plus a logical SQL dump, deploys them as an independent generation, and can build the same imported source when existing binaries are incompatible. Source/database updates stage a clone and retain the prior pair for rollback. Client and xiloader updating are deliberately separate, future work. A new source snapshot does not update the deployed server automatically.
 
-Install the update over the existing app, start the existing Termux server and use **Client → Launch FFXI** with host `127.0.0.1`. Keep Turnip 26 and the accepted preparation; no repeated triangle test, runtime download, import or preparation copy is needed. See [0.4.0 launch instructions](docs/client-launch-040.md) and [current handoff](docs/HANDOFF.md). New installations still use [client preparation](docs/client-initialization-030.md) first.
-
-The accepted foundation is Wine 10 / Box64 0.4.4 with an x86 DXVK D3D8+D3D9 pair and embedded display/audio/input. It is distinct from the historical Proton/FEX setup. The user's actual US PlayOnline/FFXI DLL registration and COM construction have now passed on the Thor; the working client/prefix is activated. The remaining client milestone is game display and world entry. Individual user-supplied x86 prerequisite installers can run in a failed staged preparation. Existing session backups retain the original imported client, not prepared Windows generations.
+The accepted client foundation remains Wine 10 / Box64 0.4.4, Turnip 26, DXVK D3D8/D3D9 and embedded display/audio/input. The server uses a separate Ubuntu 26.04 ARM64 environment; it does not modify the client runtime or Termux installation.
 
 ## Available in 0.1.3
 

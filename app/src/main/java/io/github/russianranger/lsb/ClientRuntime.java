@@ -40,6 +40,18 @@ final class ClientRuntime {
     }
     boolean installed(){return new File(root,"lsb-runtime.sha256").isFile();}
     boolean alive(){Process p=process;return active||starting||(p!=null&&p.isAlive());}
+    String sessionKey(){return sessionId;}
+    JSONObject compatibilitySnapshot()throws Exception {
+        File generation=launchGeneration();JSONObject manifest=clientManifest(generation);String loader=manifest.optString("loader");
+        JSONObject snapshot=new JSONObject().put("generation",generation.getName()).put("loader_sha256",manifest.getJSONObject("key_files").optString(loader)).put("region",manifest.getString("region"));
+        File result=new File(generation,"last-launch.json");if(result.isFile()){
+            JSONObject launch=new JSONObject(read(result,262144));JSONObject process=launch.optJSONObject("process");
+            if(process!=null&&process.optJSONObject("version_config")!=null){String version=process.getJSONObject("version_config").optString("version");if(!version.isEmpty())context.getSharedPreferences("compatibility",0).edit().putString(generation.getName(),version).apply();}
+        }
+        return snapshot.put("client_version",context.getSharedPreferences("compatibility",0).getString(generation.getName(),"unknown"));
+    }
+    File gamepadState(){return new File(run,"gamepad.bin");}
+    void recordFrames(double[] s){try{JSONObject data=new JSONObject().put("display_updates_per_second",s[1]).put("unique_draws_per_second",s[2]).put("decode_ms",s[4]).put("draw_ms",s[5]).put("pixels_per_second",s[6]).put("conversion_ms",s[8]).put("bitmap_apply_ms",s[9]).put("fast_display",context.getSharedPreferences("runtime",0).getBoolean("fast_display",true));write(new File(logs,"display-performance.json"),data.toString(2));}catch(Exception ignored){}}
     File displaySocket(){return new File(run,"display.sock");}
     static String read(File p,int max)throws IOException {
         if(p.length()>max)throw new IOException("Metadata exceeds limits");return new String(Files.readAllBytes(p.toPath()),StandardCharsets.UTF_8);
@@ -172,7 +184,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.4.8");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.0");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -207,16 +219,22 @@ final class ClientRuntime {
         synchronized(WorkService.class){synchronized(this){if(alive()||WorkService.busy)throw new IOException("Wait for the current operation");active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();}}
         launchError="";
         try{
-            if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher").contains(action))throw new IOException("Unsupported runtime action");
+            if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher","gamepad-config").contains(action))throw new IOException("Unsupported runtime action");
             if(action.equals("launch")&&login==null)throw new IOException("Enter account and password again to launch");
-            if(action.equals("launch")&&!Arrays.asList("windowed720","preserve","restore").contains(displayProfile))throw new IOException("Choose a supported FFXI display setting");
+            if(action.equals("launch")&&!Arrays.asList("windowed720","windowed540","preserve","restore").contains(displayProfile))throw new IOException("Choose a supported FFXI display setting");
             if(!installed()||!read(new File(root,"lsb-runtime.sha256"),128).equals(RUNTIME_SHA))throw new IOException("Install the pinned runtime first");
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");
             reapOrphans();
             TarExtractor.remove(run);TarExtractor.remove(tmp);run.mkdirs();tmp.mkdirs();prefix.mkdirs();assets();
             File[] old=logs.listFiles();if(old!=null)for(File f:old)if(f.isFile()&&!f.getName().endsWith(".previous"))LogRetention.rotate(f);
             sessionId=UUID.randomUUID().toString();JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action);
-            if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);}
+            if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
+                request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
+                request.put("display_fps",context.getSharedPreferences("runtime",0).getInt("display_fps",30));
+                request.put("dxvk_hud",context.getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));
+                try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}
+            }
+            if(action.equals("gamepad-config")){request.put("gamepad",true);try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}}
             write(new File(run,"request.json"),request.toString());
             write(new File(run,"status.json"),new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",initialize?"copying_client":"preparing_runtime").put("game_files_mounted",false).toString());
             if(initialize){
@@ -308,6 +326,7 @@ final class ClientRuntime {
             }
             File[] attempts=new File(gen,"attempts").listFiles();if(attempts!=null)for(File f:attempts)if(f.isFile())SafeZip.entry(zip,"prepared/"+kind+"/attempts/"+f.getName(),read(f,262144));
         }
+        File pad=new File(run,"gamepad-bridge.json");if(pad.isFile())SafeZip.entry(zip,"runtime/gamepad-bridge.json",read(pad,4096));
         File[] files=logs.listFiles();if(files==null)return;
         Arrays.sort(files,Comparator.comparing(File::getName));
         for(File file:files){

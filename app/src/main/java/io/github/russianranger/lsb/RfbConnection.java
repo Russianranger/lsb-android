@@ -10,6 +10,7 @@ final class RfbConnection {
         void pixels(int x,int y,int width,int height,int[] argb);
         void copy(int x,int y,int width,int height,int sourceX,int sourceY);
         void updated();
+        default boolean raw565(int x,int y,int width,int height,byte[] data,int length){return false;}
     }
     final DataInputStream in;
     private final DataOutputStream out;
@@ -19,10 +20,15 @@ final class RfbConnection {
     // An 800x600 moving scene no longer allocates another 1.8 MiB per update.
     private int[] pixelBuffer=new int[0];
     private byte[] rowBuffer=new byte[0];
+    private byte[] rawBuffer=new byte[0];
+    private final boolean rgb565;
     final ClientFrameStats stats=new ClientFrameStats();
     RfbConnection(InputStream in,OutputStream out,Screen screen) {
+        this(in,out,screen,false);
+    }
+    RfbConnection(InputStream in,OutputStream out,Screen screen,boolean rgb565) {
         this.in=new DataInputStream(new BufferedInputStream(in,65536));
-        this.out=new DataOutputStream(out);this.screen=screen;
+        this.out=new DataOutputStream(out);this.screen=screen;this.rgb565=rgb565;
     }
     private byte[] bytes(int count)throws IOException {if(count<0||count>1048576)throw new IOException("Display message exceeds limits");byte[] b=new byte[count];in.readFully(b);return b;}
     void handshake()throws IOException {handshake(true);}
@@ -38,7 +44,7 @@ final class RfbConnection {
         int w=in.readUnsignedShort(),h=in.readUnsignedShort();bytes(16);bytes(in.readInt());resize(w,h);
         synchronized(out) {
             out.writeInt(0); // SetPixelFormat and three padding bytes.
-            out.write(new byte[]{32,24,0,1,0,(byte)255,0,(byte)255,0,(byte)255,16,8,0,0,0,0});
+            out.write(rgb565?new byte[]{16,16,0,1,0,31,0,63,0,31,11,5,0,0,0,0}:new byte[]{32,24,0,1,0,(byte)255,0,(byte)255,0,(byte)255,16,8,0,0,0,0});
             out.writeByte(2);out.writeByte(0);out.writeShort(3);out.writeInt(0);out.writeInt(1);out.writeInt(-223);out.flush();
         }
         if(frames)request(false);
@@ -62,6 +68,16 @@ final class RfbConnection {
             if(encoding==-223){resize(w,h);continue;}
             rectangle(x,y,w,h);
             if(encoding==0) {
+                if(rgb565){
+                    int length=w*h*2;if(rawBuffer.length<length)rawBuffer=new byte[length];
+                    in.readFully(rawBuffer,0,length);long apply=System.nanoTime();
+                    if(!screen.raw565(x,y,w,h,rawBuffer,length)){
+                        if(pixelBuffer.length<w*h)pixelBuffer=new int[w*h];
+                        for(int n=0;n<w*h;n++){int v=(rawBuffer[n*2]&255)|((rawBuffer[n*2+1]&255)<<8);int r=(v>>11)&31,g=(v>>5)&63,b=v&31;pixelBuffer[n]=0xff000000|((r*255/31)<<16)|((g*255/63)<<8)|(b*255/31);}
+                        screen.pixels(x,y,w,h,pixelBuffer);
+                    }
+                    long cost=System.nanoTime()-apply;decode+=cost;stats.stages(0,cost);pixelCount+=(long)w*h;continue;
+                }
                 if(pixelBuffer.length<w*h)pixelBuffer=new int[w*h];
                 int rows=Math.max(1,65536/(w*4));
                 if(rowBuffer.length<rows*w*4)rowBuffer=new byte[rows*w*4];

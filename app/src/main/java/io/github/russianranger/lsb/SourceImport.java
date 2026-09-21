@@ -48,7 +48,7 @@ final class SourceImport {
             SafeZip.extract(in, incoming, progress);
             File source = unwrap(incoming);
             if (!new File(source, "CMakeLists.txt").isFile() || !new File(source, "src").isDirectory() || !new File(source, "sql").isDirectory()) throw new IOException("Expected a LandSandBoat source ZIP containing CMakeLists.txt, src/ and sql/");
-            String report = "Source: " + origin + "\nStatus: source staged; compiler and server runtime are not installed in 0.2.0.\n";
+            String report = "Source: " + origin + "\nStatus: source snapshot selected; active deployment is unchanged.\n";
             for (String mesh : Arrays.asList("navmeshes", "ximeshes")) {
                 File dir = new File(source, mesh); report += mesh + ": " + (dir.isDirectory() && FilesEx.children(dir).length > 0 ? "directory present (content not verified)" : "missing; GitHub source ZIPs do not include submodule contents") + "\n";
             }

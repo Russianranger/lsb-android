@@ -47,10 +47,13 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud'}:raise ValueError('Unexpected runtime request field')
+    if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
+    for key in ('gamepad','dxvk_hud'):
+        if key in req and not isinstance(req[key],bool):raise ValueError('Unsupported '+key+' setting')
     if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
-    if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
-    if req.get('action','probe') not in ('probe','initialize','installer','launch','check-launcher','repair-launcher'):raise ValueError('Unsupported runtime action')
+    if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','windowed540','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
+    if req.get('action','probe') not in ('probe','initialize','installer','launch','check-launcher','repair-launcher','gamepad-config'):raise ValueError('Unsupported runtime action')
     if not isinstance(req.get('audio'),bool):raise ValueError('Invalid audio setting')
     if not isinstance(req.get('session_id'),str) or len(req['session_id'])!=36:raise ValueError('Missing session identity')
     return req
@@ -177,7 +180,7 @@ class Supervisor:
         driver='turnip-26.0.0.so' if self.req['renderer']=='turnip26' else 'turnip.so'
         atomic(SESSION/'turnip-icd.json',{'file_format_version':'1.0.0','ICD':{'library_path':str(BUNDLE/driver),'api_version':'1.3.0'}})
         self.env.update(VK_ICD_FILENAMES=str(SESSION/'turnip-icd.json'),VK_DRIVER_FILES=str(SESSION/'turnip-icd.json'),MESA_VK_WSI_DEBUG='sw',
-            DXVK_LOG_LEVEL='info',DXVK_LOG_PATH=str(LOGS),DXVK_HUD='devinfo,fps',DXVK_STATE_CACHE_PATH=str(PREFIX/'lsb-cache'),MESA_SHADER_CACHE_DIR=str(PREFIX/'lsb-cache'))
+            DXVK_LOG_LEVEL='info',DXVK_LOG_PATH=str(LOGS),DXVK_HUD='devinfo,fps' if self.req.get('dxvk_hud',True) else '',DXVK_STATE_CACHE_PATH=str(PREFIX/'lsb-cache'),MESA_SHADER_CACHE_DIR=str(PREFIX/'lsb-cache'))
         (PREFIX/'lsb-cache').mkdir(exist_ok=True)
         command=[str(BUNDLE/'vulkan-probe')]
         # CI-only environment injection. Android uses env -i and never exposes this switch.
@@ -207,13 +210,15 @@ class Supervisor:
         else:self.env['WINEDLLOVERRIDES']+=';winepulse.drv,winealsa.drv=d'
         (SESSION/'Xauthority').touch(mode=0o600)
         self.wait(self.spawn(['xauth','-f',str(SESSION/'Xauthority'),'add',':7','.',secrets.token_hex(16)],'xauth.log'),10,'X authentication')
-        x=self.spawn(['Xtigervnc',':7','-geometry','1280x720','-depth','24','-rfbport','-1','-rfbunixpath',str(SESSION/'display.sock'),'-rfbunixmode','0600','-SecurityTypes','None','-nolisten','tcp','-auth',str(SESSION/'Xauthority'),'-AlwaysShared','-FrameRate','30','-desktop','LSB runtime probe'],'display.log')
+        x=self.spawn(['Xtigervnc',':7','-geometry','960x540' if self.req.get('display_profile')=='windowed540' else '1280x720','-depth','24','-rfbport','-1','-rfbunixpath',str(SESSION/'display.sock'),'-rfbunixmode','0600','-SecurityTypes','None','-nolisten','tcp','-auth',str(SESSION/'Xauthority'),'-AlwaysShared','-FrameRate',str(self.req.get('display_fps',30)),'-desktop','LSB runtime probe'],'display.log')
         for _ in range(200):
             self.stopped()
             if x.poll() is not None:raise RuntimeError('Display startup failed; see display.log')
             if (SESSION/'display.sock').exists():break
             time.sleep(.1)
         else:raise RuntimeError('Display socket did not appear')
+        if self.req.get('gamepad',False):
+            self.env.update(LD_PRELOAD=str(BUNDLE/'liblsb-gamepad.so'),LSB_GAMEPAD_STATE=str(SESSION/'gamepad.bin'))
         self.status('preparing_prefix',display_ready=True)
         # Setup uses Wine's own defaults, without loading native DXVK before system files exist.
         marker=PREFIX/'lsb-prefix-ready.json'
@@ -238,6 +243,18 @@ class Supervisor:
             for name in ('d3d8','d3d9'):
                 dest=PREFIX/'drive_c/windows/syswow64'/(name+'.dll')
                 tmp=dest.with_suffix('.lsb-new');shutil.copyfile(BUNDLE/('dxvk-'+name+'.dll'),tmp);tmp.replace(dest)
+        if self.req.get('action')=='gamepad-config':
+            from client_setup import validate_manifest,client_path,windows_path
+            manifest=json.loads((SESSION/'client-manifest.json').read_text());validate_manifest(manifest)
+            area={'US':'ToolsUS','EU':'ToolsEU','JP':'Tools'}[manifest['region']]
+            folder=client_path(manifest['game'])/area
+            files=list(folder.glob('*.exe')) if folder.is_dir() else []
+            choices=[p for p in files if 'padconfig' in p.name.lower()]
+            if not choices:choices=[p for p in files if 'config' in p.name.lower()]
+            args=[windows_path(choices[0].relative_to('/client').as_posix())] if choices else ['control','joy.cpl']
+            self.status('configuring_controller',message='FFXI controller configuration' if choices else 'Windows gamepad calibration (FFXI config executable not found)')
+            self.wait(self.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',*args],'gamepad-config.log'),3600,'Controller configuration')
+            self.status('completed');return
         if self.req.get('action') in ('launch','check-launcher'):
             from client_launch import check, run
             self.status(prefix_system_files_verified=True)

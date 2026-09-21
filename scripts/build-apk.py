@@ -13,7 +13,7 @@ p.add_argument('--android-jar', type=Path, required=True)
 p.add_argument('--build-tools', type=Path, required=True)
 p.add_argument('--keystore', type=Path, required=True)
 p.add_argument('--alias', default='lsb-preview')
-p.add_argument('--output', type=Path, default=root/'out/LSB-Android-0.4.8.apk')
+p.add_argument('--output', type=Path, default=root/'out/LSB-Android-0.5.0.apk')
 args = p.parse_args()
 work = root/'out/apk-build'
 classes = work/'classes'
@@ -31,13 +31,17 @@ class_jar = work/'classes.jar'
 with zipfile.ZipFile(class_jar, 'w', zipfile.ZIP_DEFLATED) as z:
     for f in classes.rglob('*.class'): z.write(f, f.relative_to(classes).as_posix())
 run('java', '-cp', args.build_tools/'lib/d8.jar', 'com.android.tools.r8.D8', '--min-api', '26', '--lib', args.android_jar, '--output', dex, class_jar)
+resources=work/'resources.zip'
+run(args.build_tools/'aapt2','compile','--dir',root/'app/src/main/res','-o',resources)
 unsigned = work/'unsigned.apk'
-run(args.build_tools/'aapt2', 'link', '-I', args.android_jar, '--manifest', root/'app/src/main/AndroidManifest.xml', '--min-sdk-version', '26', '--target-sdk-version', '35', '-o', unsigned)
+run(args.build_tools/'aapt2', 'link', '-I', args.android_jar, '--manifest', root/'app/src/main/AndroidManifest.xml', '--min-sdk-version', '26', '--target-sdk-version', '35', resources,'-o', unsigned)
 with zipfile.ZipFile(unsigned, 'a', zipfile.ZIP_DEFLATED) as z:
     z.write(root/'out/launcher-assets/LSB-FFXI.exe', 'assets/LSB-FFXI.exe')
     for folder in ['runtime', 'out/runtime-assets', 'out/runtime-probes']:
         for f in sorted((root/folder).iterdir()):
             if f.is_file(): z.write(f, 'assets/runtime/'+f.name)
+    for f in sorted((root/'server').glob('*')):
+        if f.is_file():z.write(f,'assets/server/'+f.name)
     for f in sorted((root/'out/runtime-libs').rglob('*.so')):
         z.write(f, 'lib/'+f.relative_to(root/'out/runtime-libs').as_posix())
     for f in sorted(dex.glob('*.dex')): z.write(f, f.name)

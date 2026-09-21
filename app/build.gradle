@@ -6,11 +6,12 @@ android {
         applicationId 'io.github.russianranger.lsb'
         minSdk 26
         targetSdk 35
-        versionCode 15
-        versionName '0.4.8'
+        versionCode 16
+        versionName '0.5.0'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
     sourceSets.main.assets.srcDir rootProject.file('out/launcher-assets')
+    sourceSets.main.assets.srcDir rootProject.file('out/server-packaged-assets')
     sourceSets.main.assets.srcDir rootProject.file('out/runtime-packaged-assets')
     sourceSets.main.jniLibs.srcDir rootProject.file('out/runtime-libs')
     packaging { jniLibs { useLegacyPackaging true; keepDebugSymbols += ['**/libproot.so', '**/libproot-loader.so'] } }

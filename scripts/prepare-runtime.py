@@ -27,6 +27,8 @@ def fetch(name):
    target.with_suffix('.part').unlink(missing_ok=True);last=e
  raise RuntimeError('Cannot retrieve pinned '+name+': '+str(last))
 def main():
+ import subprocess
+ subprocess.run(["python3",str(ROOT/"scripts/build-gamepad.py")],check=True)
  p=argparse.ArgumentParser();p.add_argument('--release',action='store_true');a=p.parse_args()
  OUT.mkdir(parents=True,exist_ok=True)
  names=['turnip.so','turnip-26.0.0.so','vulkan-probe','libasound_module_pcm_trasc.so','audio-bundle.json','wineserver','wineserver-patch.json']
@@ -51,5 +53,8 @@ def main():
   if folder.exists():
    for f in folder.iterdir():
     if f.is_file():shutil.copyfile(f,packaged/f.name)
+ server=ROOT/'out/server-packaged-assets/server';server.mkdir(parents=True,exist_ok=True)
+ for f in (ROOT/'server').iterdir():
+  if f.is_file():shutil.copyfile(f,server/f.name)
  print('Verified runtime assets:',len(files))
 if __name__=='__main__':main()
