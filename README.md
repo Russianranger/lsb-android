@@ -1,14 +1,14 @@
-0.4.5 is a startup diagnostic update for the remaining post-login exit. The 0.4.4 windowed profile applied correctly on the Thor but did not produce a game window. Install the update in place, launch once with the existing settings, and export Diagnostics. See [current findings and limits](docs/startup-diagnostics-045.md).
-
 # LSB Android
+
+0.4.5 is a startup diagnostic update for the remaining post-login exit. The 0.4.4 windowed profile applied correctly on the Thor but did not produce a game window. Install the update in place, launch once with the existing settings, and export Diagnostics. See [current findings and limits](docs/startup-diagnostics-045.md).
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
 
-**0.4.2 surfaces login failures and stops the waiting loader.** The 0.4.1 device test passed dependency loading and started xiloader, but its login-failure event was hidden behind a generic running status. The new build shows a specific reason when recognized, returns you to the login form, and preserves credential-free diagnostics. Actual login and world entry remain pending; server integration is later work.
+Login now succeeds on the Thor, but the loader exits before an observed game window. The app reports recognized login failures, preserves credential-free diagnostics and retains the accepted client preparation. Character selection, world entry and server integration remain pending.
 
 Install the update over the existing app, start the existing Termux server and use **Client → Launch FFXI** with host `127.0.0.1`. Keep Turnip 26 and the accepted preparation; no repeated triangle test, runtime download, import or preparation copy is needed. See [0.4.0 launch instructions](docs/client-launch-040.md) and [current handoff](docs/HANDOFF.md). New installations still use [client preparation](docs/client-initialization-030.md) first.
 
-The accepted foundation is Wine 10 / Box64 0.4.4 with an x86 DXVK D3D8+D3D9 pair and embedded display/audio/input. It is distinct from the historical Proton/FEX setup. The user's actual US PlayOnline/FFXI DLL registration and COM construction have now passed on the Thor; the working client/prefix is activated. Login/world entry is next. Individual user-supplied x86 prerequisite installers can run in a failed staged preparation. Existing session backups retain the original imported client, not prepared Windows generations.
+The accepted foundation is Wine 10 / Box64 0.4.4 with an x86 DXVK D3D8+D3D9 pair and embedded display/audio/input. It is distinct from the historical Proton/FEX setup. The user's actual US PlayOnline/FFXI DLL registration and COM construction have now passed on the Thor; the working client/prefix is activated. The remaining client milestone is game display and world entry. Individual user-supplied x86 prerequisite installers can run in a failed staged preparation. Existing session backups retain the original imported client, not prepared Windows generations.
 
 ## Available in 0.1.3
 
