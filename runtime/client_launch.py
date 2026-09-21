@@ -134,7 +134,10 @@ def run(s, display):
         report.update(server=host,status='starting',display_profile=profile);record(s,report)
         s.stopped();s.private_output=True
         result=Path('/session/loader-process.json');result.unlink(missing_ok=True)
-        env=dict(s.env,WINEDEBUG='-all',BOX64_LOG='0',BOX64_NOBANNER='1',DXVK_LOG_LEVEL='none')
+        # All output stays on the existing private pipe. DXVK must not create its
+        # own unfiltered file; error/COM/SEH evidence is normalized in memory.
+        env=dict(s.env,WINEDEBUG='-all,+timestamp,+pid,err+all,warn+module,warn+seh,trace+seh,trace+loaddll,fixme+ole',
+                 BOX64_LOG='0',BOX64_NOBANNER='1',DXVK_LOG_LEVEL='info',DXVK_LOG_PATH='none')
         env['WINEDLLOVERRIDES']+=';winedbg='
         # No credentials in argv/environment. Native helper supplies the Windows CLI.
         p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','launch',windows_path(manifest['loader']),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile],
@@ -147,10 +150,11 @@ def run(s, display):
             nonlocal last_progress
             events=writer.events.snapshot();state=progress(events,time.monotonic()-started,report.get('process'))
             phase,message,failure=state
-            if (state,events)!=last_progress:
-                report.update(events=events,launch_stage=phase,message=message)
+            diagnostics=writer.events.diagnostics.snapshot()
+            if (state,events,diagnostics)!=last_progress:
+                report.update(events=events,launch_stage=phase,message=message,startup_diagnostics=diagnostics)
                 if failure:report.update(status='failed',failure_reason=failure,termination_reason='launcher_reported_failure')
-                record(s,report);s.status(phase,message=message);last_progress=(state,events)
+                record(s,report);s.status(phase,message=message);last_progress=(state,events,diagnostics)
             if failure:raise RuntimeError(message)
         while p.poll() is None:
             s.stopped()

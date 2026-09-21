@@ -1,3 +1,15 @@
+# Active milestone 3: capture the silent startup failure (0.4.5)
+
+The latest `lsb-support (1)(1).zip` (SHA-256 `3bdcbd1030a7201edcd75312736bc7432df8abf1a4fec72850916e717f3fea95`) records 0.4.4 session `aa460280-6a87-4994-a0cb-aeac44e1b07c`. The five windowed values were applied and read back successfully; original settings were saved. The loader nevertheless closed with child/bridge exit 0 after 15,111 ms, with POL/FFXI/FFXiMain/D3D8/D3D9 observed and no game window or standard dialog observed in 35 samples. This rejects windowed mode as a sufficient fix. Do not repeat a settings-only update or infer a proven exception from the user's word “crashing.”
+
+0.4.5 fixes a diagnostic blind spot: the launch environment previously set `WINEDEBUG=-all` and `DXVK_LOG_LEVEL=none`. It now captures bounded, filtered Wine DLL/COM/exception/error metadata and DXVK initialization/error categories through the existing private pipe. DXVK file output is explicitly disabled. Numeric Wine process/thread IDs can be correlated with the native receipt's child PID; unhandled process failure still depends on the real exit, not a first-chance exception or a recoverable warning. Unknown text, paths, GUIDs, register/stack contents and credentials are discarded. This is a diagnostic update, not a demonstrated fix for the proprietary GameStart return.
+
+Keep prepared generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, imported xiloader SHA-256 `78fe8ab1dee5aaac3f866001b706d19d233996e584cf78f3a47b26a0d62cdaf8`, the source import, saved display originals and Wine/Box64/Turnip/DXVK runtime. No prerequisite installation, new preparation, GameHub transfer or renderer change is supported by this report. Next device action after validation: install 0.4.5 in place, launch once with the existing settings/server, then export fresh Diagnostics. The next report must establish whether a captured error/exception explains the early return. If it is still silent, the imported loader does not expose GameStart's return/HRESULT; direct source-level loader instrumentation may be required. Never claim DLL loading or Vulkan probe frames establish game rendering.
+
+See [startup diagnostics](startup-diagnostics-045.md) and [validation](validation.md). Local and CI validation for 0.4.5 is being recorded below; do not claim completion until the final evidence is added.
+
+---
+
 # Active milestone 3: explicit windowed display profile (0.4.4)
 
 The new `lsb-support(5).zip` device report (SHA-256 `871b057ff6b647abbea1f31d45857bb226d9321d0126cebf869e564d4e6f79e3`) records 0.4.3 session `be51e556-b2a6-45a9-959c-4353bb3f8113`. Login succeeds; POL, FFXI, FFXiMain, D3D8 and D3D9 are observed, but no game window/dialog is observed before exit 0. All five display values already existed: 640×480 overlay, 512×512 background, fullscreen mode 0. The 0.4.3 missing-only policy made no changes. Do not repeat that test or claim it exercised 1280×720 windowed mode.

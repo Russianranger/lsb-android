@@ -80,8 +80,8 @@ static BOOL receipt(const char *phase,DWORD error,DWORD code){
         fprintf(f,":{\"value\":%lu,\"present\":%s,\"previous_value\":%lu,\"previous_present\":%s,\"changed\":%s}",
             (unsigned long)setting_values[i],setting_present[i]?"true":"false",(unsigned long)setting_before[i],setting_before_present[i]?"true":"false",setting_changed[i]?"true":"false");
     }
-    fprintf(f,"}},\"observation\":{\"samples\":%lu,\"elapsed_ms\":%llu,\"module_error\":%lu,\"window_error\":%lu,\"ffxi_window_seen\":%s,\"dialog_seen\":%s,\"modules_seen\":[",
-        (unsigned long)samples,launched_at?(unsigned long long)(GetTickCount64()-launched_at):0ULL,(unsigned long)module_error,(unsigned long)window_error,game_window_seen?"true":"false",dialog_seen?"true":"false");
+    fprintf(f,"}},\"observation\":{\"child_pid\":%lu,\"samples\":%lu,\"elapsed_ms\":%llu,\"module_error\":%lu,\"window_error\":%lu,\"ffxi_window_seen\":%s,\"dialog_seen\":%s,\"modules_seen\":[",
+        (unsigned long)child_pid,(unsigned long)samples,launched_at?(unsigned long long)(GetTickCount64()-launched_at):0ULL,(unsigned long)module_error,(unsigned long)window_error,game_window_seen?"true":"false",dialog_seen?"true":"false");
     BOOL first=TRUE;for(int i=0;i<6;i++)if(module_seen[i]){if(!first)fputc(',',f);quoted(f,module_names[i]);first=FALSE;}
     fputs("]}}\n",f);BOOL written=!ferror(f);if(fclose(f))written=FALSE;if(!written)return FALSE;
     return MoveFileExW(L"Z:\\session\\loader-process.new",L"Z:\\session\\loader-process.json",MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);

@@ -1,3 +1,5 @@
+0.4.5 is a startup diagnostic update for the remaining post-login exit. The 0.4.4 windowed profile applied correctly on the Thor but did not produce a game window. Install the update in place, launch once with the existing settings, and export Diagnostics. See [current findings and limits](docs/startup-diagnostics-045.md).
+
 # LSB Android
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.

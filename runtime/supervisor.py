@@ -86,11 +86,15 @@ class PrivateEvents:
             (b'autologin activated!',b'autologin_started'),(b'connected to server!',b'server_connected'),
             (b'launching final fantasy',b'game_launch_message_seen'),
             (b'unhandled exception',b'windows_exception'),(b'err:module:import_dll',b'dll_import_error')]
-    def __init__(self):self.tail=b'';self.seen=set();self.discard=False;self.lock=threading.Lock()
+    def __init__(self):
+        from startup_diagnostics import StartupDiagnostics
+        self.tail=b'';self.seen=set();self.discard=False;self.lock=threading.Lock()
+        self.diagnostics=StartupDiagnostics()
     def snapshot(self):
         with self.lock:return sorted(e.decode('ascii') for e in self.seen)
     def line(self,data):
         data=re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]',b'',data).strip().lower()
+        self.diagnostics.line(data)
         data=re.sub(rb'^\[\d{2}/\d{2}/\d{2,4} \d{2}:\d{2}:\d{2}\]\s*',b'',data)
         for token,event in self.TOKENS:
             if data.startswith(token):

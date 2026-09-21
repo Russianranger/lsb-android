@@ -48,9 +48,16 @@ int wmain(int argc,WCHAR **wide){
     FILE *post=_wfopen(L"D:\\post-login",L"rb");
     if(post){
         int kind=fgetc(post);fclose(post);
+        if(kind=='e')RaiseException(EXCEPTION_INT_DIVIDE_BY_ZERO,EXCEPTION_NONCONTINUABLE,0,NULL);
+        if(kind=='d'){
+            /* Real Wine error diagnostics must survive the private output pipe.
+             * A recoverable load failure must not abort an otherwise normal run. */
+            LoadLibraryW(L"LSB_private_account_quoted_missing.dll");
+            puts("err:   D3D9: fixture diagnostic LSB_private_account quoted");fflush(stdout);
+        }
         if(kind=='p')puts("[09/21/26 01:00:01] Failed to initialize instance of polcore!");
         if(kind=='f')puts("[09/21/26 01:00:01] Failed to initialize instance of FFxi!");
-        puts("Closing...");fflush(stdout);return 0;
+        if(kind!='d'){puts("Closing...");fflush(stdout);return 0;}
     }
     HMODULE main_dll=LoadLibraryW(L"D:\\FINAL FANTASY XI\\FFXiMain.dll");if(!main_dll)return 97;
     WNDCLASSW cls={0};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(NULL);cls.lpszClassName=L"FFXiClass";

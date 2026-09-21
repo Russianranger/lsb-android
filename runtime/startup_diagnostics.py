@@ -1,0 +1,91 @@
+"""Bounded metadata from private launch output; never retain raw Wine/DXVK text.
+
+Warnings and first-chance exceptions are evidence, not automatic launch failures.
+Patterns follow Wine 10 and DXVK 2.5.3. Unknown messages contribute counts only.
+"""
+import re
+import threading
+
+
+class StartupDiagnostics:
+    WINE = re.compile(rb'^(?:[0-9]+\.[0-9]+:)?((?:[0-9a-f]{4,8}:){1,2})(trace|warn|err|fixme):([a-z0-9_]+):([a-z0-9_]+) (.*)$')
+    MODULES = {n.lower().encode(): n for n in
+               ('polcore.dll', 'polcoreeu.dll', 'FFXi.dll', 'FFXiMain.dll', 'd3d8.dll', 'd3d9.dll')}
+    CHANNELS = {'ole', 'seh', 'module', 'loaddll', 'vulkan', 'wined3d', 'd3d', 'x11drv', 'wgl', 'rpc', 'service'}
+    # Only fixed source labels leave this parser, never unknown function names.
+    FUNCTIONS = {'import_dll': 'dll_import', 'find_forwarded_export': 'forwarded_export',
+                 'process_attach': 'dll_initialization', 'ldrgetprocedureaddress': 'dll_export',
+                 'ldrloaddll': 'dll_load', 'com_get_class_object': 'com_class',
+                 'cocreateinstanceex': 'com_create', 'apartment_get_inproc_class_object': 'com_inproc',
+                 'start_rpcss': 'rpc_service', 'virtual_setup_exception': 'exception',
+                 'dispatch_exception': 'exception', 'show_exception': 'exception'}
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.records = []
+        self.counts = {}
+        self.seen = set()
+        self.dropped = 0
+
+    def add(self, source, event, **fields):
+        key = (source, event, *sorted(fields.items()))
+        with self.lock:
+            count_key = source + '_' + event
+            self.counts[count_key] = min(1000000, self.counts.get(count_key, 0) + 1)
+            if key in self.seen:
+                return
+            if len(self.records) >= 64:
+                self.dropped = min(1000000, self.dropped + 1)
+                return
+            self.seen.add(key)
+            self.records.append(dict(source=source, event=event, **fields))
+
+    def snapshot(self):
+        with self.lock:
+            return {'format': 1, 'policy': 'fixed_metadata_only',
+                    'records': [dict(r) for r in self.records], 'counts': dict(self.counts),
+                    'dropped_records': self.dropped}
+
+    def line(self, data):
+        wine = self.WINE.fullmatch(data)
+        if wine:
+            ids, level, channel, function, message = wine.groups()
+            ids=ids.rstrip(b':').split(b':')
+            owner={'thread_id':int(ids[-1],16)}
+            if len(ids)==2:owner['process_id']=int(ids[0],16)
+            if channel == b'loaddll' and function == b'build_module':
+                match = re.fullmatch(rb'loaded l"([^"\r\n]+)" at [0-9a-f]+: (native|builtin)', message)
+                if match:
+                    name = match[1].replace(b'\\\\', b'\\').rsplit(b'\\', 1)[-1]
+                    if name in self.MODULES:
+                        self.add('wine', 'module_loaded', module=self.MODULES[name], origin=match[2].decode(), **owner)
+            if channel == b'seh':
+                # Capture the exception number, never addresses, registers, arguments or strings.
+                match = re.match(rb'code=([0-9a-f]{1,8})(?: |$)', message)
+                if match:
+                    self.add('wine', 'exception_raised', code=int(match[1], 16), **owner)
+            if level in (b'err', b'warn') or (channel == b'ole' and level == b'fixme'):
+                category = self.FUNCTIONS.get(function.decode(), 'other')
+                known_channel = channel.decode() if channel.decode() in self.CHANNELS else 'other'
+                fields = dict(channel=known_channel, category=category, severity=level.decode())
+                # Recognized trailing HRESULT/NTSTATUS syntax only; no arbitrary numbers/text.
+                code = re.search(rb'(?:hr |status[= ]|error )(?:0x)?([0-9a-f]{8})[.)]?$', message)
+                if code:
+                    fields['code'] = int(code[1], 16)
+                self.add('wine', 'diagnostic', **fields, **owner)
+            return
+        dxvk = re.fullmatch(rb'(info|warn|err):\s+(.*)', data)
+        if dxvk:
+            level, message = dxvk.groups()
+            if message.startswith(b'dxvk:'):
+                self.add('dxvk', 'initialization_message')
+            elif level in (b'warn', b'err'):
+                category = 'other'
+                for prefix, label in ((b'd3d8', 'd3d8'), (b'd3d9', 'd3d9'),
+                                      (b'createvk', 'vulkan_creation'), (b'failed to create vulkan', 'vulkan_creation'),
+                                      (b'dxvkinstance', 'vulkan_instance'), (b'dxvkadapter', 'vulkan_adapter'),
+                                      (b'dxvkdevice', 'vulkan_device'), (b'vk', 'vulkan')):
+                    if message.startswith(prefix):
+                        category = label
+                        break
+                self.add('dxvk', 'diagnostic', severity=level.decode(), category=category)

@@ -33,7 +33,7 @@ def main():
     manifest['key_files'].pop(manifest['loader'])
     manifest['loader']='FINAL FANTASY XI/boot loader/xiloader.exe'
     loader=CLIENT/manifest['loader'];loader.parent.mkdir(exist_ok=True)
-    for case in ['launch','relaunch','windowed-existing','restore-display','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN]:
+    for case in ['launch','relaunch','windowed-existing','restore-display','startup-diagnostics','startup-exception','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN]:
         for path in [SESSION/'stop',SESSION/'status.json',SESSION/'loader-process.json',SESSION/'loader-check.json',SESSION/'login-fixture.json',CLIENT/'launch-fail',CLIENT/'launch-hang',CLIENT/'login-reject',CLIENT/'post-login']:
             path.unlink(missing_ok=True)
         shutil.copyfile('/fixtures/login-missing.exe' if case=='missing-dependency' else '/fixtures/login-stub.exe',loader)
@@ -47,6 +47,8 @@ def main():
         if case=='stop':(CLIENT/'launch-hang').touch()
         if case in REJECTIONS:(CLIENT/'login-reject').write_text(REJECTIONS[case][0])
         if case in POST_LOGIN:(CLIENT/'post-login').write_text(POST_LOGIN[case][0])
+        if case=='startup-diagnostics':(CLIENT/'post-login').write_text('d')
+        if case=='startup-exception':(CLIENT/'post-login').write_text('e')
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],stdin=subprocess.PIPE)
         p.stdin.write(PAYLOAD if case!='check-only' else b'');p.stdin.close()
         if case=='stop':
@@ -78,6 +80,15 @@ def main():
                 assert config['backup_ready'] and all(v['changed'] for v in config['values'].values()),config
         elif case=='exit-failure':
             assert p.returncode!=0 and state['phase']=='error' and report['process']['child_exit']==0xc0000135,report
+        elif case=='startup-diagnostics':
+            assert p.returncode==0 and report['status']=='exited',report
+            records=report['startup_diagnostics']['records']
+            assert any(r.get('category')=='dll_load' for r in records),records
+            assert any(r.get('module')=='FFXiMain.dll' and r.get('process_id')==report['process']['observation']['child_pid'] for r in records),records
+            assert any(r['source']=='dxvk' and r.get('category')=='d3d9' for r in records),records
+        elif case=='startup-exception':
+            assert p.returncode!=0 and report['process']['child_exit']==0xc0000094,report
+            assert any(r.get('code')==0xc0000094 and r['event']=='exception_raised' and r.get('process_id')==report['process']['observation']['child_pid'] for r in report['startup_diagnostics']['records']),report
         elif case=='stop':
             assert state['phase']=='stopped' and report['status']=='stopped',report
         elif case=='missing-dependency':
@@ -103,6 +114,9 @@ def main():
         if case in ('launch','relaunch','exit-failure'):
             assert json.loads((SESSION/'login-fixture.json').read_text())['arguments_and_cwd_match']
         assert not (SESSION/'display.sock').exists()
+        if case not in ('missing-dependency','check-only'):
+            diagnostics=report['startup_diagnostics']
+            assert diagnostics['policy']=='fixed_metadata_only' and len(diagnostics['records'])<=64,diagnostics
         for path in [*LOGS.glob('*'),*SESSION.glob('*.json')]:
             if path.is_file():
                 data=path.read_bytes()
