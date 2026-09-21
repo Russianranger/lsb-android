@@ -2,9 +2,13 @@
 
 ## First device test
 
-Install in place; keep the existing prepared client and Termux server. Under Controller, save mappings and use Open FFXI gamepad setup. The app maps physical Android controls to 16 joystick buttons, four axes and one D-pad; assign those native inputs to actions in FFXI's configuration utility. The app does not know your preferred game actions. Opening configuration requires the current game session to stop first. The bridge releases held controls after focus loss or a disconnected/stale input stream.
+Install in place; keep the existing prepared client, original xiloader, runtime and Termux server. First launch against that existing server with the accepted renderer and resolution, and confirm login and clean audio. Keep client `30251204_1` and its matching server; current upstream expects `30260904_1`. Do not update client files, xiloader or server source during this test, and do not re-import or re-prepare the accepted client.
+
+After this baseline check, stop the client. Under Controller, save mappings and use Open FFXI gamepad setup. The app maps physical Android controls to 16 joystick buttons, four axes and one D-pad; assign those native inputs to actions in FFXI's configuration utility. The app does not know your preferred game actions. Opening configuration requires the current game session to stop first. Check both sticks, D-pad, buttons and triggers; release them and verify that nothing remains held. Return to the launcher while holding a control, then reopen the display and check that it released. Relaunch against the same Termux server.
 
 Launch with the existing server and accepted renderer. Fast display transfer defaults on and halves raw framebuffer bytes using RGB565; 24-bit color remains available by disabling it. Graphics options include 960×540 and 1280×720 windowed profiles plus restoration of the original registry settings. The renderer's FPS overlay measures game rendering; exported display timing measures the Android display path. Compare the same area/camera before judging the improvement. Audio configuration is unchanged. The small in-game menu replaces the large toolbar.
+
+Keep the accepted resolution for the first 5–10 minute gameplay/audio check. Only then optionally compare 960×540 in the same area. Export Diagnostics after the test and report controller detection, stuck inputs, audio distortion, loading time and perceived smoothness. Managed-server migration is a separate next test using a copy of the existing matching server and logical SQL dump.
 
 ## Import the existing server before updating
 

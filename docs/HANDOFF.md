@@ -4,7 +4,9 @@ The user confirmed 0.4.8 works: login succeeds and audio is clean. Preserve acce
 
 0.5.0 implements a virtual SDL/DirectInput gamepad bridge, configurable Android button mappings, RGB565 bitmap transfer, optional 960×540, reduced steady-state launcher polling, separate server/database generations and crystal artwork. New device behavior and actual FFXI performance remain unverified. See [implementation, test boundaries and device sequence](milestone-050.md).
 
-Local JVM and server unit checks pass. ARM64 Wine input and real MariaDB recovery CI are pending; do not claim these have passed until their results are recorded. Full actual LSB compilation and world entry on the managed server require the user's source/database and Thor testing.
+The continuation fixes the server Python compiler dependency and the DirectInput test's startup timing. [Full CI run 35660037932](https://github.com/Russianranger/lsb-android/actions/runs/35660037932) passes Android packaging, native Windows checks, ARM64 Wine/Box64 and PRoot input/audio/render/launch regressions, real MariaDB deployment/update/rollback, and the runtime release gate. The controller helper loads natively; Box64's duplicate emulated-preload warning was not the failure. See [diagnosis](ci-recovery-050.md) and [validation/artifact identity](validation.md).
+
+Signed `LSB-Android-0.5.0.apk` is versionCode 16, 15,907,587 bytes, SHA-256 `f949f3d5b4e00ab170511106693412ea13634425e19ea7fbefb475c9ee113a5e`, using the original certificate for an install-in-place update. First Thor action: use the existing Termux server and matching `30251204_1` client/loader, verify login and clean audio at the accepted renderer/resolution, then test controller setup and release behavior. Do not update client, xiloader or server source. Full actual LSB compilation, runtime installation on Android and world entry on the managed server remain device work; CI uses synthetic server executables.
 
 ---
 
