@@ -1,6 +1,6 @@
 # LSB Android
 
-0.4.5 is a startup diagnostic update for the remaining post-login exit. The 0.4.4 windowed profile applied correctly on the Thor but did not produce a game window. Install the update in place, launch once with the existing settings, and export Diagnostics. See [current findings and limits](docs/startup-diagnostics-045.md).
+0.4.6 adds a reversible trace of FFXI's GameStart result for the unresolved post-login exit. Leave **Capture FFXI startup result** checked for the next test; it runs a temporary diagnostic copy and keeps the original loader intact. Install in place, launch once with the existing settings/server, and export Diagnostics. This is a diagnostic build, not a confirmed game-startup fix. See [current findings and limits](docs/game-start-trace-046.md).
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
 
