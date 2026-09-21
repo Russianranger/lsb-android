@@ -7,6 +7,33 @@ import time
 
 from client_setup import client_path, validate_manifest, windows_path
 
+FAILURES={
+    'login_invalid_credentials':'The launcher reports an invalid account or password. Return to Client and re-enter your server login.',
+    'login_already_active':'The launcher reports this account is already logged in. Close the other session or wait for the server to release it, then retry.',
+    'login_version_mismatch':'The server rejected the xiloader version. Use the loader required by this server; export Diagnostics before changing files.',
+    'login_additional_authentication':'The launcher requests additional authentication. This login form does not yet support OTP; export Diagnostics.',
+    'login_invalid_reply':'The launcher received an invalid server reply. Check that the server and xiloader versions are compatible; export Diagnostics.',
+    'login_server_error':'The server returned a login error. Check the Termux server log for its reason; export Diagnostics.',
+    'login_rejected':'The launcher reported a login failure. Check your server account, existing sessions and loader/server version, then retry from Client.',
+    'connection_failed':'The launcher could not connect. Start your Termux server and check the server address, then retry from Client.',
+    'connection_timeout':'The server did not reply to the launcher in time. Check the Termux server log and retry from Client.',
+    'authentication_handshake_failed':'The authentication connection failed. Check server and loader compatibility; export Diagnostics.',
+    'listen_failed':'The launcher could not open its local listener. Stop any other loader session and retry.',
+    'windows_exception':'The launcher reported a Windows exception. Export Diagnostics.',
+    'dll_import_error':'The launcher reported a DLL import error. Export Diagnostics.'}
+
+
+def progress(events, elapsed):
+    for event,message in FAILURES.items():
+        if event in events:return 'launch_failed',message,event
+    if 'game_launch_message_seen' in events:
+        return 'game_start_requested','The launcher requested game startup. Waiting for the game display.',''
+    if 'login_message_seen' in events:
+        return 'login_message_received','The launcher reports login accepted. Waiting for the game display.',''
+    if elapsed>=60:
+        return 'waiting_for_login','Still waiting for a login result. Stop and export Diagnostics if no game appears.',''
+    return 'waiting_for_login','Launcher started. Waiting for a login result.',''
+
 
 def credentials(stream):
     data = stream.read(1025)
@@ -90,9 +117,19 @@ def run(s, display):
         # No credentials in argv/environment. Native helper supplies the Windows CLI.
         p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','launch',windows_path(manifest['loader']),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']])],
                   'loader-events.log',env=env,pipe_input=True)
+        writer=s.logs[-1]
         try:p.stdin.write(payload);p.stdin.close()
         except BrokenPipeError:raise RuntimeError('Loader bridge closed before accepting login; export Diagnostics') from None
-        payload=None;s.status('starting_loader');deadline=time.monotonic()+90;last=None
+        payload=None;s.status('starting_loader');started=time.monotonic();deadline=started+90;last=None;last_progress=None
+        def update_progress():
+            nonlocal last_progress
+            events=writer.events.snapshot();state=progress(events,time.monotonic()-started)
+            phase,message,failure=state
+            if (state,events)!=last_progress:
+                report.update(events=events,launch_stage=phase,message=message)
+                if failure:report.update(status='failed',failure_reason=failure,termination_reason='launcher_reported_failure')
+                record(s,report);s.status(phase,message=message);last_progress=(state,events)
+            if failure:raise RuntimeError(message)
         while p.poll() is None:
             s.stopped()
             if display.poll() is not None: raise RuntimeError('Display closed during client launch')
@@ -100,11 +137,14 @@ def run(s, display):
                 current=json.loads(result.read_text())
                 if current!=last:
                     report.update(process=current,status='running' if current.get('phase')=='running' else 'closing')
-                    record(s,report);s.status('client_running');last=current
+                    record(s,report);last=current
             elif time.monotonic()>deadline: raise RuntimeError('Windows loader did not start within 90 seconds; export Diagnostics')
+            if last is not None:update_progress()
             time.sleep(.3)
+        # Drain final output before accepting an exit, including rejection+exit 0.
         if result.is_file():report['process']=json.loads(result.read_text())
-        report['bridge_exit']=p.returncode;process=report.get('process',{})
+        report['bridge_exit']=p.returncode
+        writer.thread.join(2);update_progress();process=report.get('process',{})
         if p.returncode!=0 or process.get('phase')!='exited' or process.get('child_exit')!=0:
             report['status']='failed';record(s,report)
             raise RuntimeError('Client launch failed (Windows exit '+str(process.get('child_exit','unavailable'))+', error '+str(process.get('win32_error','unavailable'))+'). Export Diagnostics.')

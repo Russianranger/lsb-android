@@ -24,6 +24,7 @@ final class ClientRuntime {
     final Context context;
     final File home,root,prefix,run,tmp,logs,backend,probes;
     volatile String status="Install the runtime, then start the Windows checks.";
+    volatile String launchError="";
     volatile boolean starting;
     private volatile boolean active;
     private volatile Process process;
@@ -171,7 +172,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.4.1");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.4.2");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -204,6 +205,7 @@ final class ClientRuntime {
         boolean initialize=Arrays.asList("initialize","installer","repair-launcher").contains(action),clientOperation=!"probe".equals(action);
         File candidate=null;File selectedPrefix=prefix;
         synchronized(WorkService.class){synchronized(this){if(alive()||WorkService.busy)throw new IOException("Wait for the current operation");active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();}}
+        launchError="";
         try{
             if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher").contains(action))throw new IOException("Unsupported runtime action");
             if(action.equals("launch")&&login==null)throw new IOException("Enter account and password again to launch");
@@ -252,7 +254,7 @@ final class ClientRuntime {
             try(OutputStream input=process.getOutputStream()){if(action.equals("launch"))login.send(input);}
             if(stopRequested)write(new File(run,"stop"),"stop\n");status=initialize?"Initializing working client. Open the display for installer prompts.":clientOperation?"Checking the loader and starting the client…":"Starting Windows checks. Open the display to follow progress.";
             while(!process.waitFor(1,TimeUnit.SECONDS)){
-                if(new File(run,"status.json").isFile())try{JSONObject s=new JSONObject(read(new File(run,"status.json"),131072));status=s.optString("error",s.optString("phase",status)).replace('_',' ');}catch(Exception ignored){}
+                if(new File(run,"status.json").isFile())try{JSONObject s=new JSONObject(read(new File(run,"status.json"),131072));status=s.optString("error",s.optString("message",s.optString("phase",status))).replace('_',' ');}catch(Exception ignored){}
             }
             JSONObject finalState=state().optJSONObject("launch");
             if(initialize)retainInitialization(candidate);
@@ -272,9 +274,10 @@ final class ClientRuntime {
                 else if(action.equals("launch"))status="Client closed normally. Export Diagnostics and report whether login and world entry worked.";
                 else status="Automatic checks passed. Confirm picture, sound and input, then relaunch.";
             }
-            else if(finalState!=null&&finalState.has("error"))status=finalState.getString("error");
+            else if(finalState!=null&&finalState.has("error")){status=finalState.getString("error");if(action.equals("launch"))launchError=status;}
             else status="Runtime stopped (exit "+process.exitValue()+"). Export Diagnostics if unexpected.";
         }catch(Exception error){
+            if(action.equals("launch")&&!stopRequested)launchError=String.valueOf(error.getMessage());
             if(process==null)try{
                 JSONObject failure=new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",stopRequested?"stopped":"error")
                     .put("error",String.valueOf(error.getMessage())).put("game_files_mounted",false);

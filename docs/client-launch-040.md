@@ -1,4 +1,4 @@
-> Update for 0.4.1: use the replacement APK in place. It fixes the load-check worker lifetime after the 0.4.0 pre-launch crash. The same device procedure and accepted preparation apply; no prerequisite installer, runtime download or new client copy is requested. See [validation](validation.md) for the evidence and limits.
+> Update for 0.4.2: use the replacement APK in place. The dependency-checker fix passed on the device; this update shows and stops recognized login failures instead of leaving a running black screen. The same device procedure and accepted preparation apply; no prerequisite installer, runtime download or new client copy is requested. See [validation](validation.md) for the evidence and limits.
 
 # Prepared-client launch · 0.4.0
 
@@ -6,7 +6,7 @@ Milestones 1 and 2 are accepted on the Thor: the independent Windows runtime, fo
 
 ## Device procedure
 
-1. Install `LSB-Android-0.4.0.apk` over the current app. Keep the activated 0.3.0 preparation and Turnip 26 setting. No re-import, preparation copy or runtime download is required.
+1. Install `LSB-Android-0.4.2.apk` over the current app. Keep the activated 0.3.0 preparation and Turnip 26 setting. No re-import, preparation copy or runtime download is required.
 2. Start the existing LandSandBoat server in Termux as usual.
 3. Open **Client → Play FINAL FANTASY XI**. Leave **Server address** as `127.0.0.1` for that server, enter your existing server account/password, and tap **Launch FFXI**. Account creation, password changes and OTP enrollment are not provided in this baseline.
 4. The app checks the prepared files, imported loader's command-line markers and DLL dependencies, then starts xiloader inside the existing display. A blank desktop during startup is possible. **Back** returns to the app while the runtime continues; **Open client display** reconnects. **Stop** ends the owned Wine session.
@@ -28,7 +28,7 @@ Repair repeats the registration/COM checks and the loader dependency check. It a
 - The native worker uses explicit `CreateProcessW` application and working-directory paths. The working directory is the imported loader's own directory, including its neighboring bootloader files. Arguments use CRT-compatible quoting and the selected preparation's language; no CMD, shell interpolation, `--hide` or automatic hairpin override is used. Test fixtures include spaces in the loader path and quotes, spaces, backslashes, `%`, `!` and `&` in a password.
 - Account/password fields are not saved to preferences, Android instance state, launch JSON, Intent extras or support bundles. A short-lived one-use in-process ticket passes them to the service. They then cross anonymous pipes into the native worker; the worker supplies the required Windows CLI in memory and clears its staging buffers. The loader necessarily holds its own credentials/CLI while authenticating; this is not protection against a privileged debugger. ASCII account/password input is supported in this baseline, without silent trimming of secrets.
 - Once credentials can reach Wine, arbitrary child output is discarded before persistence. Only fixed event names are retained, so split, escaped, colored or UTF-16 credential echoes cannot enter logs. DLL-check output precedes credential delivery and remains available for diagnosis. The PRoot wrapper's raw stream is discarded for login because fatal tracee diagnostics can contain command lines. DXVK's direct launch log output and Wine crash-debugger invocation are disabled for the login process. No raw console transcript or screenshots are included in support exports.
-- `client_running` means the Windows loader process is alive. A zero exit means it closed normally. Neither automatically asserts authenticated login or world entry; those remain explicit device observations. If login falls back to an interactive menu, use **Stop** and correct the Android fields for another attempt.
+- Launch status distinguishes waiting for login from observed login/game-start messages. Recognized login/connection failures stop the owned session and show an Android dialog; choose **Back to Client** to retry. Neither a success message nor a zero exit proves world entry. If output is unrecognized and the screen stays blank, use **Stop** and export Diagnostics. Specific version/account-state messages should guide the next action; do not assume every rejection is a wrong password.
 
 ## Sources and verification
 

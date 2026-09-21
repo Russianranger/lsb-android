@@ -9,6 +9,11 @@ import uuid
 
 SESSION=Path('/session');LOGS=Path('/logs');CLIENT=Path('/client')
 PAYLOAD=b'LSBLOGIN1\n127.0.0.1\nLSB_private_account\nLSB "quoted" & % ! \\ tail\\\n'
+REJECTIONS={'reject-credentials':('1','login_invalid_credentials'),
+            'reject-active':('2','login_already_active'),
+            'reject-version':('3','login_version_mismatch'),
+            'connect-failure':('4','connection_failed'),
+            'reject-zero-exit':('0','login_rejected')}
 
 
 def main():
@@ -16,8 +21,8 @@ def main():
     manifest['key_files'].pop(manifest['loader'])
     manifest['loader']='FINAL FANTASY XI/boot loader/xiloader.exe'
     loader=CLIENT/manifest['loader'];loader.parent.mkdir(exist_ok=True)
-    for case in ['launch','relaunch','exit-failure','stop','missing-dependency','check-only']:
-        for path in [SESSION/'stop',SESSION/'status.json',SESSION/'loader-process.json',SESSION/'loader-check.json',SESSION/'login-fixture.json',CLIENT/'launch-fail',CLIENT/'launch-hang']:
+    for case in ['launch','relaunch','exit-failure','stop','missing-dependency','check-only',*REJECTIONS]:
+        for path in [SESSION/'stop',SESSION/'status.json',SESSION/'loader-process.json',SESSION/'loader-check.json',SESSION/'login-fixture.json',CLIENT/'launch-fail',CLIENT/'launch-hang',CLIENT/'login-reject']:
             path.unlink(missing_ok=True)
         shutil.copyfile('/fixtures/login-missing.exe' if case=='missing-dependency' else '/fixtures/login-stub.exe',loader)
         manifest['key_files'][manifest['loader']]=hashlib.sha256(loader.read_bytes()).hexdigest()
@@ -26,6 +31,7 @@ def main():
         (SESSION/'request.json').write_text(json.dumps(request))
         if case=='exit-failure':(CLIENT/'launch-fail').touch()
         if case=='stop':(CLIENT/'launch-hang').touch()
+        if case in REJECTIONS:(CLIENT/'login-reject').write_text(REJECTIONS[case][0])
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],stdin=subprocess.PIPE)
         p.stdin.write(PAYLOAD if case!='check-only' else b'');p.stdin.close()
         if case=='stop':
@@ -37,7 +43,7 @@ def main():
                 time.sleep(.2)
             assert p.poll() is None and (SESSION/'loader-process.json').exists(),'loader did not start before Stop'
             (SESSION/'stop').touch()
-        p.wait(timeout=300)
+        p.wait(timeout=90 if case in REJECTIONS else 300)
         state=json.loads((SESSION/'status.json').read_text());report=json.loads((LOGS/'client-launch.json').read_text())
         assert report['session_id']==request['session_id'] and report['generation']==manifest['generation'],report
         assert report['authentication_verified'] is False and report['world_entry_verified'] is False
@@ -53,6 +59,13 @@ def main():
             missing=[d for d in report['dependencies']['dependencies'] if not d['ok']]
             assert any(d['name'].lower()=='lsb-missing-fixture.dll' and d['win32_error']==126 for d in missing),missing
             assert not (SESSION/'login-fixture.json').exists(),'loader executed before dependency check passed'
+        elif case in REJECTIONS:
+            assert p.returncode!=0 and state['phase']=='error' and report['status']=='failed',report
+            assert report['failure_reason']==REJECTIONS[case][1],report
+            assert report['termination_reason']=='launcher_reported_failure',report
+            assert state['error']==report['message'] and report['launch_stage']=='launch_failed',report
+            assert report['events']==[REJECTIONS[case][1]],report
+            if case=='reject-zero-exit':assert report['process']['child_exit']==0,report
         else:
             assert p.returncode==0 and report['status']=='ready' and not (SESSION/'login-fixture.json').exists(),report
         if case in ('launch','relaunch','exit-failure'):

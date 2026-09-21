@@ -12,6 +12,38 @@ import supervisor
 
 
 class LaunchContracts(unittest.TestCase):
+    def test_specific_login_failures_survive_chunking_color_and_utf16(self):
+        cases=[('Failed to login. Invalid username or password.','login_invalid_credentials'),
+               ('Failed to login. Account already logged in.','login_already_active'),
+               ('Failed to login. Expected xiloader version mismatch; check with your provider.','login_version_mismatch'),
+               ('Failed to login.','login_rejected'),('Failed to connect to server!','connection_failed')]
+        for message,event in cases:
+            for encoding in ['ascii','utf-16le','utf-16be']:
+                raw=('[09/21/26 01:00:00] \x1b[31m'+message+'\x1b[0m\r\n').encode(encoding)
+                events=supervisor.PrivateEvents()
+                output=b''.join(events.feed(raw[i:i+3]) for i in range(0,len(raw),3))+events.finish()
+                self.assertEqual(output,(event+'\n').encode())
+                self.assertEqual(events.snapshot(),[event])
+                phase,_,reason=client_launch.progress(events.snapshot(),1)
+                self.assertEqual((phase,reason),('launch_failed',event))
+                self.assertNotIn('login_message_seen',events.snapshot())
+
+    def test_failure_matching_waits_for_complete_line_and_ignores_echoes(self):
+        events=supervisor.PrivateEvents()
+        self.assertEqual(events.feed(b'Failed to login.'),b'')
+        self.assertEqual(events.snapshot(),[])
+        self.assertEqual(events.feed(b' Expected xiloader version mismatch.\n'),b'login_version_mismatch\n')
+        events=supervisor.PrivateEvents()
+        raw=b'username=Failed to login. Invalid username or password.\npassword=Successfully logged in.\n'+b'X'*90000+b'Failed to login.\n'
+        self.assertEqual(events.feed(raw)+events.finish(),b'')
+        self.assertLessEqual(len(events.tail),4096)
+
+    def test_progress_does_not_equate_process_alive_or_already_logged_in_with_login(self):
+        self.assertEqual(client_launch.progress([],0)[0],'waiting_for_login')
+        self.assertIn('Still waiting',client_launch.progress([],61)[1])
+        self.assertEqual(client_launch.progress(['login_message_seen'],1)[0],'login_message_received')
+        self.assertEqual(client_launch.progress(['login_message_seen','login_already_active'],1)[2],'login_already_active')
+
     def test_checker_receipt_cannot_hide_crash_or_missing_import(self):
         names=['CRYPT32.dll','MSVCP140.dll']
         report={'format':1,'bits':32,'check_policy':'load_only','ok':True,

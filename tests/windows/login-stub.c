@@ -26,8 +26,23 @@ int wmain(int argc,WCHAR **wide){
     wprintf(L"username=%ls password=%ls\n",user,pass);fflush(stdout);
     for(int i=0;i<18000;i++)fputc('X',stdout);wprintf(L"%ls\n",pass);fflush(stdout);
     DWORD written;WriteFile(GetStdHandle(STD_OUTPUT_HANDLE),pass,(DWORD)wcslen(pass)*2,&written,NULL);
+    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE),"\n",1,&written,NULL);
     if(!good)return 96;
     if(GetFileAttributesW(L"D:\\launch-fail")!=INVALID_FILE_ATTRIBUTES)return (int)0xc0000135;
+    FILE *failure=_wfopen(L"D:\\login-reject",L"rb");
+    if(failure){
+        int kind=fgetc(failure);fclose(failure);
+        const char *reason=kind=='1'?" Invalid username or password.":kind=='2'?" Account already logged in.":
+            kind=='3'?" Expected xiloader version mismatch; check with your provider.":"";
+        if(kind=='4')puts("[09/21/26 01:00:00] Failed to connect to server!");
+        else{
+            fputs("[09/21/26 01:00:00] \x1b[31mFailed to login.",stdout);fflush(stdout);Sleep(650);
+            printf("%s\x1b[0m\n",reason);
+        }
+        fflush(stdout);
+        if(kind=='0')return 0; /* A zero exit must not hide a reported rejection. */
+        for(;;)Sleep(100); /* Model xiloader waiting in its inaccessible menu. */
+    }
     puts("Successfully logged in. Launching FINAL FANTASY XI.");fflush(stdout);
     while(GetFileAttributesW(L"D:\\launch-hang")!=INVALID_FILE_ATTRIBUTES)Sleep(100);
     Sleep(500);return 0;

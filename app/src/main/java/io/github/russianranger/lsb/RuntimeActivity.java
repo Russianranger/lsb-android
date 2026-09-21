@@ -21,8 +21,16 @@ public final class RuntimeActivity extends Activity {
     private Screen screen;
     private TextView status;
     private String displayError="";
+    private boolean failureShown;
     private final Runnable refresh=new Runnable(){public void run(){
-        if(!viewing)return;status.setText(ClientRuntime.get(RuntimeActivity.this).status+(displayError.isEmpty()?"":"\n"+displayError));ui.postDelayed(this,1000);
+        if(!viewing)return;ClientRuntime rt=ClientRuntime.get(RuntimeActivity.this);
+        status.setText(rt.status+(displayError.isEmpty()||!rt.launchError.isEmpty()?"":"\n"+displayError));
+        if(!rt.alive()&&!rt.launchError.isEmpty()&&!failureShown){
+            failureShown=true;
+            new AlertDialog.Builder(RuntimeActivity.this).setTitle("Client launch stopped").setMessage(rt.launchError)
+                .setPositiveButton("Back to Client",(d,w)->finish()).setNegativeButton("Stay",null).show();
+        }
+        ui.postDelayed(this,1000);
     }};
     @Override public void onCreate(Bundle state){
         super.onCreate(state);setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -31,7 +39,7 @@ public final class RuntimeActivity extends Activity {
         button(controls,"Back",()->finish());button(controls,"Keyboard",this::keyboard);button(controls,"Esc",()->tapKey(0xff1b));
         button(controls,"Stop",()->{startForegroundService(new android.content.Intent(this,RuntimeService.class).setAction("stop"));finish();});
         layout.addView(controls);screen=new Screen();layout.addView(screen,new LinearLayout.LayoutParams(-1,0,1));
-        status=new TextView(this);status.setTextColor(Color.WHITE);status.setTextSize(12);status.setMaxLines(2);layout.addView(status);setContentView(layout);
+        status=new TextView(this);status.setTextColor(Color.WHITE);status.setTextSize(14);status.setMaxLines(4);layout.addView(status);setContentView(layout);
     }
     private void button(LinearLayout row,String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setOnClickListener(v->action.run());row.addView(b,new LinearLayout.LayoutParams(0,-2,1));}
     @Override protected void onResume(){super.onResume();viewing=true;connect();ui.post(refresh);}

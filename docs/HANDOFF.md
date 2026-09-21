@@ -1,3 +1,9 @@
+# Active milestone 3: login rejection feedback (0.4.2)
+
+The 0.4.1 device test accepts the dependency-checker fix: all 20 DLLs loaded, exit 0, and xiloader started. The new blocker is a `login_rejected` event while the loader stayed alive and the screen remained black. The old log does not distinguish wrong credentials, account state or version rejection. 0.4.2 adds specific safe event classification, live failure handling/automatic shutdown, accurate waiting-for-login status and an Android error dialog returning to the Client form. Read [the current validation section](validation.md) before requesting another test. Preserve current generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, source import, loader hash and Turnip 26. No blanket graphics or prerequisite changes are supported by this report.
+
+---
+
 # Active milestone 3: fix the 0.4.0 pre-launch exit
 
 The 2026-09-21 Thor support report confirms both launch attempts stopped in the dependency checker, after all 20 import DLL loads passed, with process signal 11. xiloader never started. 0.4.1 changes only the checker lifetime, receipt validation and version labels; the accepted client/prefix, pinned runtime and login flow remain in use. See [diagnosis and validation](validation.md). Implementation `07f6923a56d02c582d179f63ce1fdf8d00229a16` passes all three gates in [run 35547759081](https://github.com/Russianranger/lsb-android/actions/runs/35547759081), including the exact 20-import list twice and unload/exit/missing/initialization-crash regressions under ARM64 Wine/Box64 and PRoot. The original-certificate 0.4.1 APK has SHA-256 `8aa64a92e8a94cb3c40325d5e21e6395e72e6a45d778e1ee8b479e3effd91236` (7,710,656 bytes). Device retry will use the same preparation after installing the update. Do not prescribe a full import/preparation or Visual C++ install based on this report. Precise Wine/Box64 crash attribution remains unproven without a stack.

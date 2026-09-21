@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -56,33 +57,71 @@ def validate_request(req):
 class PrivateEvents:
     """During login, arbitrary child text is never retained. Only fixed event names
     are emitted, including when credentials are quoted, split, ANSI or UTF-16."""
-    TOKENS={b'failed to connect':b'connection_failed',b'failed to initialize connection':b'connection_failed',
-            b'logged in':b'login_message_seen',b'login successful':b'login_message_seen',
-            b'incorrect password':b'login_rejected',b'invalid password':b'login_rejected',
-            b'failed to login':b'login_rejected',b'failed to log in':b'login_rejected',
-            b'polcore':b'pol_message_seen',b'ffximain':b'ffxi_module_message_seen',
-            b'launching final fantasy':b'game_launch_message_seen',b'unhandled exception':b'windows_exception',
-            b'err:module:import_dll':b'dll_import_error'}
-    def __init__(self):self.tail=b'';self.seen=set()
+    # Longest/specific messages precede the generic rejection. Match a complete
+    # bounded line, not arbitrary substrings inside echoed account/password text.
+    TOKENS=[(b'failed to login. invalid username or password',b'login_invalid_credentials'),
+            (b'failed to login. account already logged in',b'login_already_active'),
+            (b'failed to login. expected xiloader version mismatch',b'login_version_mismatch'),
+            (b'failed to login',b'login_rejected'),(b'failed to log in',b'login_rejected'),
+            (b'incorrect password',b'login_invalid_credentials'),(b'invalid password',b'login_invalid_credentials'),
+            (b'failed to connect',b'connection_failed'),(b'failed to initialize connection',b'connection_failed'),
+            (b'failed to initialize listen server',b'listen_failed'),
+            (b'failed to obtain remote server information',b'connection_failed'),
+            (b'mbedtls_net_connect failed',b'connection_failed'),
+            (b'mbedtls_ssl_handshake returned',b'authentication_handshake_failed'),
+            (b'remote failed to reply within the timeout',b'connection_timeout'),
+            (b'bad json reply from remote',b'login_invalid_reply'),
+            (b'xi_connect didn\'t send a proper reply command',b'login_invalid_reply'),
+            (b'error from remote:',b'login_server_error'),
+            (b'trust token rejected!',b'login_additional_authentication'),
+            (b'please log in again and enter your otp code',b'login_additional_authentication'),
+            (b'successfully logged in',b'login_message_seen'),(b'login successful',b'login_message_seen'),
+            (b'autologin activated!',b'autologin_started'),(b'connected to server!',b'server_connected'),
+            (b'launching final fantasy',b'game_launch_message_seen'),
+            (b'unhandled exception',b'windows_exception'),(b'err:module:import_dll',b'dll_import_error')]
+    def __init__(self):self.tail=b'';self.seen=set();self.discard=False;self.lock=threading.Lock()
+    def snapshot(self):
+        with self.lock:return sorted(e.decode('ascii') for e in self.seen)
+    def line(self,data):
+        data=re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]',b'',data).strip().lower()
+        data=re.sub(rb'^\[\d{2}/\d{2}/\d{2,4} \d{2}:\d{2}:\d{2}\]\s*',b'',data)
+        for token,event in self.TOKENS:
+            if data.startswith(token):
+                with self.lock:
+                    if event in self.seen:return b''
+                    self.seen.add(event)
+                return event+b'\n'
+        return b''
     def feed(self,chunk):
-        data=(self.tail+chunk).lower();self.tail=data[-80:];out=[]
-        for token,event in self.TOKENS.items():
-            if token in data and event not in self.seen:self.seen.add(event);out.append(event)
-        return b''.join(event+b'\n' for event in out)
+        out=[]
+        # Removing NULs also recognizes fixed ASCII messages printed as UTF-16.
+        parts=chunk.replace(b'\0',b'').split(b'\n')
+        for i,part in enumerate(parts):
+            if not self.discard:
+                if len(self.tail)+len(part)>4096:self.tail=b'';self.discard=True
+                else:self.tail+=part
+            if i<len(parts)-1:
+                if not self.discard:out.append(self.line(self.tail))
+                self.tail=b'';self.discard=False
+        return b''.join(out)
+    def finish(self):
+        out=b'' if self.discard else self.line(self.tail)
+        self.tail=b'';self.discard=False;return out
 
 
 class BoundedLog:
-    def __init__(self,path,private=lambda:False):self.path=path;self.thread=None;self.private=private
+    def __init__(self,path,private=lambda:False):self.path=path;self.thread=None;self.private=private;self.events=PrivateEvents()
     def pump(self,stream):
-        limit=2*1024*1024;written=0;events=PrivateEvents()
+        limit=2*1024*1024;written=0
         with self.path.open('wb') as out:
             while True:
                 chunk=stream.read1(32768)
                 if not chunk:break
-                if self.private():chunk=events.feed(chunk)
+                if self.private():chunk=self.events.feed(chunk)
                 if written+len(chunk)>limit:
                     out.flush();shutil.copyfile(self.path,self.path.with_suffix('.previous.log'));out.seek(0);out.truncate();written=0
                 out.write(chunk);out.flush();written+=len(chunk)
+            if self.private():out.write(self.events.finish());out.flush()
         stream.close()
     def start(self,stream):
         self.thread=threading.Thread(target=self.pump,args=(stream,),daemon=True);self.thread.start()

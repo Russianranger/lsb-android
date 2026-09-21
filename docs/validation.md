@@ -1,3 +1,21 @@
+# 0.4.2: expose login failure instead of a running black screen (2026-09-21)
+
+The 0.4.1 Thor report `lsb-support (2)(1).zip` (SHA-256 `7a187ac4046decfc92a6a64e5b22b3342de21d8181f6e24c06d7703584197e04`) and black-screen screenshot show the next boundary. Session `4613eb66-0fc3-47e6-b55e-fe97003ec8a5` ran **01:17:55–01:24:04 UTC**, ending by Stop. The corrected dependency checker loaded all 20 DLLs and exited **0** with `check_policy=load_only`. Windows process creation succeeded. Thus the 0.4.1 preflight fix is device-accepted.
+
+`loader-events.log` contains only **login_rejected**. The old filter collapsed multiple xiloader failure messages into that one event, and the launch loop never consumed it. The app displayed `client running` solely because the Windows loader remained alive. There is no successful login/game-start event or game-rendering evidence in this attempt. The precise rejection reason cannot be recovered from this filtered bundle; do not assert that the password was wrong or that this was a graphics failure. The source's interactive retry loop explains a possible live-but-idle loader, but its exact menu state is not captured.
+
+0.4.2 consumes credential-safe events while the loader runs and after exit. Recognized failures stop the owned Wine session and show a native Android error dialog with a Back to Client action. Invalid credentials, an existing login, version mismatch, connection failures and invalid/server-error replies have distinct fixed messages and diagnostic codes. Unknown rejection remains explicitly generic. A reported failure plus Windows exit 0 still fails. The app reports waiting for login or a received login/game-start message instead of equating process existence with game readiness. After 60 seconds with no recognized result it asks the user to Stop/export; it does not kill potentially slow or unrecognized successful launches on a speculative timeout.
+
+Filtering now operates on bounded complete lines (up to 4096 bytes), strips ANSI sequences and ASCII UTF-16 NULs, recognizes the source's timestamp prefix, and emits only allowlisted constant event names. Specific rejection reasons cannot be lost when the generic prefix and detail arrive in separate pipe chunks. Echoed account/password substrings and oversized unknown lines cannot become events. `already logged in` is no longer mistaken for successful login. No raw console text, account names, passwords or arbitrary server error strings are persisted. Unknown server errors require the Termux server log for detail.
+
+Message vocabulary and the retry loop were checked against the read-only [xiloader source at 370a1a1](https://github.com/LandSandBoat/xiloader/blob/370a1a11e4d3c5b58b793bd83096de34d5942ed6/src/command_handler.h) and `network.cpp`/`main.cpp`. This newer source is not proof of every message in the user's imported binary, which retains hash `78fe8ab1dee5aaac3f866001b706d19d233996e584cf78f3a47b26a0d62cdaf8`.
+
+Fourteen Python contracts pass locally. ARM64/PRoot regression cases add hung-loader failures for invalid credentials, existing login, version mismatch and connection failure, plus rejection followed by exit 0. They check automatic shutdown, specific reason retention and credential-free logs. Existing tests remain in the CI gate; its completed result and APK identity will be recorded below.
+
+**Device retry:** install 0.4.2 in place, keep Turnip 26 and the accepted preparation, start the existing Termux server, and launch with the existing server account. Read the new failure dialog if one appears and export Diagnostics. This build makes the login blockage visible and recoverable; it does not change server credentials, accounts, protocol requirements or the imported loader. Actual authentication and world entry remain pending. No client re-import or preparation is requested.
+
+---
+
 # 0.4.1: dependency checker lifetime fix (2026-09-21)
 
 The user reported immediate exit and supplied `lsb-support(4).zip` (SHA-256 `e42eba5c0ed242258fc664b5b0038751c3669e79e48048d43e94b76690420cfa`). Both retained 0.4.0 attempts fail **before xiloader starts**:
