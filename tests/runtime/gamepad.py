@@ -13,6 +13,7 @@ ctypes.CDLL(str(library),mode=os.RTLD_NOW)
 print('PASS: packaged ARM64 gamepad bridge loads with all host symbols resolved',flush=True)
 session=Path('/session');(session/'stop').unlink(missing_ok=True)
 (session/'gamepad-stage').unlink(missing_ok=True)
+(session/'gamepad-bridge.json').unlink(missing_ok=True)
 (session/'gamepad.bin').write_bytes(bytes(64))
 done=False
 def write_pad():
@@ -20,12 +21,17 @@ def write_pad():
         count=0
         while not done:
             try:stage=int((session/'gamepad-stage').read_text())
-            except (OSError,ValueError):stage=0
+            except (OSError,ValueError):stage=-1
+            # Start neutral. Wine's HID report is created asynchronously after
+            # SDL attachment; a button held before enumeration has no new edge.
+            # Stage 3 stops the heartbeat after stage 2 proves a fresh press.
+            if stage==3:
+                time.sleep(.02);continue
             count+=2;stamp=int(time.monotonic()*1000)
             m[4:8]=struct.pack('<I',count-1)
-            buttons,hat,x=(1,3,20000) if stage!=1 else (0,0,0)
+            buttons,hat,x=(1,3,20000) if stage in (0,2) else (0,0,0)
             struct.pack_into('<I',m,0,0x4c534247);struct.pack_into('<IIhhhh',m,8,buttons,hat,x,0,0,0)
-            struct.pack_into('<Q',m,32,stamp-5000 if stage==2 else stamp)
+            struct.pack_into('<Q',m,32,stamp)
             m[4:8]=struct.pack('<I',count);time.sleep(.02)
 worker=threading.Thread(target=write_pad,daemon=True);worker.start()
 os.environ['LSB_TEST_AUTOCLOSE']='1'
