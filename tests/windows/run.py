@@ -2,6 +2,7 @@
 import os, shutil, subprocess, tempfile, winreg
 from pathlib import Path
 source = Path(__file__).resolve().parents[2]/'out/windows-tests'
+subprocess.run([str(source/'version-registry.exe')],check=True,timeout=30)
 checks = 0
 def check(condition, message):
     global checks

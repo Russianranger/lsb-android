@@ -14,6 +14,7 @@ static BOOL module_seen[6],game_window_seen,dialog_seen;
 static DWORD child_pid,samples,module_error,window_error;
 static ULONGLONG launched_at;
 #include "display-config.h"
+#include "version-registry.h"
 
 static BOOL CALLBACK window_observation(HWND window,LPARAM unused){
     (void)unused;DWORD pid=0;GetWindowThreadProcessId(window,&pid);
@@ -73,6 +74,7 @@ static int check(int argc,WCHAR **argv){
 static BOOL receipt(const char *phase,DWORD error,DWORD code){
     FILE *f=_wfopen(L"Z:\\session\\loader-process.new",L"wb");if(!f)return FALSE;
     fprintf(f,"{\"format\":1,\"bits\":32,\"phase\":\"%s\",\"win32_error\":%lu,\"child_exit\":%lu",phase,(unsigned long)error,(unsigned long)code);
+    fprintf(f,",\"version_config\":{\"state\":\"%s\",\"version\":\"%s\",\"win32_error\":%lu,\"rollback_error\":%lu}",version_state,client_version,(unsigned long)version_error,(unsigned long)version_rollback_error);
     fputs(",\"display_config\":{\"policy\":",f);quoted(f,config_policy);
     fprintf(f,",\"ok\":%s,\"backup_ready\":%s,\"rollback_error\":%lu,\"values\":{",config_checked?"true":"false",config_backup_ready?"true":"false",(unsigned long)config_rollback_error);
     for(int i=0;i<5;i++){
@@ -103,12 +105,16 @@ static BOOL line(WCHAR *out,unsigned capacity){
 }
 static int launch(int argc,WCHAR **argv){
     WCHAR dir[1024],magic[32],host[254],user[129],pass[129],command[8192]={0};
-    if(argc!=8||!directory(argv[2],dir)||wcscmp(argv[3],L"--server")||
+    if(argc!=9||!directory(argv[2],dir)||wcscmp(argv[3],L"--server")||
        (wcscmp(argv[4],L"--username")&&wcscmp(argv[4],L"--user"))||
        (wcscmp(argv[5],L"--password")&&wcscmp(argv[5],L"--pass"))||
        (wcscmp(argv[6],L"0")&&wcscmp(argv[6],L"1")&&wcscmp(argv[6],L"2")))return 84;
     LONG config_error=display_config(argv[6],argv[7]);
     if(config_error){receipt("configuration_failed",(DWORD)config_error,0);return 1;}
+    WCHAR full[1024];DWORD length=GetFullPathNameW(argv[8],1024,full,NULL);
+    if(!length||length>=1024||wcsncmp(argv[8],L"D:\\",3)||wcscmp(full,argv[8]))return 84;
+    config_error=version_registry(argv[6],argv[8]);
+    if(config_error){receipt("version_configuration_failed",(DWORD)config_error,0);return 1;}
     if(!line(magic,32)||wcscmp(magic,L"LSBLOGIN1")||!line(host,254)||!line(user,129)||!line(pass,129)){
         SecureZeroMemory(user,sizeof(user));SecureZeroMemory(pass,sizeof(pass));return 85;
     }

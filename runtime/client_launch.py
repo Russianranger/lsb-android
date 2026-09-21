@@ -47,6 +47,8 @@ def progress(events, elapsed, process=None):
 
 
 def exit_problem(process, events, diagnostics=None):
+    if process.get('phase')=='version_configuration_failed':
+        return ('version_configuration_failed','The missing FFXI version registry value could not be restored (Windows error '+str(process.get('win32_error','unavailable'))+'). Your client files were kept. Export Diagnostics.')
     if process.get('phase')=='configuration_failed':
         if process.get('win32_error')==1168:
             return ('display_configuration_failed','No saved original display settings are available. Choose Windowed 1280×720 or Keep current display settings and retry.')
@@ -179,7 +181,7 @@ def run(s, display):
                  BOX64_LOG='0',BOX64_NOBANNER='1',DXVK_LOG_LEVEL='info',DXVK_LOG_PATH='none')
         env['WINEDLLOVERRIDES']+=';winedbg='
         # No credentials in argv/environment. Native helper supplies the Windows CLI.
-        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','launch',windows_path(loader),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile],
+        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','launch',windows_path(loader),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile,windows_path(manifest['game'])],
                   'loader-events.log',env=env,pipe_input=True)
         writer=s.logs[-1]
         try:p.stdin.write(payload);p.stdin.close()

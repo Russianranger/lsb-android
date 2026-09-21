@@ -21,7 +21,7 @@ class LaunchContracts(unittest.TestCase):
         s=SimpleNamespace(req={},env={'WINEDLLOVERRIDES':''},logs=[writer],
                           stopped=Mock(side_effect=[None,supervisor.Stopped()]),
                           spawn=Mock(return_value=process),status=Mock())
-        report={};manifest={'loader':'FINAL FANTASY XI/xiloader.exe','region':'US'}
+        report={};manifest={'loader':'FINAL FANTASY XI/xiloader.exe','region':'US','game':'FINAL FANTASY XI'}
         snapshots=[]
         with patch.object(client_launch,'check',return_value=(manifest,report,['--server','--username','--password','--lang'])),\
              patch.object(client_launch,'Path'),\
@@ -31,6 +31,13 @@ class LaunchContracts(unittest.TestCase):
         self.assertEqual(snapshots[-1]['startup_diagnostics']['records'][0]['code'],0xc0000135)
         self.assertNotIn('secret',str(snapshots))
         self.assertNotIn('password',str(snapshots))
+        self.assertEqual(s.spawn.call_args.args[0][-1],r'D:\FINAL FANTASY XI')
+
+    def test_version_registry_failure_has_specific_message(self):
+        reason,message=client_launch.exit_problem({'phase':'version_configuration_failed','win32_error':5},[])
+        self.assertEqual(reason,'version_configuration_failed')
+        self.assertIn('Windows error 5',message)
+        self.assertIn('client files were kept',message)
 
     def test_specific_login_failures_survive_chunking_color_and_utf16(self):
         cases=[('Failed to login. Invalid username or password.','login_invalid_credentials'),

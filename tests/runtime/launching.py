@@ -31,12 +31,13 @@ def main():
     setup=Supervisor({'format':1,'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher'})
     try:
         setup.wait(setup.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'Z:\fixtures\display-config.exe'],'display-config.log'),90,'Synthetic display configuration checks')
+        setup.wait(setup.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'Z:\fixtures\version-registry.exe',r'Z:\session\version-fixture.bin'],'version-registry.log'),90,'Synthetic version registry checks')
     finally:setup.stop()
     manifest=json.loads((SESSION/'client-manifest.json').read_text())
     manifest['key_files'].pop(manifest['loader'])
     manifest['loader']='FINAL FANTASY XI/boot loader/xiloader.exe'
     loader=CLIENT/manifest['loader'];loader.parent.mkdir(exist_ok=True)
-    for case in ['launch','relaunch','windowed-existing','restore-display','startup-diagnostics','startup-exception','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN,*STARTUP]:
+    for case in ['launch','relaunch','windowed-existing','restore-display','version-repair','version-preserved','startup-diagnostics','startup-exception','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN,*STARTUP]:
         for path in [SESSION/'stop',SESSION/'status.json',SESSION/'loader-process.json',SESSION/'loader-check.json',SESSION/'login-fixture.json',CLIENT/'launch-fail',CLIENT/'launch-hang',CLIENT/'login-reject',CLIENT/'post-login']:
             path.unlink(missing_ok=True)
         for path in [CLIENT/'startup-result',SESSION/'startup-fixture.json']:path.unlink(missing_ok=True)
@@ -50,6 +51,7 @@ def main():
             request['startup_trace']=case!='trace-off'
             (CLIENT/'startup-result').write_text(STARTUP[case][0])
             if case=='trace-data':(CLIENT/'FINAL FANTASY XI'/'patch.ver').write_bytes(b'hello')
+        if case=='version-repair':shutil.copyfile(SESSION/'version-fixture.bin',CLIENT/'FINAL FANTASY XI'/'patch.ver')
         (SESSION/'request.json').write_text(json.dumps(request))
         if case=='exit-failure':(CLIENT/'launch-fail').touch()
         if case=='stop':(CLIENT/'launch-hang').touch()
@@ -93,6 +95,13 @@ def main():
             if case=='launch':
                 assert config['values']['0001']['previous_value']==640 and config['values']['0034']['previous_value']==0,config
                 assert config['backup_ready'] and all(v['changed'] for v in config['values'].values()),config
+        elif case in ('version-repair','version-preserved'):
+            assert p.returncode==0 and state['phase']=='completed' and report['process']['child_exit']==0,report
+            result=report['process']['version_config']
+            assert result['state']==('restored_missing' if case=='version-repair' else 'existing_preserved'),result
+            assert not result['win32_error'] and not result['rollback_error'],result
+            if case=='version-repair':assert result['version']=='20260921_1',result
+            assert (CLIENT/'FINAL FANTASY XI'/'patch.ver').read_bytes()==(SESSION/'version-fixture.bin').read_bytes()
         elif case=='exit-failure':
             assert p.returncode!=0 and state['phase']=='error' and report['process']['child_exit']==0xc0000135,report
         elif case=='startup-diagnostics':

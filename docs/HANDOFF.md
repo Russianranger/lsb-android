@@ -1,4 +1,14 @@
-# Active milestone 3: inspect version-data processing (0.4.7 device result)
+# Active milestone 3: restore the missing version registry value (0.4.8)
+
+The new `patch_pol.zip` matches the selected polcore.dll. Its unchanged patch.ver decodes as `30251204_1` with Interface string `"0"`. The exact original callback returns -1 for a missing registry value and 0 for `"0"` in isolated x86 emulation; input bytes are preserved. The app had created InstallFolder/language keys but omitted Interface. See [evidence, implementation and limits](version-repair-048.md).
+
+0.4.8 validates the complete supported version record before restoring only a missing selected-region, 32-bit `Interface\\0001` REG_SZ value. Existing values/types are preserved; readback failure removes the new value. `version_config` in the native launch receipt reports the repair. Client files, preparation, runtime and loader remain unchanged. This is a targeted fix for the reproduced version-reader failure; whole-game startup remains unverified. Full CI/build validation is pending at implementation commit time.
+
+Next device action after the verified APK is delivered: install in place, keep the accepted preparation and current settings, start Termux server, launch once with startup capture enabled, and export Diagnostics if it stops. No re-import or re-preparation. Do not replace version files or suppress callback failures. If a registry value already exists, preserve it and use the receipt to guide the next investigation.
+
+---
+
+# Previous milestone 3 step: inspect version-data processing (0.4.7 device result)
 
 The new `lsb-support(6).zip` captures successful root FTABLE/VTABLE opens and first reads, plus a successful complete 288-byte patch.ver read. The working directory matches FFXiMain's parent. All ten API hooks are installed; there are no dropped records. GameMain returns `0x88770000` after 1,227 ms, before any Windows-version, DirectPlay, window or D3D-creation event. Outer GameStart still returns S_OK. See [the device evidence, remaining branches and exact next inputs](version-startup-047.md).
 

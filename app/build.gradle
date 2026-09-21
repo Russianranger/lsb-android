@@ -6,8 +6,8 @@ android {
         applicationId 'io.github.russianranger.lsb'
         minSdk 26
         targetSdk 35
-        versionCode 14
-        versionName '0.4.7'
+        versionCode 15
+        versionName '0.4.8'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
     sourceSets.main.assets.srcDir rootProject.file('out/launcher-assets')
@@ -20,7 +20,7 @@ android {
 tasks.register('buildWindowsLauncher', Exec) {
     workingDir rootProject.projectDir
     commandLine 'python3', 'scripts/build-launcher.py'
-    inputs.files(rootProject.file('windows/launcher.c'), rootProject.file('windows/client-init.c'), rootProject.file('windows/client-launch.c'), rootProject.file('windows/runtime-probe.c'), rootProject.file('windows/probe-com.c'), rootProject.file('scripts/build-launcher.py'))
+    inputs.files(rootProject.fileTree('windows') { include '*.c', '*.h' }, rootProject.file('scripts/build-launcher.py'))
     outputs.file(rootProject.file('out/launcher-assets/LSB-FFXI.exe'))
     outputs.dir(rootProject.file('out/runtime-probes'))
 }
