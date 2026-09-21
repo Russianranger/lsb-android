@@ -1,4 +1,14 @@
-# Active milestone 3: pinpoint the pre-window operation (0.4.7)
+# Active milestone 3: inspect version-data processing (0.4.7 device result)
+
+The new `lsb-support(6).zip` captures successful root FTABLE/VTABLE opens and first reads, plus a successful complete 288-byte patch.ver read. The working directory matches FFXiMain's parent. All ten API hooks are installed; there are no dropped records. GameMain returns `0x88770000` after 1,227 ms, before any Windows-version, DirectPlay, window or D3D-creation event. Outer GameStart still returns S_OK. See [the device evidence, remaining branches and exact next inputs](version-startup-047.md).
+
+The matching DLL puts a PlayOnline common-function-table callback (offset `0x124c`, index 1171) immediately after its version-file read. A negative callback result or file-manager completion failure can produce this exit. Successful ReadFile alone does not distinguish them. Next obtain `FINAL FANTASY XI/patch.ver` and the selected `PlayOnlineViewer/viewer/com/polcore.dll` from the same import/backup, verify the recorded DLL hash, and inspect that implementation locally. Do not use the patch-cache DLL. These bytes are absent from both the support ZIP and the earlier two-DLL upload.
+
+No code, APK or runtime change is made for this analysis; 0.4.7 remains installed. Do not ask for another identical launch, re-import or preparation. Preserve the accepted generation and original files. Do not fabricate version data, bypass validation or change graphics/dependencies without a concrete failing operation. Startup remains unresolved.
+
+---
+
+# Previous milestone 3 step: pinpoint the pre-window operation (0.4.7)
 
 The supplied `ffxi_lsb.zip` matches both recorded DLL hashes. Offline inspection confirms that `0x88770000` is a shared early-startup failure result, not a specific Direct3D/Windows error. GameMain checks its file manager (including FTABLE.DAT, VTABLE.DAT and patch.ver), Windows version, DirectPlay and window creation before its main loop. The pinned runtime contains dpnhpast.dll. The old unknown-version label does not establish that patch.ver is missing. See [static findings, RVAs and trace interpretation](startup-files-047.md).
 
