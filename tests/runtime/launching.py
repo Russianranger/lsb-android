@@ -69,7 +69,10 @@ def main():
             assert report['process']['child_exit']==0
             observed=report['process']['observation']
             assert observed['ffxi_window_seen'] and 'FFXiMain.dll' in observed['modules_seen'],observed
-            assert observed['samples']>0 and observed['module_error']==observed['window_error']==0,observed
+            # The final poll can race normal DLL teardown: Module32First then
+            # returns ERROR_NO_MORE_FILES (18) even though earlier samples saw
+            # FFXiMain and the game window. Keep that code in the receipt.
+            assert observed['samples']>0 and observed['module_error'] in (0,18) and observed['window_error']==0,observed
             config=report['process']['display_config'];assert config['ok'] and config['policy']==request.get('display_profile','preserve'),config
             assert config['rollback_error']==0,config
             expected={'launch':1280,'relaunch':1024,'windowed-existing':1280,'restore-display':640}
