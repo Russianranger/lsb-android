@@ -11,7 +11,8 @@ static LONG display_read(HKEY key,DWORD *values,BOOL *present){
         DWORD type=0,size=4;values[i]=0;present[i]=FALSE;
         LONG rc=RegQueryValueExW(key,setting_names[i],NULL,&type,(BYTE*)&values[i],&size);
         if(rc==ERROR_FILE_NOT_FOUND)continue;
-        if(rc)return rc;if(type!=REG_DWORD||size!=4)return ERROR_INVALID_DATA;
+        if(rc){values[i]=0;return rc;}
+        if(type!=REG_DWORD||size!=4){values[i]=0;return ERROR_INVALID_DATA;}
         present[i]=TRUE;
     }
     return 0;

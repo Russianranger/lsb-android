@@ -51,6 +51,7 @@ int wmain(void){
         /* Existing unexpected types are never silently overwritten. */
         assert(RegSetValueExW(key,L"0034",0,REG_SZ,(BYTE*)L"x",4)==0);
         assert(display_config(languages[region],L"windowed720")==ERROR_INVALID_DATA&&!config_checked);
+        assert(!setting_before_present[4]&&setting_before[4]==0); /* No invalid string bytes in receipts. */
         DWORD type=0,size=4,value=0;assert(RegQueryValueExW(key,L"0001",NULL,&type,(BYTE*)&value,&size)==0&&value==640);
         seed(key);
         /* Interrupted backup construction is retried before touching the game. */
