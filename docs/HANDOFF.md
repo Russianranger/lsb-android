@@ -1,3 +1,11 @@
+# Active milestone 3: post-login exit investigation (0.4.3)
+
+The 0.4.2 device report `lsb-support (3)(1).zip` (SHA-256 `9011837bb7be404ce1e60e4bfbe927034c82d6c57a1d135c957d7ba93345e364`) records session `56ca8e82-a27b-4107-8971-c9b9989672f7`: `login_message_seen`, `server_connected`, native child exit 0 and bridge exit 0 after about 35.5 seconds. The user confirms successful login followed by exit. This establishes authentication progress, not world entry; no captured exception or initialization failure establishes the cause. Preserve generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, imported loader and current runtime.
+
+0.4.3 fills missing FFXI display settings, records safe post-login observations, and stops describing an unobserved game startup as a normal close. See the current section of [validation.md](validation.md) for source evidence, test status and limits. Do not assert the actual game is fixed until the device retry. No re-import, preparation copy, runtime replacement or GameHub test is needed.
+
+---
+
 # Active milestone 3: login rejection feedback (0.4.2)
 
 The 0.4.1 device test accepts the dependency-checker fix: all 20 DLLs loaded, exit 0, and xiloader started. The new blocker is a `login_rejected` event while the loader stayed alive and the screen remained black. The old log does not distinguish wrong credentials, account state or version rejection. 0.4.2 adds specific safe event classification, live failure handling/automatic shutdown, accurate waiting-for-login status and an Android error dialog returning to the Client form. Implementation `90f812a836b0da8a185440b6c25a2eada1cdf762` passes all gates in [run 35551248809](https://github.com/Russianranger/lsb-android/actions/runs/35551248809), including all five new rejection/automatic-stop cases under ARM64 Wine/Box64 and PRoot. Delivered `LSB-Android-0.4.2.apk` has SHA-256 `da5e0e65eb3d639a5a10a9899fab6a04d8f89644705dd892f9b949972fce57ae` and the original certificate. Read [the current validation section](validation.md) before requesting another test. Preserve current generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, source import, loader hash and Turnip 26. No blanket graphics or prerequisite changes are supported by this report.

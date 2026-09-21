@@ -19,13 +19,23 @@ FAILURES={
     'connection_timeout':'The server did not reply to the launcher in time. Check the Termux server log and retry from Client.',
     'authentication_handshake_failed':'The authentication connection failed. Check server and loader compatibility; export Diagnostics.',
     'listen_failed':'The launcher could not open its local listener. Stop any other loader session and retry.',
+    'polcore_initialization_failed':'Login progressed, but the loader could not initialize PlayOnline. Export Diagnostics; your imported data is retained.',
+    'ffxi_initialization_failed':'Login progressed, but the loader could not initialize FFXI. Export Diagnostics; your imported data is retained.',
+    'polcore_patch_failed':'The loader could not locate a required PlayOnline function. Export Diagnostics to check loader/client compatibility.',
+    'com_initialization_failed':'The loader could not initialize Windows COM. Export Diagnostics.',
+    'loader_hook_failed':'The loader could not install its required network hooks. Export Diagnostics.',
     'windows_exception':'The launcher reported a Windows exception. Export Diagnostics.',
     'dll_import_error':'The launcher reported a DLL import error. Export Diagnostics.'}
 
 
-def progress(events, elapsed):
+def progress(events, elapsed, process=None):
     for event,message in FAILURES.items():
         if event in events:return 'launch_failed',message,event
+    observation=(process or {}).get('observation',{})
+    if observation.get('ffxi_window_seen') is True:
+        return 'game_window_observed','An FFXI window opened. Character selection and world entry still need checking.',''
+    if 'FFXiMain.dll' in observation.get('modules_seen',[]):
+        return 'game_module_loaded','FFXI loaded its main module. Waiting for the game window.',''
     if 'game_launch_message_seen' in events:
         return 'game_start_requested','The launcher requested game startup. Waiting for the game display.',''
     if 'login_message_seen' in events:
@@ -33,6 +43,15 @@ def progress(events, elapsed):
     if elapsed>=60:
         return 'waiting_for_login','Still waiting for a login result. Stop and export Diagnostics if no game appears.',''
     return 'waiting_for_login','Launcher started. Waiting for a login result.',''
+
+
+def exit_problem(process, events):
+    if process.get('phase')=='configuration_failed':
+        return ('display_configuration_failed','FFXI display settings could not be initialized (Windows error '+str(process.get('win32_error','unavailable'))+'). Existing values were preserved. Export Diagnostics.')
+    if (process.get('phase')=='exited' and process.get('child_exit')==0 and
+        'login_message_seen' in events and not process.get('observation',{}).get('ffxi_window_seen')):
+        return ('closed_before_game_window','The loader closed after login before an FFXI window was observed. Export Diagnostics to identify the remaining startup failure.')
+    return None
 
 
 def credentials(stream):
@@ -123,7 +142,7 @@ def run(s, display):
         payload=None;s.status('starting_loader');started=time.monotonic();deadline=started+90;last=None;last_progress=None
         def update_progress():
             nonlocal last_progress
-            events=writer.events.snapshot();state=progress(events,time.monotonic()-started)
+            events=writer.events.snapshot();state=progress(events,time.monotonic()-started,report.get('process'))
             phase,message,failure=state
             if (state,events)!=last_progress:
                 report.update(events=events,launch_stage=phase,message=message)
@@ -145,6 +164,11 @@ def run(s, display):
         if result.is_file():report['process']=json.loads(result.read_text())
         report['bridge_exit']=p.returncode
         writer.thread.join(2);update_progress();process=report.get('process',{})
+        problem=exit_problem(process,writer.events.snapshot())
+        if problem:
+            reason,message=problem
+            report.update(status='failed',failure_reason=reason,termination_reason='loader_exited',launch_stage=reason,message=message)
+            record(s,report);raise RuntimeError(message)
         if p.returncode!=0 or process.get('phase')!='exited' or process.get('child_exit')!=0:
             report['status']='failed';record(s,report)
             raise RuntimeError('Client launch failed (Windows exit '+str(process.get('child_exit','unavailable'))+', error '+str(process.get('win32_error','unavailable'))+'). Export Diagnostics.')

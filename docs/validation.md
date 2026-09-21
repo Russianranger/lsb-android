@@ -1,3 +1,23 @@
+# Post-login exit: 0.4.3 (2026-09-21)
+
+**Device evidence.** The latest 0.4.2 report `lsb-support (3)(1).zip`, SHA-256 `9011837bb7be404ce1e60e4bfbe927034c82d6c57a1d135c957d7ba93345e364`, records session `56ca8e82-a27b-4107-8971-c9b9989672f7` on AYN Thor. All 20 dependency loads pass with checker exit 0. Events record autologin, successful login and server connection. The loader and bridge then return 0 after approximately 35.5 seconds; no game-start/window observation or crash stack is available. User confirmation closes the earlier authentication hurdle, but character selection/world entry are still unverified.
+
+**Source findings.** [xiloader v2.0 main.cpp](https://github.com/LandSandBoat/xiloader/blob/9679ac443f755f9e11cb672e901aee17c936b453/src/main.cpp) invokes FFXI through in-process COM and `GameStart`; it can report POL/FFXI COM creation failure and still return 0. It does not print the game-start message the old parser expected. There is no evidence of a separate game process being killed on a successful handoff. The exact imported loader has not been rebuilt or replaced; upstream source explains possible paths, not the actual failing instruction.
+
+**Changes.**
+
+- Before launching, initialize only absent 32-bit HKLM regional FFXI display values: `0001/0002` (overlay width/height) and `0003/0004` (background width/height) to 1280/720; `0034` (mode) to 1, windowed. Existing DWORDs remain intact. All reads precede writes; incompatible types fail without changing values, and a write/readback failure rolls back values added by that attempt. Report every final value and whether it was added. No imported file, client DLL, loader, renderer or source prefix is replaced. This closes a preparation omission but is a **candidate fix**, not a proven cause of the reported exit.
+- The display key and numeric mappings are corroborated by [Windower's registry implementation](https://github.com/Windower/Fenestra/blob/e5bfb6442f49bdb4d31859bff6218bbeb1bea620/core/src/hooks/advapi32.cpp). No other registry keys are copied from a working container.
+- Observe the directly launched process every 250 ms for six fixed DLL names, visible `FFXiClass` windows, and standard dialogs. Record cumulative booleans, sample count, elapsed time and Windows observation error codes. The class name is corroborated by [Windower's window hook](https://github.com/Windower/Fenestra/blob/e5bfb6442f49bdb4d31859bff6218bbeb1bea620/core/src/hooks/user32.cpp). Polling can miss a transient module/window; absence means **not observed**, not proof it never existed. A visible window does not establish rendered frames, character selection or world entry.
+- Recognize fixed POL/FFXI COM, loader-hook and profile-port initialization failures without retaining arbitrary child output. A reported login followed by exit 0 without an observed FFXI window now produces an actionable Android error. Module/window status helps identify the remaining stage instead of leaving a stale login-wait message.
+- Passwords remain pipe-only. No window title, arbitrary module name/path, command line or registry string is logged. Tests deliberately put a password in a window title to check the boundary.
+
+**Validation in progress.** Local 116 JVM checks, 15 Python contracts and x86 native compilation pass. CI covers missing-only registry defaults and preservation/invalid-type behavior for US/EU/JP; normal window/module observation, normal exit/relaunch, prior failures and new POL/FFXI failure/zero-exit cases in ARM64 Wine/Box64 and PRoot. Actual proprietary `GameStart`, a settings correction on the Thor and world entry require the device retry; synthetic tests cannot prove them.
+
+**Device procedure.** Install the original-certificate 0.4.3 APK over the current app, start the existing Termux server, and use Client → Launch FFXI with the same account/server. Existing preparation remains active. Report whether a title/character screen appears; if it closes again, export the new Diagnostics ZIP. Do not uninstall, import or prepare again.
+
+---
+
 # 0.4.2: expose login failure instead of a running black screen (2026-09-21)
 
 The 0.4.1 Thor report `lsb-support (2)(1).zip` (SHA-256 `7a187ac4046decfc92a6a64e5b22b3342de21d8181f6e24c06d7703584197e04`) and black-screen screenshot show the next boundary. Session `4613eb66-0fc3-47e6-b55e-fe97003ec8a5` ran **01:17:55–01:24:04 UTC**, ending by Stop. The corrected dependency checker loaded all 20 DLLs and exited **0** with `check_policy=load_only`. Windows process creation succeeded. Thus the 0.4.1 preflight fix is device-accepted.

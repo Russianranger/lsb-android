@@ -45,5 +45,24 @@ int wmain(int argc,WCHAR **wide){
     }
     puts("Successfully logged in. Launching FINAL FANTASY XI.");fflush(stdout);
     while(GetFileAttributesW(L"D:\\launch-hang")!=INVALID_FILE_ATTRIBUTES)Sleep(100);
-    Sleep(500);return 0;
+    FILE *post=_wfopen(L"D:\\post-login",L"rb");
+    if(post){
+        int kind=fgetc(post);fclose(post);
+        if(kind=='p')puts("[09/21/26 01:00:01] Failed to initialize instance of polcore!");
+        if(kind=='f')puts("[09/21/26 01:00:01] Failed to initialize instance of FFxi!");
+        puts("Closing...");fflush(stdout);return 0;
+    }
+    HMODULE main_dll=LoadLibraryW(L"D:\\FINAL FANTASY XI\\FFXiMain.dll");if(!main_dll)return 97;
+    WNDCLASSW cls={0};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(NULL);cls.lpszClassName=L"FFXiClass";
+    if(!RegisterClassW(&cls))return 97;
+    HWND window=CreateWindowW(cls.lpszClassName,pass,WS_OVERLAPPEDWINDOW|WS_VISIBLE,0,0,640,480,NULL,NULL,cls.hInstance,NULL);
+    if(!window)return 97;
+    ULONGLONG end=GetTickCount64()+2000;MSG msg;
+    while(GetTickCount64()<end){while(PeekMessageW(&msg,NULL,0,0,PM_REMOVE)){TranslateMessage(&msg);DispatchMessageW(&msg);}Sleep(20);}
+    DestroyWindow(window);
+    /* Model the game saving a changed user preference. Relaunch must preserve it. */
+    HKEY key;if(RegOpenKeyExW(HKEY_LOCAL_MACHINE,L"Software\\PlayOnlineUS\\SquareEnix\\FinalFantasyXI",0,KEY_SET_VALUE|KEY_WOW64_32KEY,&key)==0){
+        DWORD width=1024;RegSetValueExW(key,L"0001",0,REG_DWORD,(BYTE*)&width,4);RegCloseKey(key);
+    }
+    FreeLibrary(main_dll);return 0;
 }

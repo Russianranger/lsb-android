@@ -6,6 +6,69 @@
 #include <stdio.h>
 #include <wchar.h>
 #include <ctype.h>
+#include <tlhelp32.h>
+
+/* No window titles, arbitrary module paths or registry strings enter receipts. */
+static const WCHAR *module_names[]={L"polcore.dll",L"polcoreeu.dll",L"FFXi.dll",L"FFXiMain.dll",L"d3d8.dll",L"d3d9.dll"};
+static BOOL module_seen[6],game_window_seen,dialog_seen;
+static DWORD child_pid,samples,module_error,window_error;
+static ULONGLONG launched_at;
+static const WCHAR *setting_names[]={L"0001",L"0002",L"0003",L"0004",L"0034"};
+static DWORD setting_values[]={1280,720,1280,720,1};
+static BOOL setting_added[5];
+static BOOL config_checked;
+
+static LONG display_config(const WCHAR *language){
+    const DWORD defaults[]={1280,720,1280,720,1};
+    memcpy(setting_values,defaults,sizeof(defaults));memset(setting_added,0,sizeof(setting_added));config_checked=FALSE;
+    WCHAR branch[256];const WCHAR *area=!wcscmp(language,L"0")?L"":!wcscmp(language,L"1")?L"US":L"EU";
+    swprintf(branch,256,L"Software\\PlayOnline%ls\\%ls\\FinalFantasyXI",area,*area?L"SquareEnix":L"Square");
+    HKEY key;LONG rc=RegCreateKeyExW(HKEY_LOCAL_MACHINE,branch,0,NULL,0,KEY_QUERY_VALUE|KEY_SET_VALUE|KEY_WOW64_32KEY,NULL,&key,NULL);
+    if(rc)return rc;
+    /* Read everything before writing. Existing values, including unusual ones,
+     * are preserved. These are the game's five numeric display options only. */
+    for(int i=0;i<5;i++){
+        DWORD type=0,size=4,value=0;rc=RegQueryValueExW(key,setting_names[i],NULL,&type,(BYTE*)&value,&size);
+        if(rc==ERROR_FILE_NOT_FOUND){setting_added[i]=TRUE;rc=0;}
+        else if(!rc&&type==REG_DWORD&&size==4)setting_values[i]=value;
+        else {if(!rc)rc=ERROR_INVALID_DATA;break;}
+    }
+    BOOL written[5]={0};
+    if(!rc)for(int i=0;i<5;i++)if(setting_added[i]){
+        rc=RegSetValueExW(key,setting_names[i],0,REG_DWORD,(BYTE*)&setting_values[i],4);
+        if(rc)break;written[i]=TRUE;
+    }
+    if(!rc)for(int i=0;i<5;i++){
+        DWORD value=0,type=0,size=4;rc=RegQueryValueExW(key,setting_names[i],NULL,&type,(BYTE*)&value,&size);
+        if(!rc&&(type!=REG_DWORD||size!=4||value!=setting_values[i]))rc=ERROR_INVALID_DATA;
+        if(rc)break;
+    }
+    if(rc)for(int i=0;i<5;i++)if(written[i])RegDeleteValueW(key,setting_names[i]);
+    RegCloseKey(key);config_checked=rc==0;return rc;
+}
+static BOOL CALLBACK window_observation(HWND window,LPARAM unused){
+    (void)unused;DWORD pid=0;GetWindowThreadProcessId(window,&pid);
+    if(pid!=child_pid||!IsWindowVisible(window))return TRUE;
+    WCHAR cls[128];if(!GetClassNameW(window,cls,128))return TRUE;
+    if(!wcscmp(cls,L"FFXiClass"))game_window_seen=TRUE;
+    if(!wcscmp(cls,L"#32770"))dialog_seen=TRUE;
+    return TRUE;
+}
+static void observe(void){
+    samples++;
+    HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,child_pid);
+    if(snapshot==INVALID_HANDLE_VALUE)module_error=GetLastError();
+    else{
+        MODULEENTRY32W entry={0};entry.dwSize=sizeof(entry);
+        if(Module32FirstW(snapshot,&entry)){
+            module_error=0;unsigned count=0;
+            do{for(int i=0;i<6;i++)if(!_wcsicmp(entry.szModule,module_names[i]))module_seen[i]=TRUE;}
+            while(++count<1024&&Module32NextW(snapshot,&entry));
+        }else module_error=GetLastError();
+        CloseHandle(snapshot);
+    }
+    SetLastError(0);window_error=EnumWindows(window_observation,0)?0:GetLastError();
+}
 
 /* Credentials enter only on stdin. No command interpreter, credentials file or
  * credential-bearing Unix argv is used. The imported Windows process necessarily
@@ -40,7 +103,13 @@ static int check(int argc,WCHAR **argv){
 }
 static BOOL receipt(const char *phase,DWORD error,DWORD code){
     FILE *f=_wfopen(L"Z:\\session\\loader-process.new",L"wb");if(!f)return FALSE;
-    fprintf(f,"{\"format\":1,\"bits\":32,\"phase\":\"%s\",\"win32_error\":%lu,\"child_exit\":%lu}\n",phase,(unsigned long)error,(unsigned long)code);fclose(f);
+    fprintf(f,"{\"format\":1,\"bits\":32,\"phase\":\"%s\",\"win32_error\":%lu,\"child_exit\":%lu",phase,(unsigned long)error,(unsigned long)code);
+    fprintf(f,",\"display_config\":{\"policy\":\"missing_only\",\"ok\":%s,\"values\":{",config_checked?"true":"false");
+    for(int i=0;i<5;i++){if(i)fputc(',',f);quoted(f,setting_names[i]);fprintf(f,":{\"value\":%lu,\"added\":%s}",(unsigned long)setting_values[i],setting_added[i]?"true":"false");}
+    fprintf(f,"}},\"observation\":{\"samples\":%lu,\"elapsed_ms\":%llu,\"module_error\":%lu,\"window_error\":%lu,\"ffxi_window_seen\":%s,\"dialog_seen\":%s,\"modules_seen\":[",
+        (unsigned long)samples,launched_at?(unsigned long long)(GetTickCount64()-launched_at):0ULL,(unsigned long)module_error,(unsigned long)window_error,game_window_seen?"true":"false",dialog_seen?"true":"false");
+    BOOL first=TRUE;for(int i=0;i<6;i++)if(module_seen[i]){if(!first)fputc(',',f);quoted(f,module_names[i]);first=FALSE;}
+    fputs("]}}\n",f);BOOL written=!ferror(f);if(fclose(f))written=FALSE;if(!written)return FALSE;
     return MoveFileExW(L"Z:\\session\\loader-process.new",L"Z:\\session\\loader-process.json",MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
 }
 /* MS CRT argument quoting, including quotes and trailing backslashes. */
@@ -64,6 +133,8 @@ static int launch(int argc,WCHAR **argv){
        (wcscmp(argv[4],L"--username")&&wcscmp(argv[4],L"--user"))||
        (wcscmp(argv[5],L"--password")&&wcscmp(argv[5],L"--pass"))||
        (wcscmp(argv[6],L"0")&&wcscmp(argv[6],L"1")&&wcscmp(argv[6],L"2")))return 84;
+    LONG config_error=display_config(argv[6]);
+    if(config_error){receipt("configuration_failed",(DWORD)config_error,0);return 1;}
     if(!line(magic,32)||wcscmp(magic,L"LSBLOGIN1")||!line(host,254)||!line(user,129)||!line(pass,129)){
         SecureZeroMemory(user,sizeof(user));SecureZeroMemory(pass,sizeof(pass));return 85;
     }
@@ -76,9 +147,13 @@ static int launch(int argc,WCHAR **argv){
     BOOL started=CreateProcessW(argv[2],command+1,NULL,NULL,TRUE,0,NULL,dir,&si,&pi);DWORD error=started?0:GetLastError();
     SecureZeroMemory(command,sizeof(command));SecureZeroMemory(user,sizeof(user));SecureZeroMemory(pass,sizeof(pass));if(input!=INVALID_HANDLE_VALUE)CloseHandle(input);
     if(!started){receipt("create_failed",error,0);return 1;}
-    CloseHandle(pi.hThread);
+    CloseHandle(pi.hThread);child_pid=pi.dwProcessId;launched_at=GetTickCount64();
     if(!receipt("running",0,0)){TerminateProcess(pi.hProcess,90);CloseHandle(pi.hProcess);return 90;}
-    DWORD waited=WaitForSingleObject(pi.hProcess,INFINITE),code=0;
+    DWORD waited,code=0;
+    while((waited=WaitForSingleObject(pi.hProcess,250))==WAIT_TIMEOUT){
+        observe();
+        if(!receipt("running",0,0)){TerminateProcess(pi.hProcess,90);CloseHandle(pi.hProcess);return 90;}
+    }
     BOOL ok=waited==WAIT_OBJECT_0&&GetExitCodeProcess(pi.hProcess,&code);error=ok?0:GetLastError();CloseHandle(pi.hProcess);
     if(!receipt(ok?"exited":"wait_failed",error,code))return 91;
     return ok&&code==0?0:1;

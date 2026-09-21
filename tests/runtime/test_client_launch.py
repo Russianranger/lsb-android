@@ -17,6 +17,9 @@ class LaunchContracts(unittest.TestCase):
                ('Failed to login. Account already logged in.','login_already_active'),
                ('Failed to login. Expected xiloader version mismatch; check with your provider.','login_version_mismatch'),
                ('Failed to login.','login_rejected'),('Failed to connect to server!','connection_failed')]
+        cases += [('Failed to initialize instance of polcore!','polcore_initialization_failed'),
+                  ('Failed to initialize instance of FFxi!','ffxi_initialization_failed'),
+                  ('Failed to locate profileServerPortAddress2!','polcore_patch_failed')]
         for message,event in cases:
             for encoding in ['ascii','utf-16le','utf-16be']:
                 raw=('[09/21/26 01:00:00] \x1b[31m'+message+'\x1b[0m\r\n').encode(encoding)
@@ -60,6 +63,18 @@ class LaunchContracts(unittest.TestCase):
             elif mutation=='wrong-policy':bad.pop('check_policy')
             else:bad['bits']=64
             with self.assertRaises(RuntimeError):client_launch.validate_check(bad,names,0)
+
+    def test_post_login_zero_exit_requires_an_observed_game_window(self):
+        process={'phase':'exited','child_exit':0,'observation':{'ffxi_window_seen':False}}
+        self.assertEqual(client_launch.exit_problem(process,['login_message_seen'])[0],'closed_before_game_window')
+        # A missing observer is unknown, never inferred to be a successful game.
+        self.assertIsNotNone(client_launch.exit_problem({'phase':'exited','child_exit':0},['login_message_seen']))
+        process['observation']['ffxi_window_seen']=True
+        self.assertIsNone(client_launch.exit_problem(process,['login_message_seen']))
+        self.assertEqual(client_launch.progress(['login_message_seen'],1,process)[0],'game_window_observed')
+        self.assertEqual(client_launch.progress(['login_message_seen','ffxi_initialization_failed'],1,process)[2],'ffxi_initialization_failed')
+        self.assertIsNone(client_launch.exit_problem({'phase':'exited','child_exit':0xc0000135},['login_message_seen']))
+        self.assertEqual(client_launch.exit_problem({'phase':'configuration_failed','win32_error':13},[])[0],'display_configuration_failed')
 
     def test_pipe_validates_without_echoing_secrets(self):
         payload=b'LSBLOGIN1\n127.0.0.1\naccount\nPa"ss&\\word \n'
