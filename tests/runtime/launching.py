@@ -122,7 +122,8 @@ def main():
                     assert not any(r['event']=='game_start_return' for r in rows),report
                 else:
                     assert any(r['event']=='game_start_return' and r['code']==STARTUP[case][1] for r in rows),report
-                    assert report['process']['child_exit']==0 and report['failure_reason']=='game_start_returned_without_window',report
+                    expected_failure='game_main_failed' if case=='trace-inner' else 'game_start_returned_without_window'
+                    assert report['process']['child_exit']==0 and report['failure_reason']==expected_failure,report
             if case!='trace-exception':
                 fixture=json.loads((SESSION/'startup-fixture.json').read_text())
                 assert fixture['hresult']==STARTUP[case][1],fixture

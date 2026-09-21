@@ -1,3 +1,9 @@
+# 0.4.6 device result and inner-error reporting correction (2026-09-21)
+
+The new device trace confirms `IGameMain::FFXiGameMain` returns `0x88770000` after 1,441 ms; both COM activations and outer GameStart report S_OK. The source now selects the failed inner HRESULT for the observed child and latest attempt. All 31 Python contracts pass; replay of the uploaded receipt also yields the correct code/duration. The existing native launch fixture's expected reason is updated. No new device APK or claim of fixed gameplay accompanies this change. See [evidence and remaining input](game-main-failure-046.md). The older full CI result below describes the previously delivered 0.4.6 build.
+
+---
+
 # Direct GameStart result: 0.4.6 (2026-09-21)
 
 **Device evidence.** 0.4.5 session `a0898d38-3a79-4290-9d76-8c1dbd237c8f` still ends with child/bridge exit 0 before an observed game window. New Wine metadata separates the RPC/missing-DLL warnings (PID 292) from loader PID 284; no fatal game exception or DXVK initialization is captured. The direct GameStart HRESULT was never logged. [Detailed evidence and instrumentation limits](game-start-trace-046.md).

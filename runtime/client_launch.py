@@ -54,8 +54,17 @@ def exit_problem(process, events, diagnostics=None):
     if (process.get('phase')=='exited' and process.get('child_exit')==0 and
         'login_message_seen' in events and not process.get('observation',{}).get('ffxi_window_seen')):
         pid=process.get('observation',{}).get('child_pid')
-        for row in reversed((diagnostics or {}).get('records',[])):
-            if row.get('source')=='startup' and row.get('process_id')==pid and row.get('event')=='game_start_return':
+        rows=[row for row in (diagnostics or {}).get('records',[])
+              if pid is not None and row.get('source')=='startup' and row.get('process_id')==pid]
+        # FFXI can return a failed inner HRESULT and then mask it with S_OK
+        # from GameStart. Use only the latest call, not an earlier retry.
+        boundary=next((i for i in range(len(rows)-1,-1,-1) if rows[i]['event']=='game_start_enter'),0)
+        rows=rows[boundary:]
+        inner=next((row for row in reversed(rows) if row['event']=='game_main_return'),None)
+        if inner is not None and inner['code'] & 0x80000000:
+            return ('game_main_failed','FFXI GameMain failed with 0x%08X after %d ms before a game window was observed. Export Diagnostics.'%(inner['code'],inner['detail']))
+        for row in reversed(rows):
+            if row['event']=='game_start_return':
                 return ('game_start_returned_without_window','FFXI GameStart returned 0x%08X after %d ms before a game window was observed. Export Diagnostics.'%(row['code'],row['detail']))
         return ('closed_before_game_window','The loader closed after login before an FFXI window was observed. Export Diagnostics to identify the remaining startup failure.')
     return None

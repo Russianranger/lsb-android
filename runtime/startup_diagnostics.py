@@ -32,14 +32,17 @@ class StartupDiagnostics:
         with self.lock:
             count_key = source + '_' + event
             self.counts[count_key] = min(1000000, self.counts.get(count_key, 0) + 1)
-            if key in self.seen:
+            # Startup boundaries are ordered calls, not repeatable warnings.
+            # Deduplicating them can hide a successful retry or its entry.
+            if source != 'startup' and key in self.seen:
                 return
             if len(self.records) >= 64:
                 self.dropped = min(1000000, self.dropped + 1)
                 # Direct startup boundaries must survive noisy Wine warnings.
-                # Keep the same 64-row limit; only displace an indirect record.
+                # Keep 64 rows; prefer displacing an indirect record.
                 victim=next((i for i,r in enumerate(self.records) if r['source']!='startup'),None)
-                if source!='startup' or victim is None:return
+                if source!='startup':return
+                if victim is None:victim=0  # retain the newest call boundaries
                 removed=self.records.pop(victim)
                 removed_key=(removed['source'],removed['event'],*sorted((k,v) for k,v in removed.items() if k not in ('source','event')))
                 self.seen.discard(removed_key)

@@ -1,3 +1,11 @@
+# Active milestone 3: identify the inner GameMain failure (0.4.6 device result)
+
+The newest report `lsb-support (3)(2).zip` records successful FFXI and GameMain COM creation, followed by **GameMain HRESULT `0x88770000` after 1,441 ms**. Outer GameStart returns S_OK after 1,983 ms, and the loader exits 0 without an observed game window. This is the captured failing boundary; its underlying cause is not yet known. See [exact evidence, reporting correction and next input](game-main-failure-046.md).
+
+Source reporting now surfaces the inner failure. Thirty-one Python contracts and replay of the actual device receipt pass. No new APK is delivered for this reporting-only correction; the existing 0.4.6 already captures the needed boundary. Do not ask for another identical launch. Next obtain `FINAL FANTASY XI/FFXiMain.dll` and `FFXi.dll` from the same import/backup, check the hashes documented above, and statically inspect the return path. The support ZIP contains hashes, not these binaries. Preserve the accepted generation, original loader, imported files and runtime. Neither a renderer change nor a dependency sweep is justified yet.
+
+---
+
 # Active milestone 3: observe the actual GameStart result (0.4.6)
 
 The new `lsb-support (2)(2).zip`, SHA-256 `f8b8c13088bd2ea888195f2fe27c32e4e6e19d4f48399a2b808ad264051378f2`, records 0.4.5 session `a0898d38-3a79-4290-9d76-8c1dbd237c8f`. Loader PID 284 exits 0 after 15,688 ms, with all five expected modules and no sampled game window/dialog. Windowed settings and all 20 dependency loads pass. Missing-DLL 0xc0000135/RPC 1722 belong to PID 292. Loader 0x80000026 is first-chance; no fatal game exception or DXVK initialization message was captured. Do not treat these warnings as the proven cause or prescribe another dependency/renderer change.

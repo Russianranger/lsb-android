@@ -86,5 +86,60 @@ class ImageContracts(unittest.TestCase):
         self.assertEqual(len(rows),64)
         self.assertEqual(rows[-1]['event'],'game_start_return')
 
+    def test_inner_failure_is_not_hidden_by_outer_success(self):
+        # 0.4.6 Thor report: GameMain fails, GameStart and process return zero.
+        events=PrivateEvents()
+        events.feed(b'lsb-startup-v1 game_start_enter 0000011c 00000120 00000000 00000000\n'
+                    b'lsb-startup-v1 game_main_return 0000011c 00000120 88770000 000005a1\n'
+                    b'lsb-startup-v1 game_start_return 0000011c 00000120 00000000 000007bf\n')
+        process={'phase':'exited','child_exit':0,'observation':{'child_pid':284}}
+        result=exit_problem(process,['login_message_seen'],events.diagnostics.snapshot())
+        self.assertEqual(result[0],'game_main_failed')
+        self.assertIn('0x88770000 after 1441 ms',result[1])
+        process['observation']['ffxi_window_seen']=True
+        self.assertIsNone(exit_problem(process,['login_message_seen'],events.diagnostics.snapshot()))
+        process['observation']['ffxi_window_seen']=False
+        process['child_exit']=0xc0000094
+        self.assertIsNone(exit_problem(process,['login_message_seen'],events.diagnostics.snapshot()))
+
+    def test_other_process_and_successful_inner_returns_do_not_report_failure(self):
+        process={'phase':'exited','child_exit':0,'observation':{'child_pid':284}}
+        for code in (0,1):
+            events=PrivateEvents()
+            events.feed(('lsb-startup-v1 game_main_return 0000011c 00000120 %08x 00000001\n'%code).encode())
+            events.feed(b'lsb-startup-v1 game_main_return 00000124 00000128 88770000 00000002\n'
+                        b'lsb-startup-v1 game_start_return 0000011c 00000120 00000000 00000003\n')
+            self.assertEqual(exit_problem(process,['login_message_seen'],events.diagnostics.snapshot())[0],
+                             'game_start_returned_without_window')
+        process['observation'].pop('child_pid')
+        self.assertEqual(exit_problem(process,['login_message_seen'],events.diagnostics.snapshot())[0],
+                         'closed_before_game_window')
+
+    def test_earlier_inner_failure_does_not_override_a_later_attempt(self):
+        process={'phase':'exited','child_exit':0,'observation':{'child_pid':284}}
+        for retry in (b'game_main_return 0000011c 00000120 00000000 00000002',
+                      b'game_start_enter 0000011c 00000120 00000000 00000000'):
+            events=PrivateEvents()
+            events.feed(b'lsb-startup-v1 game_main_return 0000011c 00000120 88770000 00000001\n'
+                        b'lsb-startup-v1 '+retry+b'\n'
+                        b'lsb-startup-v1 game_start_return 0000011c 00000120 00000000 00000003\n')
+            self.assertEqual(exit_problem(process,['login_message_seen'],events.diagnostics.snapshot())[0],
+                             'game_start_returned_without_window')
+
+    def test_repeated_startup_boundaries_keep_order_within_the_record_limit(self):
+        events=PrivateEvents()
+        enter=b'lsb-startup-v1 game_start_enter 0000011c 00000120 00000000 00000000\n'
+        for unused in range(80):events.feed(enter)
+        events.feed(b'lsb-startup-v1 game_main_return 0000011c 00000120 88770000 00000001\n')
+        events.feed(enter)
+        events.feed(b'lsb-startup-v1 game_start_return 0000011c 00000120 00000000 00000003\n')
+        report=events.diagnostics.snapshot()
+        self.assertEqual(len(report['records']),64)
+        self.assertEqual(report['counts']['startup_game_start_enter'],81)
+        self.assertEqual(report['records'][-2]['event'],'game_start_enter')
+        process={'phase':'exited','child_exit':0,'observation':{'child_pid':284}}
+        self.assertEqual(exit_problem(process,['login_message_seen'],report)[0],
+                         'game_start_returned_without_window')
+
 
 if __name__=='__main__':unittest.main()
