@@ -22,7 +22,7 @@ POST_LOGIN={'post-login-pol':('p','polcore_initialization_failed'),
             'post-login-ffxi':('f','ffxi_initialization_failed'),
             'post-login-early-exit':('0','closed_before_game_window')}
 STARTUP={'trace-ok':('s',0),'trace-fail':('f',0x80004005),'trace-sfalse':('n',1),
-         'trace-inner':('m',0x8007000e),'trace-exception':('x',None),'trace-stop':('h',None),
+         'trace-inner':('m',0x8007000e),'trace-data':('d',0),'trace-exception':('x',None),'trace-stop':('h',None),
          'trace-off':('f',0x80004005)}
 
 
@@ -49,6 +49,7 @@ def main():
         if case in STARTUP:
             request['startup_trace']=case!='trace-off'
             (CLIENT/'startup-result').write_text(STARTUP[case][0])
+            if case=='trace-data':(CLIENT/'FINAL FANTASY XI'/'patch.ver').write_bytes(b'hello')
         (SESSION/'request.json').write_text(json.dumps(request))
         if case=='exit-failure':(CLIENT/'launch-fail').touch()
         if case=='stop':(CLIENT/'launch-hang').touch()
@@ -122,12 +123,21 @@ def main():
                     assert not any(r['event']=='game_start_return' for r in rows),report
                 else:
                     assert any(r['event']=='game_start_return' and r['code']==STARTUP[case][1] for r in rows),report
-                    expected_failure='game_main_failed' if case=='trace-inner' else 'game_start_returned_without_window'
+                    expected_failure='game_main_failed' if case in ('trace-inner','trace-data') else 'game_start_returned_without_window'
                     assert report['process']['child_exit']==0 and report['failure_reason']==expected_failure,report
             if case!='trace-exception':
                 fixture=json.loads((SESSION/'startup-fixture.json').read_text())
                 assert fixture['hresult']==STARTUP[case][1],fixture
                 if case!='trace-inner':assert fixture['last_error']==1234,fixture
+            if case=='trace-data':
+                assert any(r['event']=='game_main_return' and r['code']==0x88770000 for r in rows),report
+                assert any(r['event']=='main_file_open' and r['code']==2 and r['detail']>>24==2 for r in rows),report
+                assert any(r['event']=='main_file_read' and r['code']==0 and r['detail']==(1<<24|5) for r in rows),report
+                assert any(r['event']=='main_file_size' and r['code']==0 and r['detail']==(1<<24|5) for r in rows),report
+                assert any(r['event']=='main_directplay_load' and r['code']==0 and r['detail']==1 for r in rows),report
+                assert any(r['event']=='main_windows_version' and r['code']==0 for r in rows),report
+                assert report['client_data']['patch.ver']=={'state':'readable','bytes':5},report
+                assert report['client_data']['FTABLE.DAT']['state']=='missing',report
             if case=='trace-inner':assert any(r['event']=='game_main_return' and r['code']==0x8007000e for r in rows),report
         elif case=='missing-dependency':
             assert p.returncode!=0 and state['phase']=='error' and report['status']=='failed',report

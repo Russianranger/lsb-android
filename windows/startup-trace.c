@@ -30,6 +30,7 @@ static void event(const char *name,DWORD code,DWORD detail){
     if(n>0&&n<(int)sizeof(row))WriteFile(GetStdHandle(STD_ERROR_HANDLE),row,(DWORD)n,&written,NULL);
     SetLastError(saved);
 }
+#include "startup-files.h"
 static HRESULT WINAPI start(void *self,IUnknown *pol,void *message){
     DWORD incoming=GetLastError();Slot *slot=NULL;
     AcquireSRWLockShared(&slot_lock);
@@ -37,6 +38,7 @@ static HRESULT WINAPI start(void *self,IUnknown *pol,void *message){
     ReleaseSRWLockShared(&slot_lock);
     if(!slot){event("observer_failed",ERROR_INVALID_DATA,0);return E_UNEXPECTED;}
     event(slot->main?"game_main_enter":"game_start_enter",0,0);
+    if(slot->main)observe_directory();
     ULONGLONG before=GetTickCount64();
     SetLastError(incoming);
     HRESULT hr=slot->original(self,pol,message);
@@ -60,7 +62,7 @@ static BOOL wrap(void *object,BOOL main){
 done:
     ReleaseSRWLockExclusive(&slot_lock);return ok;
 }
-static unsigned hook(HMODULE module);
+static unsigned hook(HMODULE module,BOOL main);
 static HRESULT WINAPI create(REFCLSID cls,IUnknown *outer,DWORD context,REFIID iid,void **out){
     BOOL entry=IsEqualGUID(cls,&entry_class)&&IsEqualGUID(iid,&entry_iid);
     BOOL main=IsEqualGUID(cls,&main_class)&&IsEqualGUID(iid,&main_iid);
@@ -70,12 +72,26 @@ static HRESULT WINAPI create(REFCLSID cls,IUnknown *outer,DWORD context,REFIID i
         event(main?"game_main_com_return":"ffxi_com_return",(DWORD)hr,SUCCEEDED(hr)&&out&&*out?1:0);
         if(SUCCEEDED(hr)&&out&&*out){
             if(wrap(*out,main))event(main?"game_main_hook_ready":"game_start_hook_ready",0,0);
-            if(entry)event("ffxi_import_hooks",0,hook(GetModuleHandleW(L"FFXi.dll")));
+            if(entry)event("ffxi_import_hooks",0,hook(GetModuleHandleW(L"FFXi.dll"),FALSE));
+            if(main)event("main_import_hooks",0,hook(GetModuleHandleW(L"FFXiMain.dll"),TRUE));
         }
     }
     SetLastError(error);return hr;
 }
-static unsigned hook(HMODULE module){
+typedef struct {const char *name;void *wrapper;void **original;} Api;
+static Api apis[]={
+    {"CoCreateInstance",(void*)create,(void**)&real_create},
+    {"CreateFileA",(void*)observed_open,(void**)&real_open},
+    {"ReadFile",(void*)observed_read,(void**)&real_read},
+    {"GetFileSize",(void*)observed_size,(void**)&real_size},
+    {"CloseHandle",(void*)observed_close,(void**)&real_close},
+    {"LoadLibraryA",(void*)observed_load,(void**)&real_load},
+    {"GetVersionExA",(void*)observed_version,(void**)&real_version},
+    {"RegisterClassA",(void*)observed_register,(void**)&real_register},
+    {"CreateWindowExA",(void*)observed_window,(void**)&real_window},
+    {"Direct3DCreate8",(void*)observed_d3d8,(void**)&real_d3d8}
+};
+static unsigned hook(HMODULE module,BOOL main){
     if(!module)return 0;
     BYTE *base=(BYTE*)module;IMAGE_DOS_HEADER *dos=(IMAGE_DOS_HEADER*)base;
     if(dos->e_magic!=IMAGE_DOS_SIGNATURE)return 0;
@@ -93,13 +109,18 @@ static unsigned hook(HMODULE module){
             ULONGLONG a=(ULONGLONG)d->OriginalFirstThunk+j*4,b=(ULONGLONG)d->FirstThunk+j*4;
             if(a+4>size||b+4>size)break;
             DWORD rva=*(DWORD*)(base+(DWORD)a);if(!rva)break;
-            if(IMAGE_SNAP_BY_ORDINAL32(rva)||rva>=size||size-rva<19)continue;
-            if(memcmp(base+rva+2,"CoCreateInstance",17))continue;
-            void **target=(void**)(base+(DWORD)b);if(*target==(void*)create)continue;
+            if(IMAGE_SNAP_BY_ORDINAL32(rva)||rva>=size||size-rva<3)continue;
+            Api *api=NULL;
+            for(unsigned k=0;k<(main?sizeof(apis)/sizeof(apis[0]):1);k++){
+                size_t length=strlen(apis[k].name)+1;
+                if(length<=size-rva-2&&!memcmp(base+rva+2,apis[k].name,length)){api=&apis[k];break;}
+            }
+            if(!api)continue;
+            void **target=(void**)(base+(DWORD)b);if(*target==api->wrapper)continue;
             DWORD old;
             if(!VirtualProtect(target,sizeof(*target),PAGE_READWRITE,&old)){event("observer_failed",GetLastError(),0);continue;}
-            if(!real_create)real_create=(CreateInstance)*target;
-            InterlockedExchangePointer(target,(void*)create);
+            if(!*api->original)*api->original=*target;
+            InterlockedExchangePointer(target,api->wrapper);
             DWORD unused;if(!VirtualProtect(target,sizeof(*target),old,&unused))event("observer_failed",GetLastError(),0);
             count++;
         }
@@ -109,6 +130,6 @@ static unsigned hook(HMODULE module){
 __declspec(dllexport) void WINAPI LsbStartupTrace(void){}
 BOOL WINAPI DllMain(HINSTANCE dll,DWORD reason,LPVOID reserved){
     (void)reserved;
-    if(reason==DLL_PROCESS_ATTACH){DisableThreadLibraryCalls(dll);event("observer_loaded",0,0);event("loader_import_hooks",0,hook(GetModuleHandleW(NULL)));}
+    if(reason==DLL_PROCESS_ATTACH){DisableThreadLibraryCalls(dll);event("observer_loaded",0,0);event("loader_import_hooks",0,hook(GetModuleHandleW(NULL),FALSE));}
     return TRUE;
 }

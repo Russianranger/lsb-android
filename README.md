@@ -1,6 +1,6 @@
 # LSB Android
 
-0.4.6 adds a reversible trace of FFXI's GameStart result for the unresolved post-login exit. Leave **Capture FFXI startup result** checked for the next test; it runs a temporary diagnostic copy and keeps the original loader intact. Install in place, launch once with the existing settings/server, and export Diagnostics. This is a diagnostic build, not a confirmed game-startup fix. See [current findings and limits](docs/game-start-trace-046.md).
+0.4.7 narrows the captured GameMain failure (`0x88770000`) to startup file, directory, Windows, DirectPlay and display API results. Client data inventories now distinguish a missing file from an encrypted version file that has no readable version text. Leave **Capture FFXI startup result** checked, install in place and launch once with the existing prepared client and Termux server. This is a targeted diagnostic build; game startup remains unresolved. See [DLL findings and the next test](docs/startup-files-047.md).
 
 Client-first Android companion for a future self-contained LandSandBoat / Final Fantasy XI application.
 

@@ -56,12 +56,14 @@ class StartupDiagnostics:
                     'dropped_records': self.dropped}
 
     def line(self, data):
-        startup = re.fullmatch(rb'lsb-startup-v1 ([a-z_]+) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{8})', data)
+        startup = re.fullmatch(rb'lsb-startup-v1 ([a-z0-9_]+) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{8})', data)
         if startup:
             name,pid,tid,code,detail=startup.groups()
             allowed={'observer_loaded','observer_failed','loader_import_hooks','ffxi_import_hooks',
                      'ffxi_com_enter','ffxi_com_return','game_start_hook_ready','game_start_enter','game_start_return',
-                     'game_main_com_enter','game_main_com_return','game_main_hook_ready','game_main_enter','game_main_return'}
+                     'game_main_com_enter','game_main_com_return','game_main_hook_ready','game_main_enter','game_main_return',
+                     'main_import_hooks','main_directory','main_file_open','main_file_read','main_file_size',
+                     'main_directplay_load','main_windows_version','main_window_class','main_window_create','main_d3d8_create'}
             if name.decode() in allowed:
                 self.add('startup',name.decode(),process_id=int(pid,16),thread_id=int(tid,16),code=int(code,16),detail=int(detail,16))
             return

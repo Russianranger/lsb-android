@@ -8,7 +8,7 @@ import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'runtime'))
 from startup_image import instrument, prepare
 from supervisor import validate_request, PrivateEvents
-from client_launch import exit_problem
+from client_launch import exit_problem, data_inventory
 
 
 def fixture():
@@ -140,6 +140,31 @@ class ImageContracts(unittest.TestCase):
         process={'phase':'exited','child_exit':0,'observation':{'child_pid':284}}
         self.assertEqual(exit_problem(process,['login_message_seen'],report)[0],
                          'game_start_returned_without_window')
+
+    def test_binary_version_inventory_distinguishes_missing_and_readable_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            (root/'PATCH.VER').write_bytes(b'\xff\x01\x02\x00')
+            (root/'VTABLE.DAT').mkdir()
+            result=data_inventory(root)
+            self.assertEqual(result['patch.ver'],{'state':'readable','bytes':4})
+            self.assertEqual(result['FTABLE.DAT'],{'state':'missing'})
+            self.assertEqual(result['VTABLE.DAT'],{'state':'not_regular'})
+            (root/'patch.ver').write_bytes(b'other')
+            self.assertEqual(data_inventory(root)['patch.ver']['state'],'ambiguous_case')
+            (root/'FTABLE.DAT').symlink_to(root/'PATCH.VER')
+            self.assertEqual(data_inventory(root)['FTABLE.DAT']['state'],'not_regular')
+
+    def test_file_trace_retains_numeric_metadata_without_paths_or_contents(self):
+        events=PrivateEvents()
+        events.feed(b'lsb-startup-v1 main_file_open 0000011c 00000120 00000002 02000000\n'
+                    b'lsb-startup-v1 main_file_read 0000011c 00000120 00000000 01000120\n'
+                    b'lsb-startup-v1 main_file_open 0000011c 00000120 00000002 02000000 secret-path\n')
+        report=events.diagnostics.snapshot()
+        self.assertEqual(len(report['records']),2)
+        self.assertEqual(report['records'][0]['code'],2)
+        self.assertEqual(report['records'][1]['detail'],1<<24|0x120)
+        self.assertNotIn('secret',str(report))
 
 
 if __name__=='__main__':unittest.main()

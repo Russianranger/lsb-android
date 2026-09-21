@@ -112,6 +112,23 @@ def validate_check(report, expected, exit_code):
         raise RuntimeError('Loader dependencies did not pass. View launch results for missing DLLs.')
 
 
+def data_inventory(game):
+    """Small metadata-only inventory; encrypted patch.ver need not contain text."""
+    result={}
+    for name in ('patch.ver','FTABLE.DAT','VTABLE.DAT'):
+        try:
+            matches=[p for p in game.iterdir() if p.name.lower()==name.lower()]
+            if not matches:result[name]={'state':'missing'};continue
+            if len(matches)!=1:result[name]={'state':'ambiguous_case'};continue
+            path=matches[0]
+            if path.is_symlink() or not path.is_file():result[name]={'state':'not_regular'};continue
+            size=path.stat().st_size
+            with path.open('rb') as f:f.read(1)
+            result[name]={'state':'readable','bytes':size}
+        except OSError as error:result[name]={'state':'unreadable','errno':error.errno}
+    return result
+
+
 def check(s):
     manifest=json.loads(Path('/session/client-manifest.json').read_text())
     imports=validate_manifest(manifest)
@@ -119,7 +136,8 @@ def check(s):
     loader=client_path(manifest['loader'])
     report={'format':1,'session_id':s.req['session_id'],'generation':manifest['generation'],
             'status':'checking','loader':manifest['loader'],'loader_sha256':manifest['key_files'][manifest['loader']],
-            'region':manifest['region'],'cli_flags':[],'authentication_verified':False,'world_entry_verified':False}
+            'region':manifest['region'],'cli_flags':[],'authentication_verified':False,'world_entry_verified':False,
+            'client_data':data_inventory(client_path(manifest['game']))}
     record(s,report)
     flags=cli_flags(loader);report['cli_flags']=flags
     record(s,report);s.status('checking_loader_dependencies')

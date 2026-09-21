@@ -37,15 +37,35 @@ static HRESULT WINAPI game_start(void *self,IUnknown *pol,void *message){
     FILE *f=_wfopen(L"D:\\startup-result",L"rb");int kind=f?fgetc(f):'s';if(f)fclose(f);
     if(kind=='x')RaiseException(EXCEPTION_INT_DIVIDE_BY_ZERO,EXCEPTION_NONCONTINUABLE,0,NULL);
     if(kind=='h')for(;;)Sleep(100);
-    if(kind=='m'){
+    if(kind=='m'||kind=='d'){
         CLSID cls;IID iid;IUnknown *inner=NULL;
         CLSIDFromString(L"{1027DC46-750D-4B1F-8834-1D25B8BEBAB8}",&cls);
         IIDFromString(L"{493BF7B9-0C3A-43B5-BFA6-28FBEE251E3D}",&iid);
-        if(IsEqualCLSID(&probe,&cls))return E_OUTOFMEMORY;
+        if(IsEqualCLSID(&probe,&cls)){
+            if(kind=='m')return E_OUTOFMEMORY;
+            char cwd[MAX_PATH];if(!GetCurrentDirectoryA(MAX_PATH,cwd))return E_UNEXPECTED;
+            if(!SetCurrentDirectoryA("D:\\FINAL FANTASY XI"))return E_UNEXPECTED;
+            HANDLE h=CreateFileA("patch.ver",GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,0,NULL);
+            if(h==INVALID_HANDLE_VALUE)return E_UNEXPECTED;
+            DWORD high=0;if(GetFileSize(h,&high)!=5||high)return E_UNEXPECTED;
+            char bytes[8];DWORD count=0;
+            SetLastError(4321);
+            if(!ReadFile(h,bytes,5,&count,NULL)||count!=5||memcmp(bytes,"hello",5))return E_UNEXPECTED;
+            if(!CloseHandle(h))return E_UNEXPECTED;
+            h=CreateFileA("FTABLE.DAT",GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,0,NULL);
+            if(h!=INVALID_HANDLE_VALUE||GetLastError()!=ERROR_FILE_NOT_FOUND)return E_UNEXPECTED;
+            OSVERSIONINFOA info={0};info.dwOSVersionInfoSize=sizeof(info);
+            if(!GetVersionExA(&info))return E_UNEXPECTED;
+            HMODULE dp=LoadLibraryA("dpnhpast.dll");if(!dp)return E_UNEXPECTED;FreeLibrary(dp);
+            if(!SetCurrentDirectoryA(cwd))return E_UNEXPECTED;
+            SetLastError(1234);return (HRESULT)0x88770000;
+        }
         HRESULT hr=CoCreateInstance(&cls,NULL,CLSCTX_INPROC_SERVER,&iid,(void**)&inner);
         if(FAILED(hr))return hr;
         typedef HRESULT (WINAPI *Start)(void*,IUnknown*,void*);
-        hr=((Start)(*(void***)inner)[3])(inner,inner,NULL);IUnknown_Release(inner);return hr;
+        hr=((Start)(*(void***)inner)[3])(inner,inner,NULL);IUnknown_Release(inner);
+        if(kind=='d'){if(hr!=(HRESULT)0x88770000)return E_UNEXPECTED;SetLastError(1234);return S_OK;}
+        return hr;
     }
     SetLastError(1234);return kind=='f'?E_FAIL:kind=='n'?S_FALSE:S_OK;
 }
