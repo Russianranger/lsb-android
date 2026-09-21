@@ -23,7 +23,14 @@ static HRESULT STDMETHODCALLTYPE qi(IUnknown *self, REFIID iid, void **out) {
     *out=NULL; identity(); if(!IsEqualIID(iid,&IID_IUnknown)&&!IsEqualIID(iid,&client_interface))return E_NOINTERFACE;*out=self;return S_OK;
 }
 static ULONG STDMETHODCALLTYPE add(IUnknown *self){(void)self;return 2;}
-static ULONG STDMETHODCALLTYPE release(IUnknown *self){(void)self;return 1;}
+static ULONG WINAPI private_slot(void){return 0x1234;}
+static ULONG STDMETHODCALLTYPE release(IUnknown *self){
+    /* An implementation can have extra private virtual slots beyond its COM
+     * interface. Startup observation must preserve them and the table itself. */
+    typedef ULONG (WINAPI *Private)(void);
+    if(((Private)(*(void***)self)[7])()!=0x1234)TerminateProcess(GetCurrentProcess(),98);
+    return 1;
+}
 static HRESULT WINAPI game_start(void *self,IUnknown *pol,void *message){
     (void)message;
     if(pol!=(IUnknown*)self)return E_INVALIDARG; /* Observer must forward identity/arguments. */
@@ -42,7 +49,7 @@ static HRESULT WINAPI game_start(void *self,IUnknown *pol,void *message){
     }
     SetLastError(1234);return kind=='f'?E_FAIL:kind=='n'?S_FALSE:S_OK;
 }
-static void *object_vtable[]={qi,add,release,game_start,NULL,NULL,NULL};
+static void *object_vtable[]={qi,add,release,game_start,NULL,NULL,NULL,private_slot};
 static IUnknown object={(IUnknownVtbl*)object_vtable};
 static HRESULT STDMETHODCALLTYPE factory_qi(IClassFactory *self,REFIID iid,void **out){
     *out=NULL;if(!IsEqualIID(iid,&IID_IUnknown)&&!IsEqualIID(iid,&IID_IClassFactory))return E_NOINTERFACE;*out=self;return S_OK;

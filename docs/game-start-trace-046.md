@@ -39,9 +39,11 @@ it is not a byte-identical execution mode. No original loader is overwritten.
 The helper runs the temporary image using the existing working directory and
 pipe-only credential transport. The observer hooks the executable's normal
 CoCreateInstance import, matches the known FFXI class and interface GUIDs, and
-wraps only that object's GameStart slot. Its FFXI DLL import is observed similarly
+patches only the GameStart slot in that interface's existing virtual table within
+the running process. Its FFXI DLL import is observed similarly
 for IGameMain. Other interface slots, object identity, arguments, return values
-and returned LastError are retained. Exceptions propagate. No account/network,
+and returned LastError are retained, including private implementation slots
+beyond the public COM interface. Exceptions propagate. No account/network,
 display, runtime, COM registration or game-content changes are added.
 
 Only fixed stage labels, Windows PID/TID, HRESULT/Win32 code and a numeric detail

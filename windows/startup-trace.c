@@ -16,9 +16,10 @@ static const IID entry_iid={0x989d790c,0x6236,0x11d4,{0x80,0xe9,0,0x10,0x5a,0x81
 static const IID main_iid={0x493bf7b9,0x0c3a,0x43b5,{0xbf,0xa6,0x28,0xfb,0xee,0x25,0x1e,0x3d}};
 static const CLSID entry_class={0x989d790d,0x6236,0x11d4,{0x80,0xe9,0,0x10,0x5a,0x81,0xe8,0x90}};
 static const CLSID main_class={0x1027dc46,0x750d,0x4b1f,{0x88,0x34,0x1d,0x25,0xb8,0xbe,0xba,0xb8}};
-typedef struct {void *object;void *table[7];Start original;BOOL main;} Slot;
+typedef struct {void **table;Start original;BOOL main;} Slot;
 static Slot slots[16];
-static LONG slot_count;
+static unsigned slot_count;
+static SRWLOCK slot_lock=SRWLOCK_INIT;
 
 /* Only fixed labels and numeric fields. Write directly to the private stderr
  * pipe, not the console xiloader hides, and preserve the caller's LastError. */
@@ -30,28 +31,34 @@ static void event(const char *name,DWORD code,DWORD detail){
     SetLastError(saved);
 }
 static HRESULT WINAPI start(void *self,IUnknown *pol,void *message){
-    Slot *slot=NULL;
-    for(int i=0;i<16;i++)if(slots[i].object==self&&slots[i].table==*(void***)self){slot=&slots[i];break;}
+    DWORD incoming=GetLastError();Slot *slot=NULL;
+    AcquireSRWLockShared(&slot_lock);
+    for(unsigned i=slot_count;i>0;i--)if(slots[i-1].table==*(void***)self){slot=&slots[i-1];break;}
+    ReleaseSRWLockShared(&slot_lock);
     if(!slot){event("observer_failed",ERROR_INVALID_DATA,0);return E_UNEXPECTED;}
     event(slot->main?"game_main_enter":"game_start_enter",0,0);
     ULONGLONG before=GetTickCount64();
+    SetLastError(incoming);
     HRESULT hr=slot->original(self,pol,message);
     DWORD error=GetLastError();ULONGLONG duration=GetTickCount64()-before;
     event(slot->main?"game_main_return":"game_start_return",(DWORD)hr,duration>0xffffffffULL?0xffffffff:(DWORD)duration);
     SetLastError(error);return hr;
 }
 static BOOL wrap(void *object,BOOL main){
-    for(int n=0;n<16;n++)if(slots[n].object==object&&slots[n].table==*(void***)object)return TRUE;
-    LONG i=InterlockedIncrement(&slot_count)-1;
-    if(i<0||i>=16){event("observer_failed",ERROR_NOT_ENOUGH_MEMORY,0);return FALSE;}
-    Slot *slot=&slots[i];void **table=*(void***)object;
-    slot->original=(Start)table[3];slot->main=main;
-    memcpy(slot->table,table,(main?7:6)*sizeof(void*));slot->table[3]=(void*)start;
-    slot->object=object;
-    /* Object identity and all other interface slots remain unchanged. Keep the
-     * tiny replacement table until process exit; Release may destroy the object. */
-    InterlockedExchangePointer((void *volatile*)object,slot->table);
-    return TRUE;
+    void **table=*(void***)object;BOOL ok=FALSE;DWORD old;
+    AcquireSRWLockExclusive(&slot_lock);
+    for(unsigned n=0;n<slot_count;n++)if(slots[n].table==table&&table[3]==(void*)start){ok=TRUE;goto done;}
+    if(slot_count>=16){event("observer_failed",ERROR_NOT_ENOUGH_MEMORY,0);goto done;}
+    if(!VirtualProtect(&table[3],sizeof(void*),PAGE_READWRITE,&old)){event("observer_failed",GetLastError(),0);goto done;}
+    Slot *slot=&slots[slot_count++];slot->table=table;slot->original=(Start)table[3];slot->main=main;
+    /* Change only the documented call slot, preserving the complete original
+     * table, including any private implementation slots beyond the COM ABI.
+     * The loaded image page is modified only within this diagnostic process. */
+    InterlockedExchangePointer(&table[3],(void*)start);
+    DWORD unused;if(!VirtualProtect(&table[3],sizeof(void*),old,&unused))event("observer_failed",GetLastError(),0);
+    ok=TRUE;
+done:
+    ReleaseSRWLockExclusive(&slot_lock);return ok;
 }
 static unsigned hook(HMODULE module);
 static HRESULT WINAPI create(REFCLSID cls,IUnknown *outer,DWORD context,REFIID iid,void **out){
