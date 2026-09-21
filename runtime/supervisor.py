@@ -47,7 +47,8 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace'}:raise ValueError('Unexpected runtime request field')
+    if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
     if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
     if req.get('action','probe') not in ('probe','initialize','installer','launch','check-launcher','repair-launcher'):raise ValueError('Unsupported runtime action')
     if not isinstance(req.get('audio'),bool):raise ValueError('Invalid audio setting')

@@ -21,6 +21,7 @@ build('windows/launcher.c', assets/'LSB-FFXI.exe')
 probes = root/'out/runtime-probes'; probes.mkdir(parents=True, exist_ok=True)
 build('windows/client-init.c', probes/'client-init.exe', ['-mconsole'])
 build('windows/client-launch.c', probes/'client-launch.exe', ['-mconsole'])
+build('windows/startup-trace.c', probes/'startup-trace.dll', ['-shared', '-Wl,--kill-at'])
 build('windows/probe-com.c', probes/'probe-com.dll', ['-shared', '-Wl,--kill-at'])
 subprocess.run([cc, *flags, str(root/'windows/runtime-probe.c'), '-o', str(probes/'runtime-probe.exe'), *libs, '-ld3d8', '-lwinmm', '-luuid', '-lm'], check=True)
 if args.tests:

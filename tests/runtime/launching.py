@@ -21,6 +21,9 @@ REJECTIONS={'reject-credentials':('1','login_invalid_credentials'),
 POST_LOGIN={'post-login-pol':('p','polcore_initialization_failed'),
             'post-login-ffxi':('f','ffxi_initialization_failed'),
             'post-login-early-exit':('0','closed_before_game_window')}
+STARTUP={'trace-ok':('s',0),'trace-fail':('f',0x80004005),'trace-sfalse':('n',1),
+         'trace-inner':('m',0x8007000e),'trace-exception':('x',None),'trace-stop':('h',None),
+         'trace-off':('f',0x80004005)}
 
 
 def main():
@@ -33,15 +36,19 @@ def main():
     manifest['key_files'].pop(manifest['loader'])
     manifest['loader']='FINAL FANTASY XI/boot loader/xiloader.exe'
     loader=CLIENT/manifest['loader'];loader.parent.mkdir(exist_ok=True)
-    for case in ['launch','relaunch','windowed-existing','restore-display','startup-diagnostics','startup-exception','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN]:
+    for case in ['launch','relaunch','windowed-existing','restore-display','startup-diagnostics','startup-exception','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN,*STARTUP]:
         for path in [SESSION/'stop',SESSION/'status.json',SESSION/'loader-process.json',SESSION/'loader-check.json',SESSION/'login-fixture.json',CLIENT/'launch-fail',CLIENT/'launch-hang',CLIENT/'login-reject',CLIENT/'post-login']:
             path.unlink(missing_ok=True)
+        for path in [CLIENT/'startup-result',SESSION/'startup-fixture.json']:path.unlink(missing_ok=True)
         shutil.copyfile('/fixtures/login-missing.exe' if case=='missing-dependency' else '/fixtures/login-stub.exe',loader)
         manifest['key_files'][manifest['loader']]=hashlib.sha256(loader.read_bytes()).hexdigest()
         (SESSION/'client-manifest.json').write_text(json.dumps(manifest))
         request={'format':1,'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher' if case=='check-only' else 'launch'}
         if case in ('launch','windowed-existing'):request['display_profile']='windowed720'
         elif case=='restore-display':request['display_profile']='restore'
+        if case in STARTUP:
+            request['startup_trace']=case!='trace-off'
+            (CLIENT/'startup-result').write_text(STARTUP[case][0])
         (SESSION/'request.json').write_text(json.dumps(request))
         if case=='exit-failure':(CLIENT/'launch-fail').touch()
         if case=='stop':(CLIENT/'launch-hang').touch()
@@ -51,11 +58,14 @@ def main():
         if case=='startup-exception':(CLIENT/'post-login').write_text('e')
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],stdin=subprocess.PIPE)
         p.stdin.write(PAYLOAD if case!='check-only' else b'');p.stdin.close()
-        if case=='stop':
+        if case in ('stop','trace-stop'):
             deadline=time.monotonic()+180
             while p.poll() is None and time.monotonic()<deadline:
                 try:
-                    if json.loads((SESSION/'loader-process.json').read_text()).get('phase')=='running':break
+                    if case=='trace-stop':
+                        rows=json.loads((LOGS/'client-launch.json').read_text()).get('startup_diagnostics',{}).get('records',[])
+                        if any(r.get('event')=='game_start_enter' for r in rows):break
+                    elif json.loads((SESSION/'loader-process.json').read_text()).get('phase')=='running':break
                 except (OSError,ValueError):pass
                 time.sleep(.2)
             assert p.poll() is None and (SESSION/'loader-process.json').exists(),'loader did not start before Stop'
@@ -92,8 +102,31 @@ def main():
         elif case=='startup-exception':
             assert p.returncode!=0 and report['process']['child_exit']==0xc0000094,report
             assert any(r.get('code')==0xc0000094 and r['event']=='exception_raised' and r.get('process_id')==report['process']['observation']['child_pid'] for r in report['startup_diagnostics']['records']),report
-        elif case=='stop':
+        elif case in ('stop','trace-stop'):
             assert state['phase']=='stopped' and report['status']=='stopped',report
+            if case=='trace-stop':assert any(r.get('event')=='game_start_enter' for r in report['startup_diagnostics']['records']),report
+        elif case in STARTUP:
+            rows=[r for r in report['startup_diagnostics']['records'] if r.get('source')=='startup']
+            if case=='trace-off':
+                assert not rows and 'startup_trace' not in report,report
+                assert report['failure_reason']=='closed_before_game_window',report
+            else:
+                assert any(r['event']=='loader_import_hooks' and r['detail']>0 for r in rows),report
+                assert all(r['process_id']==report['process']['observation']['child_pid'] for r in rows),report
+                assert any(r['event']=='ffxi_com_return' and r['code']==0 and r['detail']==1 for r in rows),report
+                assert any(r['event']=='game_start_enter' for r in rows),report
+                assert not any(r['event']=='observer_failed' for r in rows),report
+                if case=='trace-exception':
+                    assert report['process']['child_exit']==0xc0000094,report
+                    assert not any(r['event']=='game_start_return' for r in rows),report
+                else:
+                    assert any(r['event']=='game_start_return' and r['code']==STARTUP[case][1] for r in rows),report
+                    assert report['process']['child_exit']==0 and report['failure_reason']=='game_start_returned_without_window',report
+            if case!='trace-exception':
+                fixture=json.loads((SESSION/'startup-fixture.json').read_text())
+                assert fixture['hresult']==STARTUP[case][1],fixture
+                if case!='trace-inner':assert fixture['last_error']==1234,fixture
+            if case=='trace-inner':assert any(r['event']=='game_main_return' and r['code']==0x8007000e for r in rows),report
         elif case=='missing-dependency':
             assert p.returncode!=0 and state['phase']=='error' and report['status']=='failed',report
             missing=[d for d in report['dependencies']['dependencies'] if not d['ok']]
@@ -117,6 +150,8 @@ def main():
         if case in ('launch','relaunch','exit-failure'):
             assert json.loads((SESSION/'login-fixture.json').read_text())['arguments_and_cwd_match']
         assert not (SESSION/'display.sock').exists()
+        assert hashlib.sha256(loader.read_bytes()).hexdigest()==manifest['key_files'][manifest['loader']]
+        assert not list(loader.parent.glob('lsb-startup-*.exe')),'temporary diagnostic copy was not removed'
         if case not in ('missing-dependency','check-only'):
             diagnostics=report['startup_diagnostics']
             assert diagnostics['policy']=='fixed_metadata_only' and len(diagnostics['records'])<=64,diagnostics

@@ -36,7 +36,13 @@ class StartupDiagnostics:
                 return
             if len(self.records) >= 64:
                 self.dropped = min(1000000, self.dropped + 1)
-                return
+                # Direct startup boundaries must survive noisy Wine warnings.
+                # Keep the same 64-row limit; only displace an indirect record.
+                victim=next((i for i,r in enumerate(self.records) if r['source']!='startup'),None)
+                if source!='startup' or victim is None:return
+                removed=self.records.pop(victim)
+                removed_key=(removed['source'],removed['event'],*sorted((k,v) for k,v in removed.items() if k not in ('source','event')))
+                self.seen.discard(removed_key)
             self.seen.add(key)
             self.records.append(dict(source=source, event=event, **fields))
 
@@ -47,6 +53,15 @@ class StartupDiagnostics:
                     'dropped_records': self.dropped}
 
     def line(self, data):
+        startup = re.fullmatch(rb'lsb-startup-v1 ([a-z_]+) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{8})', data)
+        if startup:
+            name,pid,tid,code,detail=startup.groups()
+            allowed={'observer_loaded','observer_failed','loader_import_hooks','ffxi_import_hooks',
+                     'ffxi_com_enter','ffxi_com_return','game_start_hook_ready','game_start_enter','game_start_return',
+                     'game_main_com_enter','game_main_com_return','game_main_hook_ready','game_main_enter','game_main_return'}
+            if name.decode() in allowed:
+                self.add('startup',name.decode(),process_id=int(pid,16),thread_id=int(tid,16),code=int(code,16),detail=int(detail,16))
+            return
         wine = self.WINE.fullmatch(data)
         if wine:
             ids, level, channel, function, message = wine.groups()

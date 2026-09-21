@@ -2,10 +2,12 @@
 #define UNICODE
 #endif
 #define _UNICODE
+#define COBJMACROS
 #include <windows.h>
 #include <stdio.h>
 #include <wchar.h>
 #include <string.h>
+#include <objbase.h>
 #ifdef MISSING_IMPORT
 __declspec(dllimport) int missing_fixture(void);
 #endif
@@ -44,6 +46,20 @@ int wmain(int argc,WCHAR **wide){
         for(;;)Sleep(100); /* Model xiloader waiting in its inaccessible menu. */
     }
     puts("Successfully logged in. Launching FINAL FANTASY XI.");fflush(stdout);
+    if(GetFileAttributesW(L"D:\\startup-result")!=INVALID_FILE_ATTRIBUTES){
+        CoInitialize(NULL);CLSID cls;IID iid;IUnknown *entry=NULL;
+        CLSIDFromString(L"{989D790D-6236-11D4-80E9-00105A81E890}",&cls);
+        IIDFromString(L"{989D790C-6236-11D4-80E9-00105A81E890}",&iid);
+        HRESULT hr=CoCreateInstance(&cls,NULL,CLSCTX_INPROC_SERVER,&iid,(void**)&entry);
+        if(FAILED(hr))return 99;
+        typedef HRESULT (WINAPI *Start)(void*,IUnknown*,IUnknown**);
+        IUnknown *message=NULL;hr=((Start)(*(void***)entry)[3])(entry,entry,&message);
+        DWORD last=GetLastError();IUnknown_Release(entry);CoUninitialize();
+        FILE *r=_wfopen(L"Z:\\session\\startup-fixture.json",L"wb");if(!r)return 95;
+        fprintf(r,"{\"hresult\":%lu,\"last_error\":%lu}",(unsigned long)hr,(unsigned long)last);fclose(r);
+        /* Just like xiloader, discard the GameStart result and return zero. */
+        puts("Closing...");fflush(stdout);return 0;
+    }
     while(GetFileAttributesW(L"D:\\launch-hang")!=INVALID_FILE_ATTRIBUTES)Sleep(100);
     FILE *post=_wfopen(L"D:\\post-login",L"rb");
     if(post){

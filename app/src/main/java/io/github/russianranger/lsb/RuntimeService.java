@@ -34,9 +34,10 @@ public final class RuntimeService extends Service {
         final String renderer=intent.getStringExtra("renderer");final String action=intent.getStringExtra("operation")==null?"probe":intent.getStringExtra("operation");final boolean sound=intent.getBooleanExtra("audio",true);
         final LoginRequest login="launch".equals(action)?takeLogin(intent.getStringExtra("login_ticket")):null;
         final String displayProfile=intent.getStringExtra("display_profile")==null?"windowed720":intent.getStringExtra("display_profile");
+        final boolean startupTrace=intent.getBooleanExtra("startup_trace",false);
         wake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"lsb:runtime");wake.acquire(2*60*60*1000L);
         worker=new Thread(()->{
-            try{ClientRuntime.get(this).run(renderer,sound,action,login,displayProfile);}
+            try{ClientRuntime.get(this).run(renderer,sound,action,login,displayProfile,startupTrace);}
             catch(Exception e){ClientRuntime.get(this).status=e.getMessage();WorkService.append(this,"Runtime: "+e.getClass().getSimpleName()+": "+e.getMessage());}
             finally{if(login!=null)login.close();new Handler(Looper.getMainLooper()).post(()->{if(wake!=null&&wake.isHeld())wake.release();worker=null;WorkService.generation++;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}
         },"lsb-windows");worker.start();return START_NOT_STICKY;

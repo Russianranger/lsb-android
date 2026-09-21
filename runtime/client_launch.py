@@ -1,4 +1,5 @@
 """Prepared-client launch; credentials are consumed from pipes, never files/logs."""
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -45,13 +46,17 @@ def progress(events, elapsed, process=None):
     return 'waiting_for_login','Launcher started. Waiting for a login result.',''
 
 
-def exit_problem(process, events):
+def exit_problem(process, events, diagnostics=None):
     if process.get('phase')=='configuration_failed':
         if process.get('win32_error')==1168:
             return ('display_configuration_failed','No saved original display settings are available. Choose Windowed 1280×720 or Keep current display settings and retry.')
         return ('display_configuration_failed','The selected FFXI display setting could not be applied (Windows error '+str(process.get('win32_error','unavailable'))+'). Export Diagnostics.')
     if (process.get('phase')=='exited' and process.get('child_exit')==0 and
         'login_message_seen' in events and not process.get('observation',{}).get('ffxi_window_seen')):
+        pid=process.get('observation',{}).get('child_pid')
+        for row in reversed((diagnostics or {}).get('records',[])):
+            if row.get('source')=='startup' and row.get('process_id')==pid and row.get('event')=='game_start_return':
+                return ('game_start_returned_without_window','FFXI GameStart returned 0x%08X after %d ms before a game window was observed. Export Diagnostics.'%(row['code'],row['detail']))
         return ('closed_before_game_window','The loader closed after login before an FFXI window was observed. Export Diagnostics to identify the remaining startup failure.')
     return None
 
@@ -125,11 +130,18 @@ def check(s):
 
 
 def run(s, display):
-    payload=None;writer=None
+    payload=None;writer=None;traced_loader=None
     try:
         # Android closes the writer immediately; bounded input cannot enter session files.
         payload,host=credentials(sys.stdin.buffer)
         manifest,report,flags=check(s)
+        loader=manifest['loader']
+        if s.req.get('startup_trace',False):
+            from startup_image import prepare
+            traced_loader,trace=prepare(client_path(loader),manifest['key_files'][loader])
+            loader=traced_loader.relative_to('/client').as_posix()
+            trace['observer_sha256']=hashlib.sha256(Path('/probe/startup-trace.dll').read_bytes()).hexdigest()
+            report['startup_trace']=trace
         profile=s.req.get('display_profile','preserve')
         report.update(server=host,status='starting',display_profile=profile);record(s,report)
         s.stopped();s.private_output=True
@@ -140,7 +152,7 @@ def run(s, display):
                  BOX64_LOG='0',BOX64_NOBANNER='1',DXVK_LOG_LEVEL='info',DXVK_LOG_PATH='none')
         env['WINEDLLOVERRIDES']+=';winedbg='
         # No credentials in argv/environment. Native helper supplies the Windows CLI.
-        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','launch',windows_path(manifest['loader']),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile],
+        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','launch',windows_path(loader),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile],
                   'loader-events.log',env=env,pipe_input=True)
         writer=s.logs[-1]
         try:p.stdin.write(payload);p.stdin.close()
@@ -171,7 +183,7 @@ def run(s, display):
         if result.is_file():report['process']=json.loads(result.read_text())
         report['bridge_exit']=p.returncode
         writer.thread.join(2);update_progress();process=report.get('process',{})
-        problem=exit_problem(process,writer.events.snapshot())
+        problem=exit_problem(process,writer.events.snapshot(),writer.events.diagnostics.snapshot())
         if problem:
             reason,message=problem
             report.update(status='failed',failure_reason=reason,termination_reason='loader_exited',launch_stage=reason,message=message)
@@ -182,6 +194,7 @@ def run(s, display):
         report['status']='exited';record(s,report);s.status('completed',client_exit=0)
     finally:
         payload=None
+        if traced_loader is not None:traced_loader.unlink(missing_ok=True)
         # Stop can arrive before the first process receipt/progress poll. Keep a
         # bounded snapshot on every path after spawning, including cancellation
         # and a broken input pipe, without retaining raw stream data.
