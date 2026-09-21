@@ -109,5 +109,14 @@ class LaunchContracts(unittest.TestCase):
         for key in ['username','password','command','login_ticket']:
             with self.assertRaises(ValueError):supervisor.validate_request(dict(req,**{key:'secret'}))
 
+    def test_display_profile_is_bounded_and_launch_only(self):
+        req={'format':1,'session_id':'0'*36,'renderer':'turnip26','audio':True,'action':'launch'}
+        for profile in ('windowed720','preserve','restore'):
+            self.assertEqual(supervisor.validate_request(dict(req,display_profile=profile))['display_profile'],profile)
+        for profile in ('fullscreen','windowed720 --password secret',None,[],42):
+            with self.assertRaises(ValueError):supervisor.validate_request(dict(req,display_profile=profile))
+        with self.assertRaises(ValueError):supervisor.validate_request(dict(req,action='probe',display_profile='windowed720'))
+        self.assertIn('No saved original',client_launch.exit_problem({'phase':'configuration_failed','win32_error':1168},[])[1])
+
 
 if __name__=='__main__':unittest.main()

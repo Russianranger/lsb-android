@@ -33,13 +33,15 @@ def main():
     manifest['key_files'].pop(manifest['loader'])
     manifest['loader']='FINAL FANTASY XI/boot loader/xiloader.exe'
     loader=CLIENT/manifest['loader'];loader.parent.mkdir(exist_ok=True)
-    for case in ['launch','relaunch','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN]:
+    for case in ['launch','relaunch','windowed-existing','restore-display','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN]:
         for path in [SESSION/'stop',SESSION/'status.json',SESSION/'loader-process.json',SESSION/'loader-check.json',SESSION/'login-fixture.json',CLIENT/'launch-fail',CLIENT/'launch-hang',CLIENT/'login-reject',CLIENT/'post-login']:
             path.unlink(missing_ok=True)
         shutil.copyfile('/fixtures/login-missing.exe' if case=='missing-dependency' else '/fixtures/login-stub.exe',loader)
         manifest['key_files'][manifest['loader']]=hashlib.sha256(loader.read_bytes()).hexdigest()
         (SESSION/'client-manifest.json').write_text(json.dumps(manifest))
         request={'format':1,'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher' if case=='check-only' else 'launch'}
+        if case in ('launch','windowed-existing'):request['display_profile']='windowed720'
+        elif case=='restore-display':request['display_profile']='restore'
         (SESSION/'request.json').write_text(json.dumps(request))
         if case=='exit-failure':(CLIENT/'launch-fail').touch()
         if case=='stop':(CLIENT/'launch-hang').touch()
@@ -60,15 +62,20 @@ def main():
         state=json.loads((SESSION/'status.json').read_text());report=json.loads((LOGS/'client-launch.json').read_text())
         assert report['session_id']==request['session_id'] and report['generation']==manifest['generation'],report
         assert report['authentication_verified'] is False and report['world_entry_verified'] is False
-        if case in ('launch','relaunch'):
+        if case in ('launch','relaunch','windowed-existing','restore-display'):
             assert p.returncode==0 and state['phase']=='completed' and report['status']=='exited',state
             assert report['process']['child_exit']==0
             observed=report['process']['observation']
             assert observed['ffxi_window_seen'] and 'FFXiMain.dll' in observed['modules_seen'],observed
             assert observed['samples']>0 and observed['module_error']==observed['window_error']==0,observed
-            config=report['process']['display_config'];assert config['ok'] and config['policy']=='missing_only',config
-            assert config['values']['0001']['value']==(1280 if case=='launch' else 1024),config
-            assert all(v['added']==(case=='launch') for v in config['values'].values()),config
+            config=report['process']['display_config'];assert config['ok'] and config['policy']==request.get('display_profile','preserve'),config
+            assert config['rollback_error']==0,config
+            expected={'launch':1280,'relaunch':1024,'windowed-existing':1280,'restore-display':640}
+            assert config['values']['0001']['value']==expected[case],config
+            assert config['values']['0034']['value']==(0 if case=='restore-display' else 1),config
+            if case=='launch':
+                assert config['values']['0001']['previous_value']==640 and config['values']['0034']['previous_value']==0,config
+                assert config['backup_ready'] and all(v['changed'] for v in config['values'].values()),config
         elif case=='exit-failure':
             assert p.returncode!=0 and state['phase']=='error' and report['process']['child_exit']==0xc0000135,report
         elif case=='stop':

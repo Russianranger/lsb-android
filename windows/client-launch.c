@@ -13,39 +13,8 @@ static const WCHAR *module_names[]={L"polcore.dll",L"polcoreeu.dll",L"FFXi.dll",
 static BOOL module_seen[6],game_window_seen,dialog_seen;
 static DWORD child_pid,samples,module_error,window_error;
 static ULONGLONG launched_at;
-static const WCHAR *setting_names[]={L"0001",L"0002",L"0003",L"0004",L"0034"};
-static DWORD setting_values[]={1280,720,1280,720,1};
-static BOOL setting_added[5];
-static BOOL config_checked;
+#include "display-config.h"
 
-static LONG display_config(const WCHAR *language){
-    const DWORD defaults[]={1280,720,1280,720,1};
-    memcpy(setting_values,defaults,sizeof(defaults));memset(setting_added,0,sizeof(setting_added));config_checked=FALSE;
-    WCHAR branch[256];const WCHAR *area=!wcscmp(language,L"0")?L"":!wcscmp(language,L"1")?L"US":L"EU";
-    swprintf(branch,256,L"Software\\PlayOnline%ls\\%ls\\FinalFantasyXI",area,*area?L"SquareEnix":L"Square");
-    HKEY key;LONG rc=RegCreateKeyExW(HKEY_LOCAL_MACHINE,branch,0,NULL,0,KEY_QUERY_VALUE|KEY_SET_VALUE|KEY_WOW64_32KEY,NULL,&key,NULL);
-    if(rc)return rc;
-    /* Read everything before writing. Existing values, including unusual ones,
-     * are preserved. These are the game's five numeric display options only. */
-    for(int i=0;i<5;i++){
-        DWORD type=0,size=4,value=0;rc=RegQueryValueExW(key,setting_names[i],NULL,&type,(BYTE*)&value,&size);
-        if(rc==ERROR_FILE_NOT_FOUND){setting_added[i]=TRUE;rc=0;}
-        else if(!rc&&type==REG_DWORD&&size==4)setting_values[i]=value;
-        else {if(!rc)rc=ERROR_INVALID_DATA;break;}
-    }
-    BOOL written[5]={0};
-    if(!rc)for(int i=0;i<5;i++)if(setting_added[i]){
-        rc=RegSetValueExW(key,setting_names[i],0,REG_DWORD,(BYTE*)&setting_values[i],4);
-        if(rc)break;written[i]=TRUE;
-    }
-    if(!rc)for(int i=0;i<5;i++){
-        DWORD value=0,type=0,size=4;rc=RegQueryValueExW(key,setting_names[i],NULL,&type,(BYTE*)&value,&size);
-        if(!rc&&(type!=REG_DWORD||size!=4||value!=setting_values[i]))rc=ERROR_INVALID_DATA;
-        if(rc)break;
-    }
-    if(rc)for(int i=0;i<5;i++)if(written[i])RegDeleteValueW(key,setting_names[i]);
-    RegCloseKey(key);config_checked=rc==0;return rc;
-}
 static BOOL CALLBACK window_observation(HWND window,LPARAM unused){
     (void)unused;DWORD pid=0;GetWindowThreadProcessId(window,&pid);
     if(pid!=child_pid||!IsWindowVisible(window))return TRUE;
@@ -104,8 +73,13 @@ static int check(int argc,WCHAR **argv){
 static BOOL receipt(const char *phase,DWORD error,DWORD code){
     FILE *f=_wfopen(L"Z:\\session\\loader-process.new",L"wb");if(!f)return FALSE;
     fprintf(f,"{\"format\":1,\"bits\":32,\"phase\":\"%s\",\"win32_error\":%lu,\"child_exit\":%lu",phase,(unsigned long)error,(unsigned long)code);
-    fprintf(f,",\"display_config\":{\"policy\":\"missing_only\",\"ok\":%s,\"values\":{",config_checked?"true":"false");
-    for(int i=0;i<5;i++){if(i)fputc(',',f);quoted(f,setting_names[i]);fprintf(f,":{\"value\":%lu,\"added\":%s}",(unsigned long)setting_values[i],setting_added[i]?"true":"false");}
+    fputs(",\"display_config\":{\"policy\":",f);quoted(f,config_policy);
+    fprintf(f,",\"ok\":%s,\"backup_ready\":%s,\"rollback_error\":%lu,\"values\":{",config_checked?"true":"false",config_backup_ready?"true":"false",(unsigned long)config_rollback_error);
+    for(int i=0;i<5;i++){
+        if(i)fputc(',',f);quoted(f,setting_names[i]);
+        fprintf(f,":{\"value\":%lu,\"present\":%s,\"previous_value\":%lu,\"previous_present\":%s,\"changed\":%s}",
+            (unsigned long)setting_values[i],setting_present[i]?"true":"false",(unsigned long)setting_before[i],setting_before_present[i]?"true":"false",setting_changed[i]?"true":"false");
+    }
     fprintf(f,"}},\"observation\":{\"samples\":%lu,\"elapsed_ms\":%llu,\"module_error\":%lu,\"window_error\":%lu,\"ffxi_window_seen\":%s,\"dialog_seen\":%s,\"modules_seen\":[",
         (unsigned long)samples,launched_at?(unsigned long long)(GetTickCount64()-launched_at):0ULL,(unsigned long)module_error,(unsigned long)window_error,game_window_seen?"true":"false",dialog_seen?"true":"false");
     BOOL first=TRUE;for(int i=0;i<6;i++)if(module_seen[i]){if(!first)fputc(',',f);quoted(f,module_names[i]);first=FALSE;}
@@ -129,11 +103,11 @@ static BOOL line(WCHAR *out,unsigned capacity){
 }
 static int launch(int argc,WCHAR **argv){
     WCHAR dir[1024],magic[32],host[254],user[129],pass[129],command[8192]={0};
-    if(argc!=7||!directory(argv[2],dir)||wcscmp(argv[3],L"--server")||
+    if(argc!=8||!directory(argv[2],dir)||wcscmp(argv[3],L"--server")||
        (wcscmp(argv[4],L"--username")&&wcscmp(argv[4],L"--user"))||
        (wcscmp(argv[5],L"--password")&&wcscmp(argv[5],L"--pass"))||
        (wcscmp(argv[6],L"0")&&wcscmp(argv[6],L"1")&&wcscmp(argv[6],L"2")))return 84;
-    LONG config_error=display_config(argv[6]);
+    LONG config_error=display_config(argv[6],argv[7]);
     if(config_error){receipt("configuration_failed",(DWORD)config_error,0);return 1;}
     if(!line(magic,32)||wcscmp(magic,L"LSBLOGIN1")||!line(host,254)||!line(user,129)||!line(pass,129)){
         SecureZeroMemory(user,sizeof(user));SecureZeroMemory(pass,sizeof(pass));return 85;

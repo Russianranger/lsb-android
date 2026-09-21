@@ -98,7 +98,7 @@ public final class MainActivity extends Activity {
         runtimeStatus=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(18), dp(8), dp(18), dp(8));
         TextView heading = label("LSB Android", 26, TEXT); heading.setTypeface(null, Typeface.BOLD); page.addView(heading);
-        page.addView(label("FFXI client runtime preview · 0.4.3", 13, ACCENT));
+        page.addView(label("FFXI client runtime preview · 0.4.4", 13, ACCENT));
         LinearLayout nav = new LinearLayout(this);
         for (String name : new String[]{"Client", "Runtime", "Profile", "Server", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));
@@ -191,6 +191,13 @@ public final class MainActivity extends Activity {
         ClientRuntime rt=ClientRuntime.get(this);JSONObject state=rt.preparationState();
         LinearLayout card=card("Play FINAL FANTASY XI");runtimeStatus=label(rt.status,15,ACCENT);card.addView(runtimeStatus);
         card.addView(label("Start your existing Termux server, then log in with your server account. The prepared client is reused.",15,TEXT));
+        card.addView(label("FFXI display setting",14,MUTED));
+        final String[] displayProfiles={"windowed720","preserve","restore"};
+        Spinner display=new Spinner(this);display.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,
+            new String[]{"Windowed 1280×720 (recommended)","Keep current display settings","Restore saved original display settings"}));
+        int selected=Arrays.asList(displayProfiles).indexOf(getSharedPreferences("runtime",MODE_PRIVATE).getString("display_profile","windowed720"));
+        display.setSelection(Math.max(0,selected));card.addView(display);
+        card.addView(label("Applied when you launch. Windowed mode saves the original display settings once, so you can restore them later. Your client files are retained.",13,MUTED));
         EditText server=loginField(card,"Server address",source.config().host,android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
         EditText account=loginField(card,"Account","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         EditText secret=loginField(card,"Password","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);loginPassword=secret;
@@ -204,7 +211,8 @@ public final class MainActivity extends Activity {
                 String ticket=RuntimeService.queueLogin(login);login=null;secret.setText("");account.setText("");
                 rt.launchError="";
                 String renderer=getSharedPreferences("runtime",MODE_PRIVATE).getString("renderer","turnip26");
-                startForegroundService(new Intent(this,RuntimeService.class).putExtra("operation","launch").putExtra("renderer",renderer).putExtra("audio",true).putExtra("login_ticket",ticket));
+                String displayProfile=displayProfiles[display.getSelectedItemPosition()];getSharedPreferences("runtime",MODE_PRIVATE).edit().putString("display_profile",displayProfile).apply();
+                startForegroundService(new Intent(this,RuntimeService.class).putExtra("operation","launch").putExtra("renderer",renderer).putExtra("audio",true).putExtra("login_ticket",ticket).putExtra("display_profile",displayProfile));
                 startActivity(new Intent(this,RuntimeActivity.class));
             }catch(Exception e){if(login!=null)login.close();RuntimeService.clearLogin();error(e);}
         }).setEnabled(rt.installed()&&!rt.alive());
@@ -377,7 +385,7 @@ public final class MainActivity extends Activity {
             SafeZip.entry(zip, "runtime-profile.json", profile(ctx)); SafeZip.entry(zip, "inventory.json", s.inventory()); SafeZip.entry(zip, "summary.txt", s.summary()); SafeZip.entry(zip, "session.properties", s.config().properties());
             SafeZip.entry(zip, "playonline-candidates.txt", String.join("\n", s.playOnlineChoices()) + "\n");
             if (s.hasPendingImport()) SafeZip.entry(zip, "pending-playonline.txt", "Waiting for PlayOnline selection\n" + String.join("\n", s.pendingChoices()) + "\n");
-            SafeZip.entry(zip, "device.txt", "app=0.4.3\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=prepared_client_launch\n");
+            SafeZip.entry(zip, "device.txt", "app=0.4.4\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=prepared_client_launch\n");
             for (String name : new String[]{"operations.log", "server-probe.txt", "repair-preview.txt"}) { File f = new File(ctx.getFilesDir(), name); if (f.exists()) SafeZip.entry(zip, name, FilesEx.read(f, 262144)); }
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }

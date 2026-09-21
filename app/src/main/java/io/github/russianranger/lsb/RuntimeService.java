@@ -33,9 +33,10 @@ public final class RuntimeService extends Service {
         if(worker!=null){clearLogin();return START_NOT_STICKY;}
         final String renderer=intent.getStringExtra("renderer");final String action=intent.getStringExtra("operation")==null?"probe":intent.getStringExtra("operation");final boolean sound=intent.getBooleanExtra("audio",true);
         final LoginRequest login="launch".equals(action)?takeLogin(intent.getStringExtra("login_ticket")):null;
+        final String displayProfile=intent.getStringExtra("display_profile")==null?"windowed720":intent.getStringExtra("display_profile");
         wake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"lsb:runtime");wake.acquire(2*60*60*1000L);
         worker=new Thread(()->{
-            try{ClientRuntime.get(this).run(renderer,sound,action,login);}
+            try{ClientRuntime.get(this).run(renderer,sound,action,login,displayProfile);}
             catch(Exception e){ClientRuntime.get(this).status=e.getMessage();WorkService.append(this,"Runtime: "+e.getClass().getSimpleName()+": "+e.getMessage());}
             finally{if(login!=null)login.close();new Handler(Looper.getMainLooper()).post(()->{if(wake!=null&&wake.isHeld())wake.release();worker=null;WorkService.generation++;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}
         },"lsb-windows");worker.start();return START_NOT_STICKY;

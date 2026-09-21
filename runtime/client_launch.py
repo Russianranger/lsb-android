@@ -47,7 +47,9 @@ def progress(events, elapsed, process=None):
 
 def exit_problem(process, events):
     if process.get('phase')=='configuration_failed':
-        return ('display_configuration_failed','FFXI display settings could not be initialized (Windows error '+str(process.get('win32_error','unavailable'))+'). Existing values were preserved. Export Diagnostics.')
+        if process.get('win32_error')==1168:
+            return ('display_configuration_failed','No saved original display settings are available. Choose Windowed 1280×720 or Keep current display settings and retry.')
+        return ('display_configuration_failed','The selected FFXI display setting could not be applied (Windows error '+str(process.get('win32_error','unavailable'))+'). Export Diagnostics.')
     if (process.get('phase')=='exited' and process.get('child_exit')==0 and
         'login_message_seen' in events and not process.get('observation',{}).get('ffxi_window_seen')):
         return ('closed_before_game_window','The loader closed after login before an FFXI window was observed. Export Diagnostics to identify the remaining startup failure.')
@@ -128,13 +130,14 @@ def run(s, display):
         # Android closes the writer immediately; bounded input cannot enter session files.
         payload,host=credentials(sys.stdin.buffer)
         manifest,report,flags=check(s)
-        report.update(server=host,status='starting');record(s,report)
+        profile=s.req.get('display_profile','preserve')
+        report.update(server=host,status='starting',display_profile=profile);record(s,report)
         s.stopped();s.private_output=True
         result=Path('/session/loader-process.json');result.unlink(missing_ok=True)
         env=dict(s.env,WINEDEBUG='-all',BOX64_LOG='0',BOX64_NOBANNER='1',DXVK_LOG_LEVEL='none')
         env['WINEDLLOVERRIDES']+=';winedbg='
         # No credentials in argv/environment. Native helper supplies the Windows CLI.
-        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','launch',windows_path(manifest['loader']),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']])],
+        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','launch',windows_path(manifest['loader']),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile],
                   'loader-events.log',env=env,pipe_input=True)
         writer=s.logs[-1]
         try:p.stdin.write(payload);p.stdin.close()

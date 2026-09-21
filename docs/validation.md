@@ -1,3 +1,31 @@
+# Explicit windowed launch: 0.4.4 (2026-09-21)
+
+**Device evidence.** `lsb-support(5).zip`, SHA-256 `871b057ff6b647abbea1f31d45857bb226d9321d0126cebf869e564d4e6f79e3`, records 0.4.3 session `be51e556-b2a6-45a9-959c-4353bb3f8113` on the Thor. All 20 import loads pass. Login succeeds and the loader closes normally after 15,881 ms; 36 observations record `polcore.dll`, `FFXi.dll`, `FFXiMain.dll`, `d3d8.dll` and `d3d9.dll`. Window/module observation error codes are 0. No visible FFXI window or standard dialog is observed, and no POL/FFXI COM failure is reported. Loaded modules do not prove a D3D device, game frame or world entry; the separate Vulkan probe's three presented frames are not game frames.
+
+The effective display settings are:
+
+| Value | Meaning | Device value |
+| --- | --- | ---: |
+| 0001 | Overlay width | 640 |
+| 0002 | Overlay height | 480 |
+| 0003 | Background width | 512 |
+| 0004 | Background height | 512 |
+| 0034 | Display mode | 0 (fullscreen) |
+
+Every `added` flag is false. The prior candidate did not test windowed mode: registration or another earlier step already populated these defaults, and 0.4.3 preserved them. The exact failing game operation remains unknown; no crash or `GameStart` HRESULT was captured. [The fixed registry mappings](https://github.com/Windower/Fenestra/blob/e5bfb6442f49bdb4d31859bff6218bbeb1bea620/core/src/hooks/advapi32.cpp) support a controlled windowed test.
+
+**Changes.** The Client card now offers Windowed 1280×720 (default), Keep current display settings, and Restore saved original display settings. The selection is carried as a bounded non-secret launch option; credentials retain their existing one-use pipe transport. Windowed mode explicitly sets only the five values above to 1280/720/1280/720/1, even when defaults exist. Keep current makes no value changes, including absent values. Restore puts back the values or absence saved before the first windowed application in this prefix/region.
+
+Before the first override, the helper reads and validates all five original DWORDs, saves them under its regional `Software\LSBAndroid\DisplayBackup` key in the same prepared prefix, verifies them, and flushes values and a completion marker before changing the game settings. A later launch never overwrites a completed original backup. Incomplete initial saves are retried; unexpected types or a malformed completion marker fail instead of overwriting data. A detected write/readback failure rolls back changed values and records any rollback error. If the app is interrupted partway through application, the completed original backup remains available for the Restore selection. This does not claim power-loss durability beyond Wine/Android storage guarantees.
+
+The launch receipt records selected policy, backup readiness, prior/current values and presence, change flags and rollback error. Imported files, loader, active generation and renderer are unchanged. No fresh import, preparation copy, dependency installation, GameHub transfer or external CMD is needed. The current prepared prefix intentionally receives the selected display settings and its small registry backup.
+
+**Validation pending ARM64 execution.** Local 116 JVM checks, 16 Python contracts, x86 helper compilation and the original-certificate APK build pass. New native fixtures reproduce the exact 640×480 fullscreen defaults, exercise forced windowing and original restoration for JP/US/EU, preserve custom values, retry an interrupted backup, simulate a failed later write and a partial application, and restore absent values. The launch suite includes explicit windowed, preserved and restored settings alongside the prior startup, privacy and failure cases. These are synthetic tests; actual FFXI rendering remains a device gate.
+
+**Device procedure.** Install 0.4.4 over the current app. In Client → Play FINAL FANTASY XI, leave **FFXI display setting → Windowed 1280×720 (recommended)** selected. Start the existing Termux server and launch with the same account/server. Report the first visible game screen, or send the new Diagnostics ZIP if it exits again. To undo this profile later, choose Restore saved original display settings and launch; the original values are applied before the loader starts.
+
+---
+
 # Post-login exit: 0.4.3 (2026-09-21)
 
 **Device evidence.** The latest 0.4.2 report `lsb-support (3)(1).zip`, SHA-256 `9011837bb7be404ce1e60e4bfbe927034c82d6c57a1d135c957d7ba93345e364`, records session `56ca8e82-a27b-4107-8971-c9b9989672f7` on AYN Thor. All 20 dependency loads pass with checker exit 0. Events record autologin, successful login and server connection. The loader and bridge then return 0 after approximately 35.5 seconds; no game-start/window observation or crash stack is available. User confirmation closes the earlier authentication hurdle, but character selection/world entry are still unverified.

@@ -1,3 +1,11 @@
+# Active milestone 3: explicit windowed display profile (0.4.4)
+
+The new `lsb-support(5).zip` device report (SHA-256 `871b057ff6b647abbea1f31d45857bb226d9321d0126cebf869e564d4e6f79e3`) records 0.4.3 session `be51e556-b2a6-45a9-959c-4353bb3f8113`. Login succeeds; POL, FFXI, FFXiMain, D3D8 and D3D9 are observed, but no game window/dialog is observed before exit 0. All five display values already existed: 640×480 overlay, 512×512 background, fullscreen mode 0. The 0.4.3 missing-only policy made no changes. Do not repeat that test or claim it exercised 1280×720 windowed mode.
+
+0.4.4 adds an explicit Client display selector, defaulting to Windowed 1280×720. It saves original display values in the same prepared prefix before overriding the five known DWORDs, with Keep current and Restore saved original choices. This is a targeted candidate fix for the observed fullscreen configuration, not proof that fullscreen caused the exit. Retain generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, source import, xiloader, prefix and runtime. See [validation.md](validation.md) for evidence and current verification status.
+
+---
+
 # Active milestone 3: post-login exit investigation (0.4.3)
 
 The 0.4.2 device report `lsb-support (3)(1).zip` (SHA-256 `9011837bb7be404ce1e60e4bfbe927034c82d6c57a1d135c957d7ba93345e364`) records session `56ca8e82-a27b-4107-8971-c9b9989672f7`: `login_message_seen`, `server_connected`, native child exit 0 and bridge exit 0 after about 35.5 seconds. The user confirms successful login followed by exit. This establishes authentication progress, not world entry; no captured exception or initialization failure establishes the cause. Preserve generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, imported loader and current runtime.

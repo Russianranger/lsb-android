@@ -172,7 +172,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.4.3");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.4.4");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -201,7 +201,7 @@ final class ClientRuntime {
             if(name.equals("vulkan-probe")||name.equals("wineserver"))Os.chmod(dest.getPath(),0700);
         }
     }
-    void run(String renderer,boolean sound,String action,LoginRequest login)throws Exception {
+    void run(String renderer,boolean sound,String action,LoginRequest login,String displayProfile)throws Exception {
         boolean initialize=Arrays.asList("initialize","installer","repair-launcher").contains(action),clientOperation=!"probe".equals(action);
         File candidate=null;File selectedPrefix=prefix;
         synchronized(WorkService.class){synchronized(this){if(alive()||WorkService.busy)throw new IOException("Wait for the current operation");active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();}}
@@ -209,12 +209,14 @@ final class ClientRuntime {
         try{
             if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher").contains(action))throw new IOException("Unsupported runtime action");
             if(action.equals("launch")&&login==null)throw new IOException("Enter account and password again to launch");
+            if(action.equals("launch")&&!Arrays.asList("windowed720","preserve","restore").contains(displayProfile))throw new IOException("Choose a supported FFXI display setting");
             if(!installed()||!read(new File(root,"lsb-runtime.sha256"),128).equals(RUNTIME_SHA))throw new IOException("Install the pinned runtime first");
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");
             reapOrphans();
             TarExtractor.remove(run);TarExtractor.remove(tmp);run.mkdirs();tmp.mkdirs();prefix.mkdirs();assets();
             File[] old=logs.listFiles();if(old!=null)for(File f:old)if(f.isFile()&&!f.getName().endsWith(".previous"))LogRetention.rotate(f);
             sessionId=UUID.randomUUID().toString();JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action);
+            if(action.equals("launch"))request.put("display_profile",displayProfile);
             write(new File(run,"request.json"),request.toString());
             write(new File(run,"status.json"),new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",initialize?"copying_client":"preparing_runtime").put("game_files_mounted",false).toString());
             if(initialize){
