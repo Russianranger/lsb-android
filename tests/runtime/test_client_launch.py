@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'runtime'))
 import client_launch
@@ -12,6 +14,24 @@ import supervisor
 
 
 class LaunchContracts(unittest.TestCase):
+    def test_immediate_stop_retains_startup_diagnostics_before_first_poll(self):
+        writer=SimpleNamespace(events=supervisor.PrivateEvents())
+        writer.events.feed(b'0034:warn:module:load_dll Failed to load module L"secret.dll"; status=c0000135\n')
+        process=SimpleNamespace(stdin=io.BytesIO(),poll=lambda:None)
+        s=SimpleNamespace(req={},env={'WINEDLLOVERRIDES':''},logs=[writer],
+                          stopped=Mock(side_effect=[None,supervisor.Stopped()]),
+                          spawn=Mock(return_value=process),status=Mock())
+        report={};manifest={'loader':'FINAL FANTASY XI/xiloader.exe','region':'US'}
+        snapshots=[]
+        with patch.object(client_launch,'check',return_value=(manifest,report,['--server','--username','--password','--lang'])),\
+             patch.object(client_launch,'Path'),\
+             patch.object(client_launch,'record',side_effect=lambda s,r:snapshots.append(copy.deepcopy(r))),\
+             patch.object(client_launch.sys,'stdin',SimpleNamespace(buffer=io.BytesIO(b'LSBLOGIN1\n127.0.0.1\naccount\npassword\n'))):
+            with self.assertRaises(supervisor.Stopped):client_launch.run(s,Mock())
+        self.assertEqual(snapshots[-1]['startup_diagnostics']['records'][0]['code'],0xc0000135)
+        self.assertNotIn('secret',str(snapshots))
+        self.assertNotIn('password',str(snapshots))
+
     def test_specific_login_failures_survive_chunking_color_and_utf16(self):
         cases=[('Failed to login. Invalid username or password.','login_invalid_credentials'),
                ('Failed to login. Account already logged in.','login_already_active'),

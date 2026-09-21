@@ -125,7 +125,7 @@ def check(s):
 
 
 def run(s, display):
-    payload=None
+    payload=None;writer=None
     try:
         # Android closes the writer immediately; bounded input cannot enter session files.
         payload,host=credentials(sys.stdin.buffer)
@@ -182,6 +182,12 @@ def run(s, display):
         report['status']='exited';record(s,report);s.status('completed',client_exit=0)
     finally:
         payload=None
+        # Stop can arrive before the first process receipt/progress poll. Keep a
+        # bounded snapshot on every path after spawning, including cancellation
+        # and a broken input pipe, without retaining raw stream data.
+        if writer is not None:
+            report['startup_diagnostics']=writer.events.diagnostics.snapshot()
+            record(s,report)
 
 
 def finish_report(s,phase):
