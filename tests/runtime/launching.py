@@ -63,8 +63,9 @@ def main():
             while p.poll() is None and time.monotonic()<deadline:
                 try:
                     if case=='trace-stop':
-                        rows=json.loads((LOGS/'client-launch.json').read_text()).get('startup_diagnostics',{}).get('records',[])
-                        if any(r.get('event')=='game_start_enter' for r in rows):break
+                        current=json.loads((LOGS/'client-launch.json').read_text())
+                        rows=current.get('startup_diagnostics',{}).get('records',[])
+                        if current.get('session_id')==request['session_id'] and any(r.get('event')=='game_start_enter' for r in rows):break
                     elif json.loads((SESSION/'loader-process.json').read_text()).get('phase')=='running':break
                 except (OSError,ValueError):pass
                 time.sleep(.2)
