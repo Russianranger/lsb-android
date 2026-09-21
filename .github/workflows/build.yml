@@ -125,7 +125,7 @@ jobs:
 
   runtime-release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/codex/client-baseline'
-    needs: [verify, windows-launcher, runtime]
+    needs: [verify, windows-launcher, runtime, server-deployment]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

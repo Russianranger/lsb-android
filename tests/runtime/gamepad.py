@@ -1,9 +1,16 @@
 """Actual Wine/Box64 DirectInput enumeration and shared input transport."""
-import mmap, os
+import ctypes, mmap, os
 from pathlib import Path
 import struct, sys, threading, time, uuid
 sys.path.insert(0,'/opt/lsb')
 from supervisor import Supervisor
+library=Path('/opt/lsb/liblsb-gamepad.so')
+header=library.read_bytes()[:20]
+assert header[:6]==b'\x7fELF\x02\x01' and struct.unpack_from('<H',header,18)[0]==183, 'Gamepad bridge must be ELF64 AArch64'
+# This is a native glibc host preload, not an x86 Wine/Box64 guest library.
+# Resolve every undefined symbol now to distinguish dependency errors from input errors.
+ctypes.CDLL(str(library),mode=os.RTLD_NOW)
+print('PASS: packaged ARM64 gamepad bridge loads with all host symbols resolved',flush=True)
 session=Path('/session');(session/'stop').unlink(missing_ok=True)
 (session/'gamepad-stage').unlink(missing_ok=True)
 (session/'gamepad.bin').write_bytes(bytes(64))
