@@ -14,6 +14,7 @@ FROM lsb-runtime:base
 RUN apt-get update && apt-get install -y --no-install-recommends mesa-vulkan-drivers && apt-get clean && rm -rf /var/lib/apt/lists/*
 DOCKER
 docker build -t lsb-runtime:test out/runtime-test
+python3 scripts/check-display-wire.py --backend docker
 for renderer in software turnip26; do
  mkdir -p "out/runtime-test/logs/$renderer"
  args=()
@@ -34,6 +35,7 @@ git -C out/runtime-test/proot-src checkout 7266fb3e8516535682f5a9c8f3a7e70f6506e
 git -C out/runtime-test/proot-src apply "$PWD/native/proot-acceleration.patch" "$PWD/native/proot-sysvipc.patch"
 sed -i '1i#include <string.h>' out/runtime-test/proot-src/src/extension/ashmem_memfd/ashmem_memfd.c
 make -C out/runtime-test/proot-src/src -j2 PROOT_UNBUNDLE_LOADER=/unused HAS_LOADER_32BIT=
+python3 scripts/check-display-wire.py --backend proot
 short=$(mktemp -d /tmp/lsb-probe.XXXXXX)
 trap 'rm -rf "$short"' EXIT
 mkdir -p "$short/session" "$short/prefix" "$short/tmp"

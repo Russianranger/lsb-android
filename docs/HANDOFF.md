@@ -1,4 +1,16 @@
-# Active milestone 4: display smoothness (0.5.3)
+# Active milestone 4: lossless display transfer and purple icon (0.5.4)
+
+The 0.5.3 Thor test still stutters, with the user reporting 5–28 FPS. Its new timing history confirms the reusable bitmap stays at one allocation, but steady display updates average 13.16 Hz: receipt takes 45.73 ms/update, bitmap work 1.58 ms and Android draw submission 0.085 ms. This supports testing the display transfer path next; it does not establish that all game FPS drops are caused there. See [device evidence, implementation and focused comparison](display-transfer-054.md).
+
+0.5.4 adds lossless ZRLE transport with low server compression effort, preserves the native RGB565 copy path, and provides **Compress display transfer · lossless** to compare against the prior Raw path. Timing history now records encoded bytes and decode costs. A purple adaptive-icon background replaces Android's white legacy surround while preserving the crystal artwork. Local regressions pass; full CI and signed artifact results will be recorded here after completion.
+
+Next Thor test: existing Termux server, accepted preparation and client **30251204_1**, same Turnip/1280×720/display cap, Fast display and compression on, startup capture off, DXVK HUD on. Repeat a 3–5 minute route and export immediately. If needed, switch only compression off and reopen the client view for a same-APK comparison. Check the purple icon, audio, camera axes and Stop/relaunch.
+
+Preserve the accepted generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505` and original nested loader SHA-256 `78fe8ab1dee5aaac3f866001b706d19d233996e584cf78f3a47b26a0d62cdaf8`. Wine/Box64, graphics drivers, audio and controller code are preserved. Do not update client/xiloader/server source toward **30260904_1**, re-import/re-prepare, or begin managed-server migration during this comparison. Older device sequences below are historical.
+
+---
+
+# Previous milestone 4 checkpoint: display smoothness (0.5.3)
 
 The user accepts 0.5.2 boot, both controller axes, relaunch and improved audio. The new Thor diagnostics corroborate two successful launches, clean dependency checks and seven-axis DirectInput; audio underruns stay nearly flat after startup. Preserve that working baseline. The outstanding device issue is stutters/FPS drops, not launch recovery.
 

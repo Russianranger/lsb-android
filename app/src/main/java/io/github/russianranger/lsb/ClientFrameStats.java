@@ -5,7 +5,9 @@ final class ClientFrameStats {
     final long started;
     private long since,updates,draws,receiveNs,decodeNs,drawNs,pixels;
     private long conversionNs,applyNs,maxGapNs,maxDecodeNs,maxDrawNs,gaps50,gaps100;
-    private long totalUpdates,totalDraws,totalPixels;
+    private long totalUpdates,totalDraws,totalPixels,payloadBytes,totalPayloadBytes,zrleRects,rawRects,zrleNs;
+    synchronized void payload(long bytes,boolean compressed){payloadBytes+=bytes;totalPayloadBytes+=bytes;if(compressed)zrleRects++;else rawRects++;}
+    synchronized void compressedDecode(long ns){zrleNs+=ns;}
     private long generation,drawnGeneration,lastReceived;
     ClientFrameStats(){this(System.nanoTime());}
     ClientFrameStats(long now){started=since=now;}
@@ -33,9 +35,9 @@ final class ClientFrameStats {
             lastReceived==0?-1:(now-lastReceived)/1e9,
             updates==0?0:conversionNs/1e6/updates,updates==0?0:applyNs/1e6/updates,
             (since-started)/1e9,updates,draws,maxGapNs/1e6,maxDecodeNs/1e6,maxDrawNs/1e6,gaps50,gaps100,
-            totalUpdates,totalDraws,totalPixels};
+            totalUpdates,totalDraws,totalPixels,payloadBytes,zrleRects,rawRects,totalPayloadBytes,zrleNs/1e6};
         since=now;updates=draws=receiveNs=decodeNs=drawNs=pixels=conversionNs=applyNs=0;
-        maxGapNs=maxDecodeNs=maxDrawNs=gaps50=gaps100=0;
+        maxGapNs=maxDecodeNs=maxDrawNs=gaps50=gaps100=0;payloadBytes=zrleRects=rawRects=zrleNs=0;
         return new Sample(started,result);
     }
 }

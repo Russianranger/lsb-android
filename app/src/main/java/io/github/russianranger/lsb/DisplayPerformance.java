@@ -35,6 +35,9 @@ final class DisplayPerformance {
                 .put("updates",s[11]).put("unique_draws",s[12]).put("max_update_gap_ms",s[13])
                 .put("max_decode_ms",s[14]).put("max_draw_ms",s[15])
                 .put("update_gaps_over_50ms",s[16]).put("update_gaps_over_100ms",s[17])
+                .put("encoded_payload_bytes",s[21]).put("encoded_bytes_per_second",s[21]/s[0])
+                .put("zrle_rectangles",s[22]).put("raw_rectangles",s[23]).put("connection_encoded_bytes",s[24])
+                .put("zrle_decode_ms",s[11]==0?0:s[25]/s[11])
                 .put("connection_updates",s[18]).put("connection_unique_draws",s[19]).put("connection_pixels",s[20])
                 .put("width",width).put("height",height).put("fast_display",fast).put("display_cap",cap)
                 .put("staging_bitmap_allocations",allocations).put("staging_allocated_bytes",allocatedBytes);

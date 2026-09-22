@@ -3,7 +3,7 @@ package io.github.russianranger.lsb;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 
-/** Small RFB 3.8 client for the app-private Unix display socket (raw/copy/resize). */
+/** Small RFB 3.8 client for the app-private Unix display socket (ZRLE/raw/copy/resize). */
 final class RfbConnection {
     interface Screen {
         void resize(int width,int height);
@@ -21,12 +21,18 @@ final class RfbConnection {
     private int[] pixelBuffer=new int[0];
     private byte[] rowBuffer=new byte[0];
     private byte[] rawBuffer=new byte[0];
-    private final boolean rgb565;
+    private final boolean rgb565,compressed;
+    private byte[] compressedBuffer=new byte[0];
+    private ZrleDecoder zrle;
     final ClientFrameStats stats=new ClientFrameStats();
     RfbConnection(InputStream in,OutputStream out,Screen screen) {
         this(in,out,screen,false);
     }
     RfbConnection(InputStream in,OutputStream out,Screen screen,boolean rgb565) {
+        this(in,out,screen,rgb565,false);
+    }
+    RfbConnection(InputStream in,OutputStream out,Screen screen,boolean rgb565,boolean compressed) {
+        this.compressed=compressed;
         this.in=new DataInputStream(new BufferedInputStream(in,65536));
         this.out=new DataOutputStream(out);this.screen=screen;this.rgb565=rgb565;
     }
@@ -45,7 +51,7 @@ final class RfbConnection {
         synchronized(out) {
             out.writeInt(0); // SetPixelFormat and three padding bytes.
             out.write(rgb565?new byte[]{16,16,0,1,0,31,0,63,0,31,11,5,0,0,0,0}:new byte[]{32,24,0,1,0,(byte)255,0,(byte)255,0,(byte)255,16,8,0,0,0,0});
-            out.writeByte(2);out.writeByte(0);out.writeShort(3);out.writeInt(0);out.writeInt(1);out.writeInt(-223);out.flush();
+            out.writeByte(2);out.writeByte(0);out.writeShort(compressed?4:3);if(compressed)out.writeInt(16);out.writeInt(0);out.writeInt(1);out.writeInt(-223);out.flush();
         }
         if(frames)request(false);
     }
@@ -61,21 +67,31 @@ final class RfbConnection {
         if(message==2)return; // Bell.
         if(message==3){bytes(3);bytes(in.readInt());return;} // No clipboard integration.
         if(message!=0)throw new IOException("Unexpected display message: "+message);
-        long started=System.nanoTime(),decode=0,pixelCount=0;
+        long started=System.nanoTime(),decode=0,pixelCount=0;boolean resized=false;
         in.readUnsignedByte();int count=in.readUnsignedShort();
         for(int i=0;i<count;i++) {
             int x=in.readUnsignedShort(),y=in.readUnsignedShort(),w=in.readUnsignedShort(),h=in.readUnsignedShort(),encoding=in.readInt();
-            if(encoding==-223){resize(w,h);continue;}
+            if(encoding==-223){resize(w,h);resized=true;continue;}
             rectangle(x,y,w,h);
-            if(encoding==0) {
+            if(encoding==16&&compressed){
+                int length=in.readInt();
+                if(length<1||length>ZrleDecoder.compressedLimit(w,h,rgb565))throw new IOException("ZRLE payload exceeds limits");
+                if(compressedBuffer.length<length)compressedBuffer=new byte[Math.min(ZrleDecoder.compressedLimit(w,h,rgb565),Math.max(length,Math.max(65536,compressedBuffer.length*2)))];in.readFully(compressedBuffer,0,length);
+                if(zrle==null)zrle=new ZrleDecoder();
+                if(rgb565){if(rawBuffer.length<w*h*2)rawBuffer=new byte[w*h*2];}
+                else if(pixelBuffer.length<w*h)pixelBuffer=new int[w*h];
+                long unpack=System.nanoTime();zrle.decode(compressedBuffer,length,w,h,rgb565,rawBuffer,pixelBuffer);
+                long cost=System.nanoTime()-unpack;decode+=cost;stats.compressedDecode(cost);
+                long apply=System.nanoTime();
+                if(rgb565)apply565(x,y,w,h);else screen.pixels(x,y,w,h,pixelBuffer);
+                cost=System.nanoTime()-apply;decode+=cost;stats.stages(0,cost);stats.payload(length+4,true);
+                pixelCount+=(long)w*h;
+            } else if(encoding==0) {
+                stats.payload((long)w*h*(rgb565?2:4),false);
                 if(rgb565){
                     int length=w*h*2;if(rawBuffer.length<length)rawBuffer=new byte[length];
                     in.readFully(rawBuffer,0,length);long apply=System.nanoTime();
-                    if(!screen.raw565(x,y,w,h,rawBuffer,length)){
-                        if(pixelBuffer.length<w*h)pixelBuffer=new int[w*h];
-                        for(int n=0;n<w*h;n++){int v=(rawBuffer[n*2]&255)|((rawBuffer[n*2+1]&255)<<8);int r=(v>>11)&31,g=(v>>5)&63,b=v&31;pixelBuffer[n]=0xff000000|((r*255/31)<<16)|((g*255/63)<<8)|(b*255/31);}
-                        screen.pixels(x,y,w,h,pixelBuffer);
-                    }
+                    apply565(x,y,w,h);
                     long cost=System.nanoTime()-apply;decode+=cost;stats.stages(0,cost);pixelCount+=(long)w*h;continue;
                 }
                 if(pixelBuffer.length<w*h)pixelBuffer=new int[w*h];
@@ -96,8 +112,15 @@ final class RfbConnection {
             } else throw new IOException("Unsupported display encoding: "+encoding);
         }
         if(count>0){stats.received(System.nanoTime(),System.nanoTime()-started,decode,pixelCount);screen.updated();}
-        request(true);
+        request(!resized);
     }
+    private void apply565(int x,int y,int w,int h){
+        if(screen.raw565(x,y,w,h,rawBuffer,w*h*2))return;
+        if(pixelBuffer.length<w*h)pixelBuffer=new int[w*h];
+        for(int n=0;n<w*h;n++){int v=(rawBuffer[n*2]&255)|((rawBuffer[n*2+1]&255)<<8);int r=(v>>11)&31,g=(v>>5)&63,b=v&31;pixelBuffer[n]=0xff000000|((r*255/31)<<16)|((g*255/63)<<8)|(b*255/31);}
+        screen.pixels(x,y,w,h,pixelBuffer);
+    }
+    void close(){if(zrle!=null){zrle.close();zrle=null;}}
     void request(boolean incremental)throws IOException {
         synchronized(out){out.writeByte(3);out.writeByte(incremental?1:0);out.writeShort(0);out.writeShort(0);out.writeShort(width);out.writeShort(height);out.flush();}
     }

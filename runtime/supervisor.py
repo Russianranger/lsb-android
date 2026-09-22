@@ -210,7 +210,7 @@ class Supervisor:
         else:self.env['WINEDLLOVERRIDES']+=';winepulse.drv,winealsa.drv=d'
         (SESSION/'Xauthority').touch(mode=0o600)
         self.wait(self.spawn(['xauth','-f',str(SESSION/'Xauthority'),'add',':7','.',secrets.token_hex(16)],'xauth.log'),10,'X authentication')
-        x=self.spawn(['Xtigervnc',':7','-geometry','960x540' if self.req.get('display_profile')=='windowed540' else '1280x720','-depth','24','-rfbport','-1','-rfbunixpath',str(SESSION/'display.sock'),'-rfbunixmode','0600','-SecurityTypes','None','-nolisten','tcp','-auth',str(SESSION/'Xauthority'),'-AlwaysShared','-FrameRate',str(self.req.get('display_fps',30)),'-desktop','LSB runtime probe'],'display.log')
+        x=self.spawn(['Xtigervnc',':7','-geometry','960x540' if self.req.get('display_profile')=='windowed540' else '1280x720','-depth','24','-rfbport','-1','-rfbunixpath',str(SESSION/'display.sock'),'-rfbunixmode','0600','-SecurityTypes','None','-nolisten','tcp','-auth',str(SESSION/'Xauthority'),'-AlwaysShared','-ZlibLevel','1','-FrameRate',str(self.req.get('display_fps',30)),'-desktop','LSB runtime probe'],'display.log')
         for _ in range(200):
             self.stopped()
             if x.poll() is not None:raise RuntimeError('Display startup failed; see display.log')

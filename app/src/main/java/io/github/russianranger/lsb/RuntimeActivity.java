@@ -92,13 +92,13 @@ public final class RuntimeActivity extends Activity {
                 ClientRuntime rt=ClientRuntime.get(this);String id=rt.sessionKey();
                 boolean fast=getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("fast_display",true);
                 int cap=getSharedPreferences("runtime",MODE_PRIVATE).getInt("display_fps",30);
-                RfbConnection c=new RfbConnection(s.getInputStream(),s.getOutputStream(),screen,fast);c.handshake();
-                display=new DisplaySession(c,id,fast,cap);
+                RfbConnection c=new RfbConnection(s.getInputStream(),s.getOutputStream(),screen,fast,getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("compressed_display",true));
+                display=new DisplaySession(c,id,fast,cap);c.handshake();
                 if(!viewing||generation!=connectionGeneration)return;
                 socket=s;connection=c;displaySession=display;ui.post(()->displayError="");
                 while(viewing&&generation==connectionGeneration)c.readUpdate();
             }catch(Exception e){if(viewing&&generation==connectionGeneration)ui.post(()->displayError="Display closed: "+e.getMessage());}
-            finally{if(display!=null)recordFrames(display);try{if(s!=null)s.close();}catch(Exception ignored){}if(generation==connectionGeneration){connection=null;socket=null;displaySession=null;}}
+            finally{if(display!=null){recordFrames(display);display.connection.close();}try{if(s!=null)s.close();}catch(Exception ignored){}if(generation==connectionGeneration){connection=null;socket=null;displaySession=null;}}
         },"lsb-display").start();
     }
     private interface Send{void run(RfbConnection c)throws IOException;}
