@@ -1,5 +1,7 @@
 # 0.5.0: controls, display and managed server
 
+The first 0.5.0 device attempt exposed an Android display startup race. Use the [0.5.1 crash-recovery retry](android-startup-051.md) before continuing the tests below.
+
 ## First device test
 
 Install in place; keep the existing prepared client, original xiloader, runtime and Termux server. First launch against that existing server with the accepted renderer and resolution, and confirm login and clean audio. Keep client `30251204_1` and its matching server; current upstream expects `30260904_1`. Do not update client files, xiloader or server source during this test, and do not re-import or re-prepare the accepted client.

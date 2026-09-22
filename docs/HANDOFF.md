@@ -1,4 +1,16 @@
-# Active milestone 4: controller, performance and existing-server migration (0.5.0)
+# Active milestone 4: Android display startup recovery (0.5.1)
+
+The first 0.5.0 Thor attempt closed the Android app immediately when opening either the client or controller setup. A new Android 13 lifecycle regression reproduces a null-session `NullPointerException` in the actual `RuntimeActivity` controller timer before the worker creates a session. Two tests fail before the fix; all three pass afterward. Implementation `4a28a0d1508c59d1c26d6645a7f42efc47e44d2e` waits for a valid session, publishes its ID safely across threads and releases mapped input on focus loss. The new Activity tests are required in CI. See [diagnosis and focused retry](android-startup-051.md).
+
+Preserve user-confirmed 0.4.8 login and clean audio, accepted client generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, original nested Ashita xiloader, client `30251204_1` and its existing working Termux server. This fix does not change the Wine/Box64 runtime, native helpers, audio, rendering implementation, version repair, client files or server sources. Do not update toward `30260904_1` or perform the managed-server migration during the crash-recovery retry.
+
+The earlier server-toolchain and DirectInput CI failures are resolved. [Full CI run 35671938279](https://github.com/Russianranger/lsb-android/actions/runs/35671938279) passes every gate: `verify` (including the three Android 13 lifecycle tests), `windows-launcher`, `runtime`, `server-deployment` and `runtime-release`. Both ARM64 Wine/Box64 and PRoot pass the native gamepad, audio/render and all 28 launch scenarios; the real MariaDB deployment/update/rollback test passes.
+
+Signed `LSB-Android-0.5.1.apk` is versionCode 17, 15,907,587 bytes, SHA-256 `fee9e5dce1d8bdb23bebb7840f3034dd9e872970882a77a0528cf6921596602f`, with the original certificate for an install-in-place update. Every non-signature entry matches the passing CI artifact; only the Android DEX and version manifest differ from 0.5.0. See [validation](validation.md) for exact evidence and device limits. The next device action is an in-place 0.5.1 update, followed by existing-server login/audio, controller setup and stop/relaunch checks. No re-import or re-preparation is needed. The historical 0.5.0 device instructions below are superseded by this recovery.
+
+---
+
+# Previous milestone 4 checkpoint: controller, performance and existing-server migration (0.5.0)
 
 The user confirmed 0.4.8 works: login succeeds and audio is clean. Preserve accepted generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, the original nested Ashita xiloader (SHA-256 `78fe8ab1dee5aaac3f866001b706d19d233996e584cf78f3a47b26a0d62cdaf8`), runtime and version repair. Client patch.ver is `30251204_1`; current upstream source expects `30260904_1`, so test the existing matching server before any source update.
 
