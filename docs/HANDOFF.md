@@ -9,13 +9,34 @@ Android pixel copy is about 0.43 ms. [Device evidence and correction](thor-nativ
 
 0.5.6 enables that option only for Native Surface launches. The CI display fixture
 now forces emulation and requires its memfd marker so native Linux SysV IPC cannot
-mask the omission again. Full CI and signed-artifact validation are in progress.
+mask the omission again.
 The earlier 0.5.5 Linux MIT-SHM result is not proof of Android emulated capture.
+
+**All six CI gates passed** for implementation
+`b3aec4c3b910c0755cbe1bfe626a2a46b6368911` in [run 35769148142](https://github.com/Russianranger/lsb-android/actions/runs/35769148142):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35769152473) passes all five applicable gates;
+its release job is correctly skipped. Saved PRoot evidence confirms both the
+memfd-emulation marker and successful MIT-SHM capture with exact pixels and no
+X errors. All 56 launch scenarios, three supervised Wine/native captures,
+controller/preload/audio/Stop checks and real MariaDB deployment/update/rollback
+pass. No CI failures remain pending.
+
+**Signed install-in-place APK:** `LSB-Android-0.5.6.apk`, versionCode 22,
+15,936,672 bytes, SHA-256 `a88af15a75fb447d5dd894583b65f477c7c2ff616aa36f6fc44fe4e637a86d11`.
+Original certificate, APK v2/v3 signatures, alignment and ZIP integrity verify;
+every non-signature entry matches the CI build. All native/runtime binaries,
+graphics, audio/controller/loader components and purple icon match 0.5.5.
+[Artifact evidence and device limits](validation.md).
 
 Preserve the existing Termux server/client `30251204_1`, original xiloader,
 accepted preparation and all pinned runtime/graphics/audio/controller binaries.
-First next-device check keeps the better second-run settings and verifies actual
-MIT-SHM capture in Diagnostics; no source update or managed migration.
+First next-device check keeps the better second-run settings: 720p, Native Surface
+on, Fast display/compression off, startup capture off and DXVK HUD on. Stop and
+launch afresh, repeat the same route, check audio/axes and Stop/relaunch, then
+export Diagnostics. Require actual MIT-SHM capture/nonzero `shm_frames` before
+assessing the FPS change. Thor improvement is unverified; no source update or
+managed migration. Native Surface off restores the prior display/PRoot invocation.
 
 ---
 

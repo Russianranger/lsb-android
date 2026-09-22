@@ -69,6 +69,13 @@ forces `--sysvipc` and requires the bundled patch's memfd-allocation marker, in
 addition to exact pixels, MIT-SHM flags, reconnect/idle/cap and XGetImage fallback
 checks. The full Wine/PRoot regression run also uses emulated IPC.
 
+All six gates pass for `b3aec4c3b910c0755cbe1bfe626a2a46b6368911` in
+[CI run 35769148142](https://github.com/Russianranger/lsb-android/actions/runs/35769148142).
+The saved PRoot log confirms the memfd marker and successful MIT-SHM attachment
+with zero X errors; all 56 launch cases and controller/audio regressions pass.
+The original-signer APK is verified for an in-place update. See
+[full validation and artifact identity](validation.md).
+
 ## First Thor check
 
 Install 0.5.6 in place. Use the existing Termux server, client `30251204_1`, original

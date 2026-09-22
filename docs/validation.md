@@ -1,3 +1,67 @@
+# Android shared-memory capture: 0.5.6 (2026-09-22)
+
+**Device evidence.** In the local `lsb-support (11).zip`, both 0.5.5 sessions
+use Native Surface at 720p with no RFB pixel traffic, but X11 capture reports
+`shmget failed; errno=38` and uses XGetImage throughout. The second session is
+reported smoother; its longer gameplay portion averages 22.97 Surface posts/s,
+25.19 ms capture and 0.428 ms native pixel copy. These are presentation counters,
+not game FPS. Both fallback switches were inactive in the pixel path; the report
+does not establish them as the cause of the observed improvement.
+[Evidence and correction](thor-native-capture-056.md).
+
+**Implementation.** `b3aec4c3b910c0755cbe1bfe626a2a46b6368911` adds PRoot's
+`--sysvipc` option only to Native Surface launches. The exact existing packaged
+PRoot already contains the memfd-backed emulation; no native binary replacement
+is needed. This makes Xvnc and its capture helper use the same emulated SysV IPC.
+Native Surface off and controller setup retain their previous invocation.
+
+**CI coverage correction.** The 0.5.5 Linux/PRoot capture test could use host
+native SysV IPC, so its successful MIT-SHM result did not exercise the missing
+Android emulation setting. The corrected fixture forces `--sysvipc` and requires
+`TRASC PRoot: SysV shared memory uses memfd` in addition to the actual MIT-SHM
+pixels/flags, reconnect, unchanged-frame, pacing and XGetImage checks. The full
+Wine/PRoot regression suite now runs with emulation enabled too. This corrects
+the coverage gap without relaxing the existing assertions.
+
+**Full validation passed.** [Push run 35769148142](https://github.com/Russianranger/lsb-android/actions/runs/35769148142) passes all six gates:
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. [PR run 35769152473](https://github.com/Russianranger/lsb-android/actions/runs/35769152473) independently passes all five
+applicable gates, with the release job correctly skipped. Core/preparation/login
+(116), RGB565/ZRLE (90 ZRLE checks), runtime/server contracts (39/5), native bounds/
+RGBA, all 10 Android API 33 tests and 36 native Windows checks pass. Both ARM64
+environments pass all 28 launch scenarios each (56 total), controller axes/release,
+preload resolution/host isolation, dependency checks, audio/render and Stop.
+Real MariaDB deployment/export, failed-import preservation, account/character-
+preserving update, rollback both ways and managed readiness/stop also pass.
+
+The runtime job explicitly reports `PASS: PRoot MIT-SHM uses the Android-compatible
+memfd emulation`. Saved artifact `10714108273`, `display-wire/proot.log`, contains
+the memfd marker twice and `Capture mode: MIT-SHM; 1280x720; reason=shared memory
+attached; errno=0; xerror=0`. Exact pixels, changed/idle frames, reconnect, private
+permissions and pacing pass both with emulation and the intentional XGetImage
+fallback. The corresponding Docker fixture passes too. Three supervised native
+captures pass with real Wine D3D8 pixels, PCM and RFB input (Docker software,
+Docker DXVK/Lavapipe, PRoot software). These checks exercise the previously missed
+emulated IPC path; they are not a physical Android/Adreno performance benchmark.
+
+**Artifact.** `LSB-Android-0.5.6.apk`, versionCode 22,
+**15,936,672 bytes**, SHA-256 `a88af15a75fb447d5dd894583b65f477c7c2ff616aa36f6fc44fe4e637a86d11`.
+Original signer SHA-256 `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`;
+APK v2/v3 signatures, ZIP integrity and alignment verify. Every non-signature
+entry matches the CI build. Compared with 0.5.5, only the Android manifest/DEX
+and runtime bundle JSON key ordering differ; all bundle values, all native/runtime
+binaries, Python assets, loader/audio/controller implementations and icon
+resources match. The production change does not update client or server source.
+
+**Device acceptance.** Physical Android MIT-SHM and the game FPS/stutter result
+still require Thor testing. Keep the second-session settings fixed: 720p, Native
+Surface on, Fast display/compression off, startup capture off, DXVK HUD on, the
+existing Termux server/client `30251204_1` and original loader/preparation. A fresh
+launch is required. Confirm nonzero `shm_frames` and `Capture mode: MIT-SHM` in the
+new diagnostics before attributing any performance change to this correction.
+
+---
+
 # Shared-memory Native Surface: 0.5.5 (2026-09-22)
 
 **Device evidence.** The capture-off 720p/540p comparison improves the game HUD by
