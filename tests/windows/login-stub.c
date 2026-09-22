@@ -81,6 +81,17 @@ int wmain(int argc,WCHAR **wide){
     HWND window=CreateWindowW(cls.lpszClassName,pass,WS_OVERLAPPEDWINDOW|WS_VISIBLE,0,0,640,480,NULL,NULL,cls.hInstance,NULL);
     if(!window)return 97;
     ULONGLONG end=GetTickCount64()+2000;MSG msg;
+    /* Keep a real visible game-class window alive while the integration test
+     * verifies that completed startup scans stay idle across several old poll
+     * intervals. A deadline prevents a broken test from leaving this fixture. */
+    if(GetFileAttributesW(L"D:\\window-hold")!=INVALID_FILE_ATTRIBUTES){
+        ULONGLONG deadline=GetTickCount64()+30000;
+        while(GetFileAttributesW(L"D:\\window-hold")!=INVALID_FILE_ATTRIBUTES&&GetTickCount64()<deadline){
+            while(PeekMessageW(&msg,NULL,0,0,PM_REMOVE)){TranslateMessage(&msg);DispatchMessageW(&msg);}Sleep(20);
+        }
+        if(GetFileAttributesW(L"D:\\window-crash")!=INVALID_FILE_ATTRIBUTES)RaiseException(EXCEPTION_INT_DIVIDE_BY_ZERO,EXCEPTION_NONCONTINUABLE,0,NULL);
+        end=GetTickCount64()+250;
+    }
     while(GetTickCount64()<end){while(PeekMessageW(&msg,NULL,0,0,PM_REMOVE)){TranslateMessage(&msg);DispatchMessageW(&msg);}Sleep(20);}
     DestroyWindow(window);
     /* Model the game saving a changed user preference. Relaunch must preserve it. */

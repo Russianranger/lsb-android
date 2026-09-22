@@ -12,7 +12,7 @@
 static const WCHAR *module_names[]={L"polcore.dll",L"polcoreeu.dll",L"FFXi.dll",L"FFXiMain.dll",L"d3d8.dll",L"d3d9.dll"};
 static BOOL module_seen[6],game_window_seen,dialog_seen;
 static DWORD child_pid,samples,module_error,window_error;
-static ULONGLONG launched_at;
+static ULONGLONG launched_at,last_sample_at,last_sample_ms,max_sample_ms,total_sample_ms;
 #include "display-config.h"
 #include "version-registry.h"
 
@@ -25,7 +25,10 @@ static BOOL CALLBACK window_observation(HWND window,LPARAM unused){
     return TRUE;
 }
 static void observe(void){
-    samples++;
+    ULONGLONG started=GetTickCount64();samples++;
+    /* Observe the window before the final module snapshot, so DLLs needed to
+     * create that window have already loaded. No window titles are read. */
+    SetLastError(0);window_error=EnumWindows(window_observation,0)?0:GetLastError();
     HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,child_pid);
     if(snapshot==INVALID_HANDLE_VALUE)module_error=GetLastError();
     else{
@@ -37,7 +40,9 @@ static void observe(void){
         }else module_error=GetLastError();
         CloseHandle(snapshot);
     }
-    SetLastError(0);window_error=EnumWindows(window_observation,0)?0:GetLastError();
+    last_sample_at=GetTickCount64()-launched_at;
+    last_sample_ms=GetTickCount64()-started;total_sample_ms+=last_sample_ms;
+    if(last_sample_ms>max_sample_ms)max_sample_ms=last_sample_ms;
 }
 
 /* Credentials enter only on stdin. No command interpreter, credentials file or
@@ -85,7 +90,10 @@ static BOOL receipt(const char *phase,DWORD error,DWORD code){
     fprintf(f,"}},\"observation\":{\"child_pid\":%lu,\"samples\":%lu,\"elapsed_ms\":%llu,\"module_error\":%lu,\"window_error\":%lu,\"ffxi_window_seen\":%s,\"dialog_seen\":%s,\"modules_seen\":[",
         (unsigned long)child_pid,(unsigned long)samples,launched_at?(unsigned long long)(GetTickCount64()-launched_at):0ULL,(unsigned long)module_error,(unsigned long)window_error,game_window_seen?"true":"false",dialog_seen?"true":"false");
     BOOL first=TRUE;for(int i=0;i<6;i++)if(module_seen[i]){if(!first)fputc(',',f);quoted(f,module_names[i]);first=FALSE;}
-    fputs("]}}\n",f);BOOL written=!ferror(f);if(fclose(f))written=FALSE;if(!written)return FALSE;
+    fprintf(f,"],\"policy\":\"startup_only\",\"complete\":%s,\"last_sample_elapsed_ms\":%llu,\"last_sample_duration_ms\":%llu,\"max_sample_duration_ms\":%llu,\"total_sample_duration_ms\":%llu}}\n",
+        game_window_seen?"true":"false",(unsigned long long)last_sample_at,(unsigned long long)last_sample_ms,
+        (unsigned long long)max_sample_ms,(unsigned long long)total_sample_ms);
+    BOOL written=!ferror(f);if(fclose(f))written=FALSE;if(!written)return FALSE;
     return MoveFileExW(L"Z:\\session\\loader-process.new",L"Z:\\session\\loader-process.json",MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
 }
 /* MS CRT argument quoting, including quotes and trailing backslashes. */
@@ -130,7 +138,12 @@ static int launch(int argc,WCHAR **argv){
     CloseHandle(pi.hThread);child_pid=pi.dwProcessId;launched_at=GetTickCount64();
     if(!receipt("running",0,0)){TerminateProcess(pi.hProcess,90);CloseHandle(pi.hProcess);return 90;}
     DWORD waited,code=0;
-    while((waited=WaitForSingleObject(pi.hProcess,game_window_seen&&GetTickCount64()-launched_at>10000?3000:250))==WAIT_TIMEOUT){
+    /* Wine's module snapshot repeatedly reads the child's memory, which can
+     * suspend a game thread. Once the startup window is observed, retain that
+     * evidence and wait on the process handle without further scans or receipt
+     * rewrites. Process exit/crash and supervisor Stop still wake/terminate the
+     * owned process; a window alone never proves authentication or world entry. */
+    while((waited=WaitForSingleObject(pi.hProcess,game_window_seen?INFINITE:250))==WAIT_TIMEOUT){
         observe();
         if(!receipt("running",0,0)){TerminateProcess(pi.hProcess,90);CloseHandle(pi.hProcess);return 90;}
     }

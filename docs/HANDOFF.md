@@ -1,4 +1,25 @@
-# Active milestone: remove reporting from the display worker (0.5.7)
+# Active milestone: stop intrusive gameplay module scans (0.5.8)
+
+The 0.5.7 Thor result still stutters. New timing evidence shows capture and the
+Android frame worker remain responsive during repeated game-image pauses; the
+asynchronous reporter has no dropped windows and only millisecond write costs.
+The launcher still scans the child's complete DLL list every three seconds after
+startup, through Wine cross-process reads that can suspend a game thread.
+
+0.5.8 stops those scans once the FFXI window is observed and then waits on the
+child process handle. Exit/crash detection, Stop and retained startup evidence
+remain. New integration scenarios verify that the observer stays idle while a
+healthy window remains open and that normal exit, Stop and late crash still work.
+[Evidence, source audit, correction and Thor sequence](thor-stutter-058.md).
+
+Local core/runtime/server contracts pass. Full CI and the signed APK are in
+progress. Keep the existing matching Termux server/client `30251204_1`, original
+xiloader, accepted preparation and pinned runtime/driver/audio/controller path.
+No source updates or managed-server migration. Physical improvement is unverified.
+
+---
+
+# Previous implementation: remove reporting from the display worker (0.5.7)
 
 The authorized next step is implemented: Native Surface transfers bounded numeric
 samples to a separate diagnostics writer, preserving session isolation and the

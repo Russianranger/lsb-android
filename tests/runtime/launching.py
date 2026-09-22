@@ -37,10 +37,11 @@ def main():
     manifest['key_files'].pop(manifest['loader'])
     manifest['loader']='FINAL FANTASY XI/boot loader/xiloader.exe'
     loader=CLIENT/manifest['loader'];loader.parent.mkdir(exist_ok=True)
-    for case in ['launch','relaunch','windowed-existing','restore-display','version-repair','version-preserved','startup-diagnostics','startup-exception','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN,*STARTUP]:
+    for case in ['launch','relaunch','windowed-existing','restore-display','window-idle','window-stop','window-crash','version-repair','version-preserved','startup-diagnostics','startup-exception','exit-failure','stop','missing-dependency','check-only',*REJECTIONS,*POST_LOGIN,*STARTUP]:
         for path in [SESSION/'stop',SESSION/'status.json',SESSION/'loader-process.json',SESSION/'loader-check.json',SESSION/'login-fixture.json',CLIENT/'launch-fail',CLIENT/'launch-hang',CLIENT/'login-reject',CLIENT/'post-login']:
             path.unlink(missing_ok=True)
         for path in [CLIENT/'startup-result',SESSION/'startup-fixture.json']:path.unlink(missing_ok=True)
+        for path in [CLIENT/'window-hold',CLIENT/'window-crash']:path.unlink(missing_ok=True)
         shutil.copyfile('/fixtures/login-missing.exe' if case=='missing-dependency' else '/fixtures/login-stub.exe',loader)
         manifest['key_files'][manifest['loader']]=hashlib.sha256(loader.read_bytes()).hexdigest()
         (SESSION/'client-manifest.json').write_text(json.dumps(manifest))
@@ -59,8 +60,34 @@ def main():
         if case in POST_LOGIN:(CLIENT/'post-login').write_text(POST_LOGIN[case][0])
         if case=='startup-diagnostics':(CLIENT/'post-login').write_text('d')
         if case=='startup-exception':(CLIENT/'post-login').write_text('e')
+        if case.startswith('window-'):
+            (CLIENT/'window-hold').touch()
+            if case=='window-crash':(CLIENT/'window-crash').touch()
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],stdin=subprocess.PIPE)
         p.stdin.write(PAYLOAD if case!='check-only' else b'');p.stdin.close()
+        frozen=None
+        if case.startswith('window-'):
+            deadline=time.monotonic()+180
+            while p.poll() is None and time.monotonic()<deadline:
+                try:
+                    current=json.loads((SESSION/'loader-process.json').read_text())
+                    observation=current.get('observation',{})
+                    if current.get('phase')=='running' and observation.get('complete'):
+                        assert observation['policy']=='startup_only' and observation['ffxi_window_seen'],current
+                        assert 'FFXiMain.dll' in observation['modules_seen'],current
+                        frozen=(SESSION/'loader-process.json').read_bytes()
+                        break
+                except (OSError,ValueError):pass
+                time.sleep(.1)
+            assert frozen is not None and p.poll() is None,'startup observation did not complete'
+            if case=='window-idle':
+                # More than two former three-second intervals. Compare the full
+                # receipt, not just cumulative booleans, to catch continued work.
+                time.sleep(7)
+                assert p.poll() is None,'healthy child was terminated after observing its window'
+                assert (SESSION/'loader-process.json').read_bytes()==frozen,'launcher kept scanning during gameplay'
+            if case=='window-stop':(SESSION/'stop').touch()
+            else:(CLIENT/'window-hold').unlink()
         if case in ('stop','trace-stop'):
             deadline=time.monotonic()+180
             while p.poll() is None and time.monotonic()<deadline:
@@ -95,6 +122,19 @@ def main():
             if case=='launch':
                 assert config['values']['0001']['previous_value']==640 and config['values']['0034']['previous_value']==0,config
                 assert config['backup_ready'] and all(v['changed'] for v in config['values'].values()),config
+        elif case.startswith('window-'):
+            observed=report['process']['observation'];before=json.loads(frozen)['observation']
+            assert {k:v for k,v in observed.items() if k!='elapsed_ms'}=={k:v for k,v in before.items() if k!='elapsed_ms'},'startup observation changed after completion'
+            assert observed['last_sample_elapsed_ms']<=report['process']['observation']['elapsed_ms']
+            if case=='window-stop':
+                assert state['phase']=='stopped' and report['status']=='stopped',report
+            elif case=='window-crash':
+                assert p.returncode!=0 and state['phase']=='error' and report['process']['child_exit']==0xc0000094,report
+                assert any(r.get('code')==0xc0000094 and r['event']=='exception_raised' and r.get('process_id')==observed['child_pid'] for r in report['startup_diagnostics']['records']),report
+            else:
+                assert p.returncode==0 and state['phase']=='completed' and report['process']['child_exit']==0,report
+                assert observed['elapsed_ms']-observed['last_sample_elapsed_ms']>=7000,observed
+            print('PASS: completed startup observer stays idle; supervision '+case,flush=True)
         elif case in ('version-repair','version-preserved'):
             assert p.returncode==0 and state['phase']=='completed' and report['process']['child_exit']==0,report
             result=report['process']['version_config']
