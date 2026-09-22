@@ -16,6 +16,13 @@ loop delay is 0.116 ms. These timings do not establish Android posting as the
 remaining game-FPS bottleneck. Occasional long gaps still include unchanged
 images, so more display updates cannot guarantee more rendered game frames.
 
+The same windows contain 3,359 posts and 763 unchanged responses, about 29.35
+requests/sec. Of those posts, 765 follow gaps over 50 ms. A 30 Hz polling interval
+can make a slightly late game image wait another roughly 33 ms; the 60 Hz option
+halves that scheduled sampling interval. This can improve delivery cadence even
+when game FPS stays the same, but the extra polling/capture work can also compete
+with rendering. The paired device test is necessary to decide which rate helps.
+
 ## Changes
 
 - Client → Graphics and launch options exposes **60 Hz display refresh**.
@@ -43,15 +50,20 @@ justify replacing the accepted renderer or changing synchronization blindly.
 
 ## Verification
 
-Local contract checks and full CI results are recorded in the handoff after the
-build completes. Native integration runs both 30 and 60 Hz with MIT-SHM and the
-XGetImage fallback under Linux and PRoot. It verifies exact pixels, changed and
+All six gates pass in [run 35784458788](https://github.com/Russianranger/lsb-android/actions/runs/35784458788)
+for `735e5c114d1cc22bc15df1bd65c257fe5510517e`; the
+[PR run](https://github.com/Russianranger/lsb-android/actions/runs/35784465163) passes all five applicable gates
+and correctly skips release. All 62 launch scenarios, 15 Android tests,
+116 core/preparation/login, RGB565, 90 ZRLE, 41 runtime and 5 server checks pass.
+Native integration passes all eight combinations of 30/60 Hz, MIT-SHM/XGetImage
+and Linux/PRoot (retained in evidence artifact `10721015088`). It verifies exact pixels, changed and
 identically repainted images, buffer ownership between requests, idle retention,
 reconnect, permissions and pacing. Supervised Wine/D3D8 captures use 60 Hz with
 audio, input and the detailed HUD; the fixture checks the actual X server's
 arguments as well as the native producer's reported cap. Android checks cover
 active-versus-next-launch rate reporting. Existing launch, controller, audio,
-Stop/relaunch and real MariaDB deployment/update/rollback gates remain required.
+Stop/relaunch and real MariaDB deployment/update/rollback gates all pass. The original-signer APK and exact payload comparison are
+recorded in [validation](validation.md). No CI failures remain pending.
 
 ## Focused Thor comparison
 

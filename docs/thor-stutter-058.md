@@ -74,7 +74,8 @@ suspends a target thread while reading, then resumes it. The pinned wineserver's
 existing patch only adjusts translated-process exit grace. A whole module walk
 can therefore disturb the child even when no useful startup evidence changes.
 The three-second wait plus scan work is consistent with the observed cadence;
-exact causality and the improvement still require the Thor comparison.
+the Thor comparison was needed to confirm the improvement, and its accepted
+result is now recorded above.
 
 ## Change and verification
 
@@ -130,7 +131,7 @@ entry matches CI artifact `10717629448`. Against 0.5.7, exactly three entries
 change: `AndroidManifest.xml`, `classes.dex` (version strings only) and
 `assets/runtime/client-launch.exe`. All other entries are byte-identical.
 
-## Thor comparison
+## Original Thor comparison (completed; result above)
 
 Stop the client and install 0.5.8 in place. Keep the existing Termux server,
 client `30251204_1`, original xiloader and accepted preparation. Do not update,

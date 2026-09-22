@@ -1,3 +1,50 @@
+# Optional 60 Hz display refresh: 0.5.9 (2026-09-22)
+
+**Accepted baseline.** The user confirms the recurring stutters are fixed in
+0.5.8. The new log verifies startup observation stops at 13.74 seconds and stays
+idle through exit at 261.59 seconds. Remaining game FPS in the 20s with drops
+into the teens is a separate, unresolved limitation.
+
+**Implementation.** `735e5c114d1cc22bc15df1bd65c257fe5510517e` exposes a 60 Hz
+option for native and fallback display sampling, retaining the existing 30 Hz
+default. The native producer compares against its published read-only consumer
+mapping, eliminating a redundant buffer and full-frame copy. Reopened viewers
+report the active rate, independent of preferences for the next launch.
+[Evidence, limits and Thor instructions](display-refresh-059.md).
+
+**Validation.** Local and CI core/Android checks pass: 116 core/preparation/login,
+RGB565 and 90 ZRLE checks, 41 runtime / 5 server contracts, native pixel/protocol
+checks and 15 Android tests. Native Windows and real MariaDB deployment/update/
+rollback gates pass. [Push run 35784458788](https://github.com/Russianranger/lsb-android/actions/runs/35784458788)
+passes all six gates; the [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35784465163)
+passes all five applicable gates and correctly skips release. Runtime job
+`106938758057` passes all 62 launch scenarios, including the six observer-idle/
+exit/Stop/crash checks across Wine/Box64 and PRoot. Evidence artifact `10721015088`
+records all eight native mode/rate combinations (30/60 Hz × MIT-SHM/XGetImage ×
+Linux/PRoot) passing, including actual duplicate captures, mapped-buffer ownership,
+idle retention and reconnect. Three supervised Wine captures run at 60 Hz with
+PCM/input, alongside detailed DXVK HUD, memfd/MIT-SHM, gamepad preload isolation,
+controller input/disconnect and explicit Stop checks. No CI failures remain pending.
+
+**Signed artifact.** `LSB-Android-0.5.9.apk`, versionCode 25,
+**15,940,768 bytes**, SHA-256
+`583842b3a8b0185b3c7e08511496912ac678ca9661a5a9552cf69ee850cf7ba5`.
+Original signer SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`;
+APK v2/v3 signatures, alignment and ZIP integrity verify. Every non-signature
+entry matches CI artifact `10718983323`. Against 0.5.8, only the Android manifest,
+DEX, `assets/runtime/x11-frame-bridge` and its checksum manifest differ. The
+stutter-fixed launcher helper, graphics/native JNI/audio/controller components
+and purple icon are byte-identical.
+
+**Device boundary.** The 60 Hz option does not unlock FFXI's own frame limit.
+Reduced copy volume is established by the code change; Thor FPS improvement is
+unverified. Keep the same Termux server/client `30251204_1`, original xiloader
+and preparation. No source update, re-import, re-preparation or managed migration.
+Compare 30 then 60 Hz on the same route and settings; export after both runs.
+
+---
+
 # Stop periodic gameplay module scans: 0.5.8 (2026-09-22)
 
 **Device evidence.** The 0.5.7 bundle `lsb-support (2)(3).zip`, SHA-256

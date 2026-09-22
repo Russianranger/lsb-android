@@ -10,8 +10,37 @@ The remaining issue is game FPS in the 20s with drops into the teens.
 0.5.9 implements the supported 60 Hz display cap, retains 30 Hz as the existing
 default, and removes redundant native frame copying. The accepted startup-only
 observer and all working login, audio, controller and source paths are retained.
-This display option does not unlock the game's own FPS limit. Full CI and signing
-are in progress. [Implementation, evidence and Thor sequence](display-refresh-059.md).
+This display option does not unlock the game's own FPS limit.
+[Implementation, evidence and Thor sequence](display-refresh-059.md).
+
+**All six 0.5.9 CI gates passed** for implementation
+`735e5c114d1cc22bc15df1bd65c257fe5510517e` in
+[run 35784458788](https://github.com/Russianranger/lsb-android/actions/runs/35784458788):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35784465163)
+passes all five applicable gates; release is correctly skipped there.
+All 62 launch scenarios and 15 Android tests pass. Both 30/60 Hz capture modes
+pass with MIT-SHM and XGetImage in Linux and PRoot, including exact/duplicate
+pixels, ownership, idle frames and reconnect. Three supervised Wine captures
+run at 60 Hz with audio/input; HUD, memfd, controller/preload, startup-only
+observer, Stop/crash handling and real MariaDB deployment/update/rollback pass.
+No CI failures remain pending.
+
+**Signed install-in-place APK:** `LSB-Android-0.5.9.apk`, versionCode 25,
+15,940,768 bytes, SHA-256
+`583842b3a8b0185b3c7e08511496912ac678ca9661a5a9552cf69ee850cf7ba5`.
+Original certificate, APK v2/v3 signatures, alignment and ZIP integrity verify;
+every non-signature entry matches CI artifact `10718983323`. Only the manifest,
+DEX, native capture helper and its checksum manifest change from 0.5.8; the
+stutter-fixed launcher, runtime/graphics/audio/controller paths and icon match.
+[Validation and artifact evidence](validation.md).
+
+Keep the existing Termux server/client `30251204_1`, original xiloader and accepted
+preparation. No source updates, re-import, re-preparation or managed migration.
+First compare 720p at 30 Hz and then 60 Hz on the same route, keeping Native Surface
+on, Fast/compression/startup capture off and normal FPS HUD on. Disable the detailed
+graph in both runs; export immediately after the second session. Periodic-stutter
+acceptance remains recorded; 0.5.9's effect on game FPS still needs Thor testing.
 
 ---
 
