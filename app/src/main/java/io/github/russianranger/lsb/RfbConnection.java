@@ -16,6 +16,7 @@ final class RfbConnection {
     private final DataOutputStream out;
     private final Screen screen;
     int width,height;
+    private volatile boolean autoFrames=true;
     // Borrowed only during Screen.pixels(); grow to the largest rectangle seen.
     // An 800x600 moving scene no longer allocates another 1.8 MiB per update.
     private int[] pixelBuffer=new int[0];
@@ -39,6 +40,7 @@ final class RfbConnection {
     private byte[] bytes(int count)throws IOException {if(count<0||count>1048576)throw new IOException("Display message exceeds limits");byte[] b=new byte[count];in.readFully(b);return b;}
     void handshake()throws IOException {handshake(true);}
     void handshake(boolean frames)throws IOException {
+        autoFrames=frames;
         if(!new String(bytes(12),StandardCharsets.US_ASCII).equals("RFB 003.008\n"))throw new IOException("Unsupported client display protocol");
         synchronized(out){out.write("RFB 003.008\n".getBytes(StandardCharsets.US_ASCII));out.flush();}
         int count=in.readUnsignedByte();if(count==0)throw new IOException("Display refused connection: "+new String(bytes(in.readInt()),StandardCharsets.UTF_8));
@@ -112,7 +114,7 @@ final class RfbConnection {
             } else throw new IOException("Unsupported display encoding: "+encoding);
         }
         if(count>0){stats.received(System.nanoTime(),System.nanoTime()-started,decode,pixelCount);screen.updated();}
-        request(!resized);
+        if(autoFrames)request(!resized);
     }
     private void apply565(int x,int y,int w,int h){
         if(screen.raw565(x,y,w,h,rawBuffer,w*h*2))return;
@@ -121,6 +123,7 @@ final class RfbConnection {
         screen.pixels(x,y,w,h,pixelBuffer);
     }
     void close(){if(zrle!=null){zrle.close();zrle=null;}}
+    void startFrames()throws IOException {autoFrames=true;request(false);}
     void request(boolean incremental)throws IOException {
         synchronized(out){out.writeByte(3);out.writeByte(incremental?1:0);out.writeShort(0);out.writeShort(0);out.writeShort(width);out.writeShort(height);out.flush();}
     }

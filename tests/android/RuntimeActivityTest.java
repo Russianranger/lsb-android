@@ -115,4 +115,24 @@ public class RuntimeActivityTest {
         open();tick();activity.windowFocusChanged(false);tick();
         assertArrayEquals(before,Files.readAllBytes(pad.toPath()));
     }
+
+    @Test public void nativeFailureRestoresBitmapAndFullRfbRefreshOnlyForCurrentViewer()throws Exception {
+        open();RuntimeActivity viewer=activity.get();
+        Object screen=field(RuntimeActivity.class,"screen").get(viewer);
+        Field nativeMode=field(screen.getClass(),"nativeMode");nativeMode.setBoolean(screen,true);
+        java.io.ByteArrayOutputStream sent=new java.io.ByteArrayOutputStream();
+        RfbConnection c=new RfbConnection(new java.io.ByteArrayInputStream(new byte[0]),sent,(RfbConnection.Screen)screen,true,true);
+        c.width=1280;c.height=720;((RfbConnection.Screen)screen).resize(c.width,c.height);
+        assertNull(field(screen.getClass(),"bitmap").get(screen));
+        field(RuntimeActivity.class,"connection").set(viewer,c);
+        int generation=field(RuntimeActivity.class,"connectionGeneration").getInt(viewer);
+        java.lang.reflect.Method fallback=RuntimeActivity.class.getDeclaredMethod("fallbackNative",RfbConnection.class,int.class,String.class);fallback.setAccessible(true);
+        fallback.invoke(viewer,c,generation-1,"stale worker");assertTrue(nativeMode.getBoolean(screen));assertEquals(0,sent.size());
+        fallback.invoke(viewer,c,generation,"fixture error");
+        ((java.util.concurrent.ExecutorService)field(RuntimeActivity.class,"input").get(viewer)).submit(()->{}).get(5,java.util.concurrent.TimeUnit.SECONDS);
+        assertFalse(nativeMode.getBoolean(screen));assertNotNull(field(screen.getClass(),"bitmap").get(screen));
+        assertEquals(10,sent.size());assertEquals(3,sent.toByteArray()[0]);assertEquals(0,sent.toByteArray()[1]);
+        field(RuntimeActivity.class,"viewing").setBoolean(viewer,false);sent.reset();
+        fallback.invoke(viewer,c,generation,"paused worker");assertEquals(0,sent.size());
+    }
 }

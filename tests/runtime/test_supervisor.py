@@ -1,4 +1,5 @@
-import importlib.util,json,pathlib,tempfile,unittest,uuid,io,time
+import importlib.util,json,pathlib,tempfile,unittest,uuid,io,time,hashlib
+from unittest.mock import patch,Mock
 spec=importlib.util.spec_from_file_location('supervisor',pathlib.Path(__file__).resolve().parents[2]/'runtime/supervisor.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class Contracts(unittest.TestCase):
  def test_request_excludes_game_paths_and_commands(self):
@@ -16,4 +17,16 @@ class Contracts(unittest.TestCase):
   with tempfile.TemporaryDirectory() as t:
    p=pathlib.Path(t);(p/'bundle.json').write_text(json.dumps({'format':1,'candidate':'wine10-box64-0.4.4','dxvk':'2.5.3','files':{}}))
    with self.assertRaisesRegex(ValueError,'inventory'):module.verify_bundle(p)
+ def test_native_surface_is_optional_and_validated(self):
+  req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4()),'native_surface':True}
+  self.assertEqual(module.validate_request(req),req)
+  with self.assertRaises(ValueError):module.validate_request(dict(req,native_surface='true'))
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'BUNDLE',pathlib.Path(t)):
+   s=object.__new__(module.Supervisor);s.req=req;s.spawn=Mock();s.status=Mock()
+   s.start_native_surface();s.spawn.assert_not_called();self.assertIn('native_surface_fallback',s.status.call_args.kwargs)
+   binary=pathlib.Path(t)/'x11-frame-bridge';binary.write_bytes(b'fixture')
+   manifest=pathlib.Path(t)/'presentation-bundle.json';manifest.write_text(json.dumps({'format':1,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest()}))
+   s.start_native_surface();s.spawn.assert_called_once();self.assertTrue(s.spawn.call_args.kwargs['fixed_output'])
+   s.spawn.reset_mock();binary.write_bytes(b'corrupted');s.start_native_surface();s.spawn.assert_not_called()
+   s.req=dict(req,native_surface=False);s.status.reset_mock();s.start_native_surface();s.spawn.assert_not_called();s.status.assert_not_called()
 if __name__=='__main__':unittest.main()

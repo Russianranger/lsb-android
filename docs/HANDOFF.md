@@ -1,3 +1,26 @@
+# Active milestone: shared-memory Native Surface trial (0.5.5)
+
+The latest Thor comparison confirms startup capture off at both resolutions, yet
+960×540 gains only about 2 game FPS and stutters remain. 0.5.4 is not accepted as
+a smoothness fix. 0.5.5 removes RFB pixel compression/transport/Java Bitmap updates
+from the active display path via an optional shared-file Native Surface, with
+automatic fallback. X11 readback remains; actual Thor gains are unverified.
+See [evidence, implementation and focused Thor test](native-surface-055.md).
+
+Local checks pass: 116 core/preparation/login checks, RGB565 transport, 90 ZRLE
+checks including input-only/fallback, 39 runtime contracts, 5 server contracts and
+native frame bounds/colour conversion. Full ARM64/Android/Windows/server CI and
+original-certificate APK verification are being run for this implementation.
+
+Preserve the working matching Termux server/client `30251204_1`, original xiloader,
+accepted preparation, Wine/Box64, graphics/audio/controller baseline and purple
+icon. No source updates or managed-server migration. First device test: native
+on, capture off, 720p, same 30 Hz cap, compression retained for fallback.
+
+---
+
+# Historical 0.5.4 handoff (superseded by 0.5.5 above)
+
 # Active milestone 4: lossless display transfer and purple icon (0.5.4)
 
 **Latest Thor result:** 0.5.4 still jumps around 6–28 game FPS with Fast display and compression on; compression off is reported far worse. The new bundle verifies about 65% payload savings with compression, stable single-bitmap allocation, and more long delivery gaps in the uncompressed comparison. Smoothness remains unresolved. Both launches still used startup capture. See [measured comparison and next test](thor-performance-054-result.md). Keep both performance options on; the next action uses existing 0.5.4 settings, with no runtime/driver replacement or new APK.

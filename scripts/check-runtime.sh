@@ -3,10 +3,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 scripts/prepare-runtime.py --release
 mkdir -p out/runtime-test/backend out/runtime-test/probe out/runtime-test/logs
-cp out/runtime-assets/* runtime/*.py out/runtime-test/backend/
+cp out/runtime-assets/* out/presentation/* runtime/*.py out/runtime-test/backend/
 cp out/runtime-probes/* out/runtime-test/probe/
 cp out/runtime-probes/liblsb-gamepad.so out/runtime-test/backend/
-chmod +x out/runtime-test/backend/vulkan-probe out/runtime-test/backend/wineserver
+chmod +x out/runtime-test/backend/vulkan-probe out/runtime-test/backend/wineserver out/runtime-test/backend/x11-frame-bridge
 # Source package expands to an ordinary GNU tar suitable for Docker import.
 docker import .tools/runtime/runtime-arm64.tar.gz lsb-runtime:base
 cat > out/runtime-test/Dockerfile <<'DOCKER'

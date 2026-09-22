@@ -13,7 +13,7 @@ p.add_argument('--android-jar', type=Path, required=True)
 p.add_argument('--build-tools', type=Path, required=True)
 p.add_argument('--keystore', type=Path, required=True)
 p.add_argument('--alias', default='lsb-preview')
-p.add_argument('--output', type=Path, default=root/'out/LSB-Android-0.5.4.apk')
+p.add_argument('--output', type=Path, default=root/'out/LSB-Android-0.5.5.apk')
 args = p.parse_args()
 work = root/'out/apk-build'
 classes = work/'classes'
@@ -25,6 +25,8 @@ for f in dex.glob('*.dex'): f.unlink()
 def run(*cmd): subprocess.run([str(x) for x in cmd], check=True, cwd=root)
 run('python3', root/'scripts/build-launcher.py')
 run('python3', root/'scripts/prepare-runtime.py')
+run('python3', root/'scripts/build-presentation.py', 'android')
+if not (root/'out/presentation/x11-frame-bridge').is_file():raise SystemExit('Build the ARM64 guest presentation artifact first.')
 java_files = sorted((root/'app/src/main/java').rglob('*.java'))
 run('java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '--release', '8', '-cp', args.android_jar, '-d', classes, *java_files)
 class_jar = work/'classes.jar'
@@ -37,7 +39,7 @@ unsigned = work/'unsigned.apk'
 run(args.build_tools/'aapt2', 'link', '-I', args.android_jar, '--manifest', root/'app/src/main/AndroidManifest.xml', '--min-sdk-version', '26', '--target-sdk-version', '35', resources,'-o', unsigned)
 with zipfile.ZipFile(unsigned, 'a', zipfile.ZIP_DEFLATED) as z:
     z.write(root/'out/launcher-assets/LSB-FFXI.exe', 'assets/LSB-FFXI.exe')
-    for folder in ['runtime', 'out/runtime-assets', 'out/runtime-probes']:
+    for folder in ['runtime', 'out/runtime-assets', 'out/runtime-probes', 'out/presentation']:
         for f in sorted((root/folder).iterdir()):
             if f.is_file(): z.write(f, 'assets/runtime/'+f.name)
     for f in sorted((root/'server').glob('*')):

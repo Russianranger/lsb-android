@@ -20,6 +20,9 @@ public final class RuntimeActivity extends Activity {
     private volatile boolean viewing;
     private volatile int connectionGeneration;
     private Screen screen;
+    private FrameLayout layout;
+    private NativePresentation nativeDisplay;
+    private String presentationStatus="";
     private TextView status;
     private String displayError="";
     private boolean failureShown;
@@ -40,7 +43,7 @@ public final class RuntimeActivity extends Activity {
     private long lastStats;
     private final Runnable refresh=new Runnable(){public void run(){
         if(!viewing)return;ClientRuntime rt=ClientRuntime.get(RuntimeActivity.this);
-        status.setText(rt.status+(displayError.isEmpty()||!rt.launchError.isEmpty()?"":"\n"+displayError));
+        status.setText(rt.status+(presentationStatus.isEmpty()?"":"\n"+presentationStatus)+(displayError.isEmpty()||!rt.launchError.isEmpty()?"":"\n"+displayError));
         DisplaySession display=displaySession;
         if(display!=null&&System.currentTimeMillis()-lastStats>5000){lastStats=System.currentTimeMillis();recordFrames(display);}
         if(!rt.alive()&&!rt.launchError.isEmpty()&&!failureShown){
@@ -53,7 +56,7 @@ public final class RuntimeActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         controller=new ControllerInput(this);
-        FrameLayout layout=new FrameLayout(this);layout.setBackgroundColor(Color.BLACK);screen=new Screen();layout.addView(screen,new FrameLayout.LayoutParams(-1,-1));
+        layout=new FrameLayout(this);layout.setBackgroundColor(Color.BLACK);screen=new Screen();layout.addView(screen,new FrameLayout.LayoutParams(-1,-1));
         Button menu=new Button(this);menu.setText("☰");menu.setTextColor(Color.WHITE);menu.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xcc15334c));
         int size=Math.round(48*getResources().getDisplayMetrics().density);FrameLayout.LayoutParams place=new FrameLayout.LayoutParams(size,size,Gravity.TOP|Gravity.RIGHT);place.setMargins(0,8,8,0);layout.addView(menu,place);
         menu.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("FFXI").setItems(new String[]{"Back to launcher","Keyboard","Send Esc","Controller mapping","Stop client"},(d,which)->{switch(which){case 0:finish();break;case 1:keyboard();break;case 2:tapKey(0xff1b);break;case 3:startActivity(new android.content.Intent(this,MainActivity.class).putExtra("tab","Controller"));break;case 4:startForegroundService(new android.content.Intent(this,RuntimeService.class).setAction("stop"));finish();break;}}).show());
@@ -61,10 +64,10 @@ public final class RuntimeActivity extends Activity {
     }
     private void button(LinearLayout row,String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setOnClickListener(v->action.run());row.addView(b,new LinearLayout.LayoutParams(0,-2,1));}
     @Override protected void onResume(){super.onResume();viewing=true;connect();ui.post(refresh);ui.post(padTick);}
-    @Override protected void onPause(){viewing=false;ui.removeCallbacks(refresh);ui.removeCallbacks(padTick);controller.close();releaseAndClose();super.onPause();}
+    @Override protected void onPause(){viewing=false;ui.removeCallbacks(refresh);ui.removeCallbacks(padTick);controller.close();closeNative();releaseAndClose();super.onPause();}
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus&&controller!=null)controller.close();}
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e){if(hasWindowFocus()&&controller!=null&&controller.motion(e))return true;return super.dispatchGenericMotionEvent(e);}
-    @Override protected void onDestroy(){releaseAndClose();input.shutdown();super.onDestroy();}
+    @Override protected void onDestroy(){closeNative();releaseAndClose();input.shutdown();super.onDestroy();}
     private static final class DisplaySession {
         final RfbConnection connection;final String id;final boolean fast;final int cap;
         DisplaySession(RfbConnection c,String id,boolean fast,int cap){connection=c;this.id=id;this.fast=fast;this.cap=cap;}
@@ -93,13 +96,43 @@ public final class RuntimeActivity extends Activity {
                 boolean fast=getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("fast_display",true);
                 int cap=getSharedPreferences("runtime",MODE_PRIVATE).getInt("display_fps",30);
                 RfbConnection c=new RfbConnection(s.getInputStream(),s.getOutputStream(),screen,fast,getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("compressed_display",true));
-                display=new DisplaySession(c,id,fast,cap);c.handshake();
+                boolean nativeRequested=rt.nativeSurfaceRequested();screen.nativeMode=nativeRequested;
+                display=new DisplaySession(c,id,fast,cap);c.handshake(!nativeRequested);
                 if(!viewing||generation!=connectionGeneration)return;
-                socket=s;connection=c;displaySession=display;ui.post(()->displayError="");
+                socket=s;connection=c;displaySession=display;ui.post(()->{
+                    if(!viewing||generation!=connectionGeneration)return;
+                    displayError="";
+                    if(nativeRequested)openNative(rt,id,c,generation);
+                    else presentationStatus="Standard display";
+                });
                 while(viewing&&generation==connectionGeneration)c.readUpdate();
             }catch(Exception e){if(viewing&&generation==connectionGeneration)ui.post(()->displayError="Display closed: "+e.getMessage());}
             finally{if(display!=null){recordFrames(display);display.connection.close();}try{if(s!=null)s.close();}catch(Exception ignored){}if(generation==connectionGeneration){connection=null;socket=null;displaySession=null;}}
         },"lsb-display").start();
+    }
+    private void openNative(ClientRuntime rt,String id,RfbConnection c,int generation){
+        closeNative();screen.nativeMode=true;
+        nativeDisplay=new NativePresentation(this,rt.nativeFrameSocket(),rt.nativeFramePixels(),rt.nativeFrameReport(),id,new NativePresentation.Events(){
+            public boolean current(){return generation==connectionGeneration&&java.util.Objects.equals(id,rt.sessionKey());}
+            public void size(int w,int h){if(viewing&&generation==connectionGeneration){screen.frameSize(w,h);fitNative();}}
+            public void failed(String reason){fallbackNative(c,generation,reason);}
+        });
+        layout.addView(nativeDisplay,0,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+        presentationStatus="Native Surface · shared memory";fitNative();
+    }
+    private void fallbackNative(RfbConnection c,int generation,String reason){
+        if(!viewing||generation!=connectionGeneration||connection!=c)return;
+        closeNative();screen.nativeMode=false;screen.resize(c.width,c.height);
+        presentationStatus="Using previous display: "+reason;
+        send(current->{if(current==c)current.startFrames();});
+    }
+    private void closeNative(){
+        if(nativeDisplay!=null){nativeDisplay.close();layout.removeView(nativeDisplay);nativeDisplay=null;}
+    }
+    private void fitNative(){
+        if(nativeDisplay==null||screen.getWidth()==0||screen.getHeight()==0)return;
+        int[] size=screen.frameSize();float scale=Math.min(screen.getWidth()/(float)size[0],screen.getHeight()/(float)size[1]);
+        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(Math.round(size[0]*scale),Math.round(size[1]*scale),Gravity.CENTER);nativeDisplay.setLayoutParams(p);
     }
     private interface Send{void run(RfbConnection c)throws IOException;}
     private void send(Send task){RfbConnection c=connection;if(c==null||input.isShutdown())return;input.execute(()->{try{task.run(c);}catch(IOException ignored){}});}
@@ -136,8 +169,12 @@ public final class RuntimeActivity extends Activity {
     private final class Screen extends View implements RfbConnection.Screen {
         private Bitmap bitmap;private Canvas bitmapCanvas;private final Object lock=new Object();private final RectF destination=new RectF();private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);private int fw=1280,fh=720;private int[] copy=new int[0];
         private Rgb565Staging staging;
+        volatile boolean nativeMode;
+        void frameSize(int w,int h){synchronized(lock){fw=w;fh=h;}}
+        int[] frameSize(){synchronized(lock){return new int[]{fw,fh};}}
+        @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);fitNative();}
         Screen(){super(RuntimeActivity.this);setFocusable(true);setFocusableInTouchMode(true);}
-        public void resize(int w,int h){synchronized(lock){bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);bitmapCanvas=new Canvas(bitmap);fw=w;fh=h;if(staging!=null)staging.close();staging=new Rgb565Staging(w,h);}postInvalidate();}
+        public void resize(int w,int h){synchronized(lock){fw=w;fh=h;if(nativeMode){bitmap=null;bitmapCanvas=null;if(staging!=null){staging.close();staging=null;}return;}bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);bitmapCanvas=new Canvas(bitmap);fw=w;fh=h;if(staging!=null)staging.close();staging=new Rgb565Staging(w,h);}postInvalidate();}
         public boolean raw565(int x,int y,int w,int h,byte[] data,int length){synchronized(lock){
             if(bitmap==null)return false;
             return staging.apply(bitmapCanvas,x,y,w,h,data,length);

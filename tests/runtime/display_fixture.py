@@ -35,7 +35,14 @@ try:
     picture=x.XCreateImage(d,x.XDefaultVisual(d,0),24,2,0,data,1280,720,32,0);assert picture
     # Paint again after Expose has settled, before publishing readiness.
     for _ in range(3):x.XPutImage(d,window,gc,picture,0,0,0,0,1280,720);x.XSync(d,0);time.sleep(.1)
-    x.XDestroyImage(picture);(folder/'ready').write_text('ready')
+    x.XDestroyImage(picture)
+    from native_surface_probe import verify_native_surface
+    verify_native_surface(folder,display,x,d,window,gc)
+    # Restore the original image after the native transport's changed-frame check.
+    data=libc.malloc(len(pixels)*4);assert data;ctypes.memmove(data,pixels.buffer_info()[0],len(pixels)*4)
+    picture=x.XCreateImage(d,x.XDefaultVisual(d,0),24,2,0,data,1280,720,32,0)
+    x.XPutImage(d,window,gc,picture,0,0,0,0,1280,720);x.XSync(d,0);x.XDestroyImage(picture)
+    (folder/'ready').write_text('ready')
     while not (folder/'stop').exists():
         if server.poll() is not None:raise RuntimeError('X server stopped during transfer')
         time.sleep(.1)

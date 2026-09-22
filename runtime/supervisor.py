@@ -47,9 +47,9 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','native_surface'}:raise ValueError('Unexpected runtime request field')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
-    for key in ('gamepad','dxvk_hud'):
+    for key in ('gamepad','dxvk_hud','native_surface'):
         if key in req and not isinstance(req[key],bool):raise ValueError('Unsupported '+key+' setting')
     if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
     if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','windowed540','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
@@ -161,9 +161,9 @@ class Supervisor:
         self.state.update(fields);atomic(SESSION/'status.json',self.state);atomic(LOGS/'runtime-state.json',self.state)
     def stopped(self):
         if STOP or (SESSION/'stop').exists():raise Stopped()
-    def spawn(self,args,name,env=None,pipe_input=False):
+    def spawn(self,args,name,env=None,pipe_input=False,fixed_output=False):
         proc=subprocess.Popen(args,env=env or self.env,cwd=PROBE,stdin=subprocess.PIPE if pipe_input else subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
-        writer=BoundedLog(LOGS/name,lambda:self.private_output);writer.start(proc.stdout);self.logs.append(writer);self.children.append(proc);return proc
+        writer=BoundedLog(LOGS/name,lambda:self.private_output and not fixed_output);writer.start(proc.stdout);self.logs.append(writer);self.children.append(proc);return proc
     def wait(self,proc,timeout,label,accepted=(0,)):
         deadline=time.monotonic()+timeout
         while proc.poll() is None:
@@ -198,6 +198,21 @@ class Supervisor:
         if not test_icd and (report.get('software') is not False or report.get('vendor_id')!=0x5143 or report.get('driver_id')!=18):raise RuntimeError('Qualcomm hardware was not verified; no software fallback was selected')
         self.state['vulkan']=report;self.status(graphics='DXVK 2.5.3 / '+report.get('device','unknown'),hardware_verified=not bool(test_icd),driver_sha256=bundle['files'][driver])
         self.env['WINEDLLOVERRIDES']+=';d3d8,d3d9=n'
+    def start_native_surface(self):
+        if not self.req.get('native_surface',False):return
+        try:
+            import json
+            executable=BUNDLE/'x11-frame-bridge'
+            manifest=json.loads((BUNDLE/'presentation-bundle.json').read_text())
+            if manifest.get('format')!=1 or executable.is_symlink() or hashlib.sha256(executable.read_bytes()).hexdigest()!=manifest.get('sha256'):
+                raise ValueError('Native display component checksum failed')
+            self.spawn([str(executable),str(SESSION/'native-display.sock'),str(SESSION/'framebuffer.bin'),str(self.req.get('display_fps',30))], 'native-display.log',fixed_output=True)
+            self.status(native_surface_requested=True)
+        except (OSError,ValueError,KeyError) as error:
+            # The Android viewer falls back to the existing RFB path. A missing
+            # optional display helper must never stop the working game launch.
+            self.status(native_surface_requested=True,native_surface_fallback=str(error))
+
     def start(self):
         for p in (SESSION,PREFIX,LOGS):p.mkdir(parents=True,exist_ok=True)
         self.status();bundle=verify_bundle(BUNDLE)
@@ -217,6 +232,7 @@ class Supervisor:
             if (SESSION/'display.sock').exists():break
             time.sleep(.1)
         else:raise RuntimeError('Display socket did not appear')
+        self.start_native_surface()
         if self.req.get('gamepad',False):
             self.env.update(LD_PRELOAD=str(BUNDLE/'liblsb-gamepad.so'),LSB_GAMEPAD_STATE=str(SESSION/'gamepad.bin'))
         self.status('preparing_prefix',display_ready=True)

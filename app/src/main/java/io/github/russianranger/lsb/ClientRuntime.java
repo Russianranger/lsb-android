@@ -57,6 +57,11 @@ final class ClientRuntime {
         performance.record(id,sample,width,height,fast,cap,allocations,allocatedBytes);
     }
     File displaySocket(){return new File(run,"display.sock");}
+    File nativeFrameSocket(){return new File(run,"native-display.sock");}
+    File nativeFramePixels(){return new File(run,"framebuffer.bin");}
+    File nativeFrameReport(){return new File(logs,"native-display-performance.json");}
+    boolean nativeSurfaceRequested(){try{return new JSONObject(read(new File(run,"request.json"),16384)).optBoolean("native_surface",false);}catch(Exception e){return false;}}
+
     static String read(File p,int max)throws IOException {
         if(p.length()>max)throw new IOException("Metadata exceeds limits");return new String(Files.readAllBytes(p.toPath()),StandardCharsets.UTF_8);
     }
@@ -188,7 +193,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.4");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.5");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -214,7 +219,7 @@ final class ClientRuntime {
         for(String name:context.getAssets().list("runtime")){
             File dest=new File(name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")||name.equals("startup-trace.dll")?probes:backend,name);
             try(InputStream in=context.getAssets().open("runtime/"+name);OutputStream out=new FileOutputStream(dest)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
-            if(name.equals("vulkan-probe")||name.equals("wineserver"))Os.chmod(dest.getPath(),0700);
+            if(name.equals("vulkan-probe")||name.equals("wineserver")||name.equals("x11-frame-bridge"))Os.chmod(dest.getPath(),0700);
         }
     }
     void run(String renderer,boolean sound,String action,LoginRequest login,String displayProfile,boolean startupTrace)throws Exception {
@@ -238,6 +243,7 @@ final class ClientRuntime {
             if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
                 request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
                 request.put("display_fps",context.getSharedPreferences("runtime",0).getInt("display_fps",30));
+                request.put("native_surface",context.getSharedPreferences("runtime",0).getBoolean("native_surface",true));
                 request.put("dxvk_hud",context.getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));
                 try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}
             }
