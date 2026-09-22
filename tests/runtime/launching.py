@@ -72,7 +72,12 @@ def main():
                 try:
                     current=json.loads((SESSION/'loader-process.json').read_text())
                     observation=current.get('observation',{})
-                    if current.get('phase')=='running' and observation.get('complete'):
+                    published=json.loads((LOGS/'client-launch.json').read_text())
+                    # Stop tests this state after the supervisor has consumed it.
+                    # Native receipt publication can precede its 300 ms poll;
+                    # stopping in that gap tests the separate early-Stop path.
+                    acknowledged=published.get('session_id')==request['session_id'] and published.get('process')==current
+                    if current.get('phase')=='running' and observation.get('complete') and acknowledged:
                         assert observation['policy']=='startup_only' and observation['ffxi_window_seen'],current
                         assert 'FFXiMain.dll' in observation['modules_seen'],current
                         frozen=(SESSION/'loader-process.json').read_bytes()
