@@ -1,3 +1,27 @@
+# Latest Thor result: 0.5.10 has no noticeable gameplay improvement
+
+The user reports no improvement and says the earlier GameHub Lite / Proton 10
+setup reached 60 FPS. The new bundle confirms the metadata cache works (one
+geometry query and three cursor-image fetches across 13,195 polls), but this is
+not an accepted gameplay speedup. The 0.5.8 periodic-stutter fix and 60 Hz remain
+accepted. [Device evidence, runtime comparison and next direction](thor-runtime-gap-0510.md).
+
+Prioritize the unresolved rendering/runtime gap: the app forces CPU X11 Vulkan
+presentation, and uses Wine WoW64 + Box64 + DXVK 2.5.3. The saved GameHub profile
+uses Proton ARM64X + FEX + DXVK 2.7.1 async with a different Turnip build label.
+Hardware Turnip rendering does not rule out presentation, translation or driver
+bottlenecks. Add effective graphics/present metadata and a reversible DXVK
+comparison, then qualify an accelerated presentation / ARM64X-FEX candidate
+separately from the working runtime. Do not repeat display-only tuning as though
+the main bottleneck were established, blindly remove the WSI software flag, or
+claim generic Proton/FEX packages reproduce the recorded GameHub setup.
+
+This follow-up is investigation/documentation only; no new APK or runtime
+replacement. Preserve the matching Termux server/client `30251204_1`, original
+xiloader, preparation, login/audio/controller behavior and rollback baseline.
+
+---
+
 # Completed milestone: reduce repeated X11 metadata queries (0.5.10)
 
 The user confirms 60 Hz improves the Thor experience and reduces drops into the
@@ -38,10 +62,9 @@ and its checksum manifest change semantically; the runtime manifest differs
 only in JSON key order.
 
 [Evidence, validation and focused Thor test](display-metadata-0510.md).
-The query reduction is verified; a Thor FPS gain from 0.5.10 is not yet measured.
-Test Native Surface at 60 Hz, normal FPS HUD, Fast/compression/startup capture
-off, the same resolution/route for 3–5 minutes, then Stop/relaunch and export.
-Another 30 Hz comparison is not needed.
+The query reduction is verified; the subsequent Thor test reports no noticeable
+FPS improvement. The runtime/presentation follow-up above replaces the original
+test request. Another 30 Hz comparison is not needed.
 Preserve the same Termux server/client `30251204_1`, original loader, accepted
 preparation, pinned Wine/Box64/Turnip/DXVK, audio and controller behavior.
 Do not update source, re-import, re-prepare or start managed-server migration.

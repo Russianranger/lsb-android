@@ -1,5 +1,9 @@
 # X11 metadata caching: 0.5.10 (2026-09-22)
 
+**Subsequent 0.5.10 device result:** no noticeable gameplay improvement. Cache
+operation is verified, while the runtime/GPU presentation gap remains open.
+See [the new result and investigation](thor-runtime-gap-0510.md).
+
 **Accepted device result.** 60 Hz improves Thor delivery and reduces drops into
 the teens; retain it for testing. Game FPS remains in the 20s with occasional
 hitches. The 0.5.8 periodic-stutter fix remains accepted. Three 0.5.9 sessions

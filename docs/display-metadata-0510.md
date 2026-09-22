@@ -1,5 +1,10 @@
 # X11 metadata caching: 0.5.10
 
+**Subsequent Thor result:** the user reports no noticeable improvement. The cache
+works on the device, but this is not an accepted gameplay speedup. See the
+[runtime/presentation investigation](thor-runtime-gap-0510.md) for the new log,
+the GameHub Proton/FEX/DXVK comparison and the next implementation direction.
+
 ## Accepted Thor evidence
 
 The user confirms 60 Hz reduces drops into the teens compared with 30 Hz.
