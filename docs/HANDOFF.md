@@ -1,3 +1,23 @@
+# Active milestone: reduce repeated X11 metadata queries (0.5.10)
+
+The user confirms 60 Hz improves the Thor experience and reduces drops into the
+teens; 30 Hz restores the degraded experience. Keep 60 Hz as the recommended
+Thor test setting. Overall game FPS in the 20s and occasional hitches remain.
+The recurring module-scan stutter fixed in 0.5.8 remains resolved.
+
+The new comparison verifies 60 Hz in both monitor modes, 30 Hz in the middle
+run, MIT-SHM throughout, and the accepted startup-only observer in all three.
+At 60 Hz, over half of the display polls return unchanged images but each still
+queries screen geometry. Cursor images are also downloaded on every capture.
+0.5.10 caches geometry/cursor metadata, invalidates it on X11 events, and retains
+live pointer polling. Query counts and timings will make the reduction visible.
+Implementation is complete; full CI and native cursor/resize integration
+verification are in progress. [Evidence and focused Thor test](display-metadata-0510.md).
+Preserve the same Termux server/client `30251204_1`, original loader, accepted
+preparation, pinned Wine/Box64/Turnip/DXVK, audio and controller behavior.
+
+---
+
 # Accepted Thor result: periodic stutter fixed in 0.5.8
 
 The user confirms the consistent stutters have stopped. The new 0.5.8 receipt
@@ -40,7 +60,8 @@ preparation. No source updates, re-import, re-preparation or managed migration.
 First compare 720p at 30 Hz and then 60 Hz on the same route, keeping Native Surface
 on, Fast/compression/startup capture off and normal FPS HUD on. Disable the detailed
 graph in both runs; export immediately after the second session. Periodic-stutter
-acceptance remains recorded; 0.5.9's effect on game FPS still needs Thor testing.
+acceptance remains recorded. The subsequent Thor test accepts 60 Hz as better;
+remaining FPS drops and the 0.5.10 follow-up are recorded above.
 
 ---
 

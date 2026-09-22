@@ -1,3 +1,18 @@
+# X11 metadata caching: 0.5.10 (2026-09-22)
+
+**Accepted device result.** 60 Hz improves Thor delivery and reduces drops into
+the teens; retain it for testing. Game FPS remains in the 20s with occasional
+hitches. The 0.5.8 periodic-stutter fix remains accepted. Three 0.5.9 sessions
+and their exact export hashes are recorded in [the evidence note](display-metadata-0510.md).
+
+**Change.** Cache root dimensions and cursor images using X11 change events,
+retain live pointer polling, and add metadata timing/query counts. Real native
+cursor/resize/reconnect tests compare caching against repeated polling. Local
+core/runtime/server contracts and native header checks pass; full ARM64 CI is
+in progress. Device performance improvement is not yet measured.
+
+---
+
 # Optional 60 Hz display refresh: 0.5.9 (2026-09-22)
 
 **Accepted baseline.** The user confirms the recurring stutters are fixed in
