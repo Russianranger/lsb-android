@@ -1,6 +1,6 @@
 # 0.5.0: controls, display and managed server
 
-The first 0.5.0 device attempt exposed an Android display startup race. Use the [0.5.1 crash-recovery retry](android-startup-051.md) before continuing the tests below.
+The first 0.5.0 device attempt exposed an Android display startup race, fixed in 0.5.1. The following device result reaches controller setup but exposes a dependency initialization failure and camera-axis defect. Use the [0.5.2 focused retry](loader-controller-052.md) before continuing the tests below.
 
 ## First device test
 

@@ -1,6 +1,6 @@
 # LSB Android
 
-The user confirmed successful in-app login and clean audio with 0.4.8 on the AYN Thor. 0.5.0 adds physical-controller mapping through a native Wine joystick bridge, a lower-cost display path, an optional 960×540 game profile, and an isolated server deployment workflow. 0.5.1 fixes the Android display startup race found in the first 0.5.0 device test. Device acceptance of these new features is pending.
+The user confirmed successful in-app login and clean audio with 0.4.8 on the AYN Thor. 0.5.0 adds physical-controller mapping through a native Wine joystick bridge, a lower-cost display path, an optional 960×540 game profile, and an isolated server deployment workflow. 0.5.1 fixes the Android display startup race. Its Thor retry reaches controller setup but exposes a loader dependency initialization failure and a missing right-stick vertical camera axis. [0.5.2](docs/loader-controller-052.md) corrects the Rz mapping, confines controller initialization to Wine's input host, and permits one strictly validated recheck for the observed WS2_32 error. Device confirmation of login and camera behavior remains required; use the existing matching Termux server first.
 
 Install over the existing app. Keep the accepted client preparation, original xiloader and current Termux server for the first controller/performance test. No client re-import or runtime replacement is required. See [0.5.0 testing and server migration](docs/milestone-050.md) and [current handoff](docs/HANDOFF.md).
 

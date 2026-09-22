@@ -1,5 +1,7 @@
 # Android display startup crash: 0.5.1
 
+The 0.5.1 Thor retry reaches the guest runtime and controller setup. Its new loader dependency and right-stick vertical findings are addressed by the [0.5.2 follow-up](loader-controller-052.md), which supersedes the retry instructions below.
+
 The first 0.5.0 Thor test reports that both **Launch FFXI** and **Open FFXI gamepad setup** close the Android app immediately. The supplied support ZIP (`7f3097f8f9658d76fc035294f9bf8cd98d8c3dbf1bc4fb45a7907a75198212c9`) identifies 0.5.0 on Android 13 / API 33. It contains the preceding successful runtime session, with no fresh Wine session or Android exception stack. Those old logs cannot establish a new Wine, graphics, audio or server failure.
 
 ## Reproduced failure

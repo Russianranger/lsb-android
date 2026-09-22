@@ -1,4 +1,20 @@
-# Active milestone 4: Android display startup recovery (0.5.1)
+# Active milestone 4: loader initialization and camera axis (0.5.2)
+
+The 0.5.1 Thor retry reaches the runtime and completes controller setup; the Android null-session crash is no longer observed. The failed client attempt stops before xiloader: exactly `WS2_32.dll` fails initialization with Windows error 1114, while the other 19 imports pass. The following 32-bit controller-setup process successfully loads that DLL. The underlying initialization cause is not proven. See [device evidence, repair boundaries and focused retry](loader-controller-052.md).
+
+Implementation `3ea8a01a2886b43ed3ac43885a39adf3b88ce21b` (following `aa33cf57dbff428408aac3bb5e1311c68b5b8c8b`) confines the gamepad worker to Wine's HID host, adds one fresh full dependency check only for that exact complete WS2_32 failure, preserves both receipts and adds checker symbol diagnostics. All imports must pass with a clean exit before xiloader can start. The right-stick vertical defect is concrete: four SDL slots exposed X/Y/Z/Rx, so Rz was absent. The helper now exposes seven slots with X/Y/Z/Rz input and neutral Rx/Ry/Slider; the extra neutral slider prevents Wine’s six-axis Xbox heuristic from remapping controls. Android and real DirectInput tests cover both signs on all four stick axes.
+
+[Full CI run 35718338735](https://github.com/Russianranger/lsb-android/actions/runs/35718338735) passes every gate: `verify`, `windows-launcher`, `runtime`, `server-deployment` and `runtime-release`. All 56 launch cases (28 per environment), seven-axis DirectInput checks, controller-preloaded Thor imports, native helper isolation, audio/render regressions and real MariaDB deployment/update/rollback pass. The corresponding PR run also passes its four applicable gates. The earlier server toolchain and native preload failures remain resolved.
+
+Signed `LSB-Android-0.5.2.apk` is versionCode 18, 15,903,491 bytes, SHA-256 `f6585a47626e9f6ebdc0c18ebf6e69891725014039eb395148becb68d76de6be`, using the original certificate for an install-in-place update. Every non-signature entry matches the CI artifact. Compared with 0.5.1, only `AndroidManifest.xml`, `classes.dex`, `runtime/client_launch.py` and `liblsb-gamepad.so` differ. See [validation](validation.md) for exact artifact checks and limitations.
+
+First Thor test: install in place, start the **existing working Termux server**, launch the accepted client and confirm login/world entry plus clean audio. Then open FFXI gamepad setup, reselect the virtual joystick if necessary, assign camera **Z/Rz**, and check both right-stick directions plus release/Stop/relaunch. Export Diagnostics immediately if the dependency check still stops. This is a tested axis fix and targeted launch recovery; successful Thor login with 0.5.2 is not yet established.
+
+Preserve user-confirmed 0.4.8 behavior, accepted generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, original nested Ashita xiloader SHA-256 `78fe8ab1dee5aaac3f866001b706d19d233996e584cf78f3a47b26a0d62cdaf8`, client **30251204_1**, current runtime and matching server source. Do not update client/xiloader/server source toward **30260904_1**, re-import/re-prepare the client, or begin managed-server migration during this retry. The 0.5.1 and 0.5.0 retry instructions below are historical and superseded by the linked 0.5.2 sequence.
+
+---
+
+# Previous milestone 4 checkpoint: Android display startup recovery (0.5.1)
 
 The first 0.5.0 Thor attempt closed the Android app immediately when opening either the client or controller setup. A new Android 13 lifecycle regression reproduces a null-session `NullPointerException` in the actual `RuntimeActivity` controller timer before the worker creates a session. Two tests fail before the fix; all three pass afterward. Implementation `4a28a0d1508c59d1c26d6645a7f42efc47e44d2e` waits for a valid session, publishes its ID safely across threads and releases mapped input on focus loss. The new Activity tests are required in CI. See [diagnosis and focused retry](android-startup-051.md).
 
