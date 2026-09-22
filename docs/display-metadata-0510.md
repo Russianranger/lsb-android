@@ -68,8 +68,41 @@ The native integration test compares cached and polling modes using a real X11
 server. It checks live cursor movement, shape and hotspot changes, transparency,
 edge clipping, real RandR resize and reconnect, with exact pixel assertions and
 query counts. Both 30/60 Hz and MIT-SHM/XGetImage paths retain ownership,
-unchanged-frame, duplicate-image and pacing checks. Full ARM64 CI is required
-before delivering the signed APK; results will be recorded here and in HANDOFF.
+unchanged-frame, duplicate-image and pacing checks.
+
+All six gates pass for `9612125345448fa4778484664a02167bd5629028` in
+[run 35790527598](https://github.com/Russianranger/lsb-android/actions/runs/35790527598).
+The ten native cases all pass: four cached mode/rate combinations plus one
+60 Hz polling control on each of Linux and PRoot. Each sequence makes 88
+requests and 52 captures, with two connections and four real mode changes.
+
+| Query count per sequence | Cached | Polling control |
+| --- | ---: | ---: |
+| Root geometry | 6 | 88 |
+| Cursor image | 14 | 52 |
+| Live pointer | 88 | 88 |
+
+The fixture initially assumed TigerVNC preserved pixels through a mode change;
+it now redraws after checking the resize header and checks the new exact pixels.
+Both backends pass the corrected test. Runtime evidence artifact `10722148392`
+also confirms memfd/MIT-SHM, 62 launch scenarios, six startup-only observer
+idle/Stop/crash checks, controller preload/input/disconnect, PCM, detailed HUD
+and three supervised 60 Hz Wine captures. All 15 Android tests, native Windows
+checks and real MariaDB deployment/update/rollback pass. No CI failure remains
+pending. These are correctness and query-count results, not a Thor FPS benchmark.
+
+## Signed artifact
+
+`LSB-Android-0.5.10.apk`, versionCode 26, 15,940,768 bytes.
+SHA-256: `611620c7ecac7eb28182001c6847e01351cad231b76e6fe7e25651d217b5f73f`.
+Original signer: `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+APK v2/v3 signatures, alignment, ZIP integrity and package/version checks pass.
+All non-signature entries match CI build artifact `10721413053`. Against 0.5.9,
+only the Android manifest, DEX, native display producer and its checksum manifest
+change semantically. `assets/runtime/bundle.json` also differs in JSON key order;
+its parsed contents and every referenced runtime binary are identical. The
+stutter-fixed launcher helper, graphics/native JNI/audio/controller components
+and purple icon are byte-identical.
 
 ## Focused Thor test
 

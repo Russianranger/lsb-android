@@ -7,9 +7,42 @@ and their exact export hashes are recorded in [the evidence note](display-metada
 
 **Change.** Cache root dimensions and cursor images using X11 change events,
 retain live pointer polling, and add metadata timing/query counts. Real native
-cursor/resize/reconnect tests compare caching against repeated polling. Local
-core/runtime/server contracts and native header checks pass; full ARM64 CI is
-in progress. Device performance improvement is not yet measured.
+cursor/resize/reconnect tests compare caching against repeated polling.
+
+**All six CI gates pass** for `9612125345448fa4778484664a02167bd5629028` in
+[run 35790527598](https://github.com/Russianranger/lsb-android/actions/runs/35790527598).
+The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35790531672)
+passes all five applicable gates and correctly skips release.
+The native fixture passes all ten mode/rate/backend cases. For 88 requests and
+52 captures, geometry queries fall from 88 to 6 and cursor-image queries from
+52 to 14, with 88 live pointer queries in both modes. Exact pixels, ownership,
+idle/duplicate frames, cursor movement/shape/hotspot/transparency/clipping, real
+RandR resizing and reconnect pass on Linux and PRoot, including memfd MIT-SHM.
+The initial fixture expected pixels to survive a TigerVNC mode change; it now
+repaints after validating the resize header and validates the new exact pixels.
+
+All 116 core checks, RGB565 and 90 ZRLE checks, native frame bounds, 41 runtime
+contracts, five server contracts, 15 Android tests and 36 native Windows checks
+pass. Runtime passes 62 launch scenarios, six startup-only observer idle/Stop/
+crash checks, controller preload/input/disconnect, PCM, HUD and three supervised
+60 Hz Wine captures. Real MariaDB deployment/update/rollback passes. Evidence
+artifact `10722148392`, SHA-256
+`246b9eaffba7c3abda5a757302cfc44097a0d39e6f079cfc51d7873f3290099d`.
+
+**Signed artifact.** `LSB-Android-0.5.10.apk`, versionCode 26, 15,940,768 bytes,
+SHA-256 `611620c7ecac7eb28182001c6847e01351cad231b76e6fe7e25651d217b5f73f`.
+Original signer SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`;
+APK v2/v3 signatures, alignment, ZIP integrity and package version verify.
+All non-signature entries match CI artifact `10721413053`. Against 0.5.9, the
+Android manifest, DEX, native display producer and its checksum manifest change;
+the runtime bundle JSON changes key order only, with equal parsed contents.
+All other entries, including the stutter-fixed launcher, graphics/native JNI/
+audio/controller components and purple icon, are byte-identical.
+
+No CI failures remain pending. The query reduction is verified; device FPS
+improvement is not yet measured. Continue with the same matching Termux server,
+client `30251204_1`, original xiloader and preparation at 60 Hz.
 
 ---
 
@@ -53,10 +86,11 @@ stutter-fixed launcher helper, graphics/native JNI/audio/controller components
 and purple icon are byte-identical.
 
 **Device boundary.** The 60 Hz option does not unlock FFXI's own frame limit.
-Reduced copy volume is established by the code change; Thor FPS improvement is
-unverified. Keep the same Termux server/client `30251204_1`, original xiloader
+The subsequent paired Thor test accepts 60 Hz as smoother, with fewer drops
+into the teens; overall game FPS remains in the 20s. Keep the same Termux
+server/client `30251204_1`, original xiloader
 and preparation. No source update, re-import, re-preparation or managed migration.
-Compare 30 then 60 Hz on the same route and settings; export after both runs.
+Continue at 60 Hz using the focused 0.5.10 test above.
 
 ---
 

@@ -1,4 +1,4 @@
-# Active milestone: reduce repeated X11 metadata queries (0.5.10)
+# Completed milestone: reduce repeated X11 metadata queries (0.5.10)
 
 The user confirms 60 Hz improves the Thor experience and reduces drops into the
 teens; 30 Hz restores the degraded experience. Keep 60 Hz as the recommended
@@ -10,11 +10,41 @@ run, MIT-SHM throughout, and the accepted startup-only observer in all three.
 At 60 Hz, over half of the display polls return unchanged images but each still
 queries screen geometry. Cursor images are also downloaded on every capture.
 0.5.10 caches geometry/cursor metadata, invalidates it on X11 events, and retains
-live pointer polling. Query counts and timings will make the reduction visible.
-Implementation is complete; full CI and native cursor/resize integration
-verification are in progress. [Evidence and focused Thor test](display-metadata-0510.md).
+live pointer polling. In the real X11 fixture, the same 88 requests / 52 captures
+use 6 geometry queries instead of 88 and 14 cursor-image queries instead of 52.
+All 88 live pointer queries remain. Exact pixels, cursor movement/shape/hotspot,
+transparency, clipping, real resizing and reconnect pass in Linux and PRoot.
+Query counts and timings are included in exported producer logs.
+
+**All six CI gates pass** for `9612125345448fa4778484664a02167bd5629028`
+in [run 35790527598](https://github.com/Russianranger/lsb-android/actions/runs/35790527598):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35790531672)
+passes all five applicable gates and correctly skips release.
+Runtime evidence artifact `10722148392` confirms all ten
+native test combinations (eight cached paths and two polling controls),
+Android-compatible memfd/MIT-SHM, 62 client-launch scenarios, six idle/Stop/crash
+observer checks, controller preload/input/disconnect, PCM, DXVK HUD and three
+supervised 60 Hz Wine captures. All 15 Android tests and real MariaDB deployment,
+update and rollback pass. No CI failures remain pending.
+
+**Signed install-in-place APK:** `LSB-Android-0.5.10.apk`, versionCode 26,
+15,940,768 bytes, SHA-256
+`611620c7ecac7eb28182001c6847e01351cad231b76e6fe7e25651d217b5f73f`.
+Original signer, v2/v3 signatures, alignment and ZIP integrity verify; payload
+matches CI artifact `10721413053`. Launcher/runtime/graphics/audio/controller
+binaries and icon match 0.5.9. Only version metadata, DEX, the display producer
+and its checksum manifest change semantically; the runtime manifest differs
+only in JSON key order.
+
+[Evidence, validation and focused Thor test](display-metadata-0510.md).
+The query reduction is verified; a Thor FPS gain from 0.5.10 is not yet measured.
+Test Native Surface at 60 Hz, normal FPS HUD, Fast/compression/startup capture
+off, the same resolution/route for 3–5 minutes, then Stop/relaunch and export.
+Another 30 Hz comparison is not needed.
 Preserve the same Termux server/client `30251204_1`, original loader, accepted
 preparation, pinned Wine/Box64/Turnip/DXVK, audio and controller behavior.
+Do not update source, re-import, re-prepare or start managed-server migration.
 
 ---
 
@@ -57,11 +87,10 @@ stutter-fixed launcher, runtime/graphics/audio/controller paths and icon match.
 
 Keep the existing Termux server/client `30251204_1`, original xiloader and accepted
 preparation. No source updates, re-import, re-preparation or managed migration.
-First compare 720p at 30 Hz and then 60 Hz on the same route, keeping Native Surface
-on, Fast/compression/startup capture off and normal FPS HUD on. Disable the detailed
-graph in both runs; export immediately after the second session. Periodic-stutter
-acceptance remains recorded. The subsequent Thor test accepts 60 Hz as better;
-remaining FPS drops and the 0.5.10 follow-up are recorded above.
+The paired Thor comparison is complete: the user accepts 60 Hz as better.
+Keep Native Surface on, Fast/compression/startup capture off and normal FPS HUD
+on for the next comparison. Another 30 Hz run is not needed. Periodic-stutter
+acceptance remains recorded; remaining FPS drops and the 0.5.10 follow-up are above.
 
 ---
 

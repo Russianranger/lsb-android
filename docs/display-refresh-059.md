@@ -1,5 +1,13 @@
 # Display refresh and frame-copy optimization: 0.5.9
 
+## Subsequent Thor acceptance
+
+The paired comparison is complete. The user confirms 60 Hz improves smoothness
+and reduces drops into the teens; 30 Hz restores the degraded experience.
+Game FPS in the 20s and occasional hitches remain. Keep 60 Hz for subsequent
+testing. [Three-session evidence and the 0.5.10 follow-up](display-metadata-0510.md).
+The analysis and original test plan below document why 0.5.9 was built.
+
 ## Accepted baseline and remaining limitation
 
 The user accepts the 0.5.8 periodic-stutter fix. The new Thor bundle and comparison
