@@ -8,9 +8,21 @@ times, shader compiler and DXVK worker activity. Normal FPS HUD behavior and
 all pinned runtime/graphics/audio/controller binaries are retained.
 See [implementation, validation and Thor sequence](display-worker-057.md).
 
-Local new Android regressions and core/runtime/server contracts pass. Full CI
-and the original-signer install-in-place APK are being prepared. Physical Thor
-smoothness remains unverified. First compare with the new diagnostic HUD off;
+**All six CI gates passed** for implementation
+`8c75aa70c785bf9824b53fbd13f60ffdf7b0cee2` in
+[run 35775283832](https://github.com/Russianranger/lsb-android/actions/runs/35775283832):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35775289943)
+passes all five applicable gates; its release job is correctly skipped.
+All 14 Android tests, 56 launch scenarios, three supervised Wine/native captures,
+the detailed DXVK HUD, Android-compatible PRoot memfd capture, controller/preload,
+audio/Stop checks and real MariaDB deployment/update/rollback pass.
+No CI failures remain pending.
+
+The original-signer APK is built and verified: `LSB-Android-0.5.7.apk`,
+versionCode 23, 15,940,768 bytes, SHA-256
+`374e1c17bee9f5cab76c6f5567462446d1f2b43416103ffe26668f4d03c6b2b8`.
+Physical Thor smoothness remains unverified. First compare with the new diagnostic HUD off;
 if hitches remain, enable it for a second launch and export both sessions.
 Keep the existing matching Termux server/client `30251204_1`, original xiloader,
 accepted preparation, 720p/30 Hz, Native Surface on and Fast display/compression
@@ -37,8 +49,8 @@ off that path and add bounded frame-gap/report-duration measurements. Its actual
 contribution is not yet measured. Shader activity, CPU scheduling and increasing
 audio underruns also need observation; five-second averages cannot isolate them.
 
-This follow-up is investigation/documentation only. The signed 0.5.6 APK and
-passing CI below remain current. Keep Native Surface on, Fast display/compression
+That investigation preceded the 0.5.7 implementation and validated APK above.
+Keep Native Surface on, Fast display/compression
 off and the existing matching Termux server/client `30251204_1`, original xiloader
 and accepted preparation. No runtime/driver replacements, client/source updates
 or managed-server migration.

@@ -1,3 +1,60 @@
+# Display-worker reporting and stutter diagnostics: 0.5.7 (2026-09-22)
+
+**Device evidence.** The latest 0.5.6 Thor run confirms shared-memory capture
+works and lowers capture time from about 25 to 4 ms, but the user reports no
+noticeable gameplay improvement and recurring stutters every 3–5 seconds.
+[Recorded comparison and driver audit](thor-performance-056-result.md).
+
+**Implementation.** `8c75aa70c785bf9824b53fbd13f60ffdf7b0cee2` moves native
+diagnostics serialization and disk writes off the frame worker. A bounded writer
+preserves session/viewer identity, counts dropped windows, retains cumulative
+frame/SHM totals and publishes a final sample. Numeric frame counters add gaps,
+stage maxima, loop delay, idle context and report timing. The optional DXVK HUD
+adds frame times, shader compilation and worker activity; its default is off.
+[Implementation and focused test](display-worker-057.md).
+
+**Local and build validation.** All 14 Android API 33 tests pass, including four
+new tests for blocked I/O, producer progress, bounded backlog, terminal/failure
+retention, stale session/viewer rejection, idle-aware gap events, lifecycle reset,
+snapshot immutability and export size. An initial local run could not load Skia
+because its native test JAR was truncated. Replacing that dependency with the
+official checksum-verified artifact resolves the two unchanged bitmap failures;
+no assertions were relaxed. The 116 core/preparation/login checks, RGB565 and
+90 ZRLE checks, 40 runtime and 5 server contracts pass. CI repeats all Android
+tests and builds the APK successfully.
+
+**Full CI.** [Push run 35775283832](https://github.com/Russianranger/lsb-android/actions/runs/35775283832)
+passes all six gates: `presentation`, `verify`, `windows-launcher`, `runtime`,
+`server-deployment` and `runtime-release`. The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35775289943)
+passes all five applicable gates, with release correctly skipped. Runtime job
+`106907626496` records all 56 client launch cases, three supervised captures of
+real Wine D3D8 pixels, the Android-compatible PRoot memfd/MIT-SHM marker and
+`PASS: detailed DXVK HUD runs with native capture, PCM and input`. Packaged
+ARM64 gamepad bridge loading, preload isolation, real Wine controller/disconnect,
+audio and Stop checks pass. Windows checks cover 36 cases plus 288 corruption
+checks. The MariaDB gate exercises import/export, failed-import preservation,
+account/character-preserving updates, bidirectional rollback and managed
+start/stop. No CI failures remain pending.
+
+**Artifact.** `LSB-Android-0.5.7.apk`, versionCode 23,
+**15,940,768 bytes**, SHA-256 `374e1c17bee9f5cab76c6f5567462446d1f2b43416103ffe26668f4d03c6b2b8`.
+Original signer SHA-256 `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`;
+APK v2/v3 signatures, ZIP integrity and alignment verify. Every non-signature
+entry matches CI artifact `10716180670`. Against 0.5.6, only `AndroidManifest.xml`,
+`classes.dex` and `assets/runtime/supervisor.py` change. All native/runtime and
+graphics binaries, bundle hashes, audio/controller/loader code and icon resources
+are byte-identical. The existing shared-memory option remains enabled.
+
+**Device boundary.** The blocked-writer test proves the frame producer can
+continue while diagnostics I/O is stalled. It does not prove that reporting
+explained all observed Thor hitches or that game FPS will reach 30. First repeat
+the same route/settings with the new diagnostic HUD off; if stutters persist,
+enable it on a fresh launch and note shader activity during spikes. Preserve
+the existing matching Termux server/client `30251204_1`, original xiloader and
+accepted preparation; no source updates or managed-server migration.
+
+---
+
 # Android shared-memory capture: 0.5.6 (2026-09-22)
 
 **Device evidence.** In the local `lsb-support (11).zip`, both 0.5.5 sessions

@@ -56,11 +56,27 @@ continues, bounded backlog with terminal/failure retention, old session/viewer
 rejection, snapshot immutability, gap/idle/reset semantics and a worst-case report
 under the export limit. They pass locally. The 116 core/preparation/login checks,
 RGB565 and 90 ZRLE checks, 40 runtime and 5 server contracts also pass.
-The local full Android run compiled all sources and passed 12/14 tests; the two
-unchanged native bitmap tests could not load Skia because the local downloaded
-`nativeruntime-dist-compat` JAR is truncated (not a valid ZIP). Their assertions
-remain required in CI. The real ARM64 DXVK fixture now exercises the detailed HUD
-alongside native capture, PCM and input. Full CI and device signing are pending.
+All 14 Android API 33 tests pass locally, including the two native bitmap tests.
+The first run passed 12/14 because the downloaded native test JAR was truncated;
+replacing it with the official checksum-verified artifact resolves both failures
+without changing code or assertions.
+
+All six gates pass for implementation `8c75aa70c785bf9824b53fbd13f60ffdf7b0cee2`
+in [run 35775283832](https://github.com/Russianranger/lsb-android/actions/runs/35775283832).
+The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35775289943)
+also passes all five applicable gates, with the push-only release job skipped.
+CI independently repeats all 14 Android tests and builds the APK. The real
+ARM64 DXVK fixture passes the detailed HUD alongside native capture, PCM and
+input. All 56 client launch cases and three supervised Wine/native captures pass,
+including PRoot's Android-compatible memfd emulation. Gamepad bridge loading,
+host isolation, controller/disconnect, audio and Stop checks pass. The native
+Windows launcher and real MariaDB deployment/update/rollback gates pass too.
+
+The signed APK is versionCode 23, 15,940,768 bytes, SHA-256
+`374e1c17bee9f5cab76c6f5567462446d1f2b43416103ffe26668f4d03c6b2b8`.
+Original certificate, v2/v3 signatures, alignment and ZIP integrity verify.
+Every non-signature entry matches CI. Against 0.5.6, only the Android manifest,
+DEX and `assets/runtime/supervisor.py` differ; all other entries are identical.
 
 ## Thor check
 
