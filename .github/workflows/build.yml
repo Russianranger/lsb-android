@@ -133,7 +133,7 @@ jobs:
         run: |
           python3 - <<'PYLOG'
           from pathlib import Path
-          for path in Path('out/runtime-test').rglob('*.log'):
+          for path in list(Path('out/runtime-test').rglob('*.log'))+list(Path('out/display-wire').glob('*.log')):
               print(path, path.read_text(errors='replace')[-6000:])
           PYLOG
   server-deployment:

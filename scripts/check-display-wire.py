@@ -4,7 +4,7 @@ import argparse,os,subprocess,tempfile,time
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--backend',choices=['native','docker','proot'],required=True);args=p.parse_args()
-(root/'out/presentation/x11-frame-bridge').chmod(0o700)
+for name in ('x11-frame-bridge','x11-upload-check'):(root/'out/presentation'/name).chmod(0o700)
 work=root/'out/display-wire';work.mkdir(parents=True,exist_ok=True)
 sources=[root/'app/src/main/java/io/github/russianranger/lsb'/n for n in ['RfbConnection.java','ZrleDecoder.java','ClientFrameStats.java']]
 subprocess.run(['java','-m','jdk.compiler/com.sun.tools.javac.Main','-d',str(work),*map(str,sources),str(root/'tests/runtime/java/io/github/russianranger/lsb/DisplayWireProbe.java')],check=True)
