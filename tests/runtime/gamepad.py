@@ -1,7 +1,7 @@
 """Actual Wine/Box64 DirectInput enumeration and shared input transport."""
 import ctypes, mmap, os
 from pathlib import Path
-import struct, sys, threading, time, uuid
+import struct, subprocess, sys, threading, time, uuid
 sys.path.insert(0,'/opt/lsb')
 from supervisor import Supervisor
 library=Path('/opt/lsb/liblsb-gamepad.so')
@@ -15,6 +15,13 @@ session=Path('/session');(session/'stop').unlink(missing_ok=True)
 (session/'gamepad-stage').unlink(missing_ok=True)
 (session/'gamepad-bridge.json').unlink(missing_ok=True)
 (session/'gamepad.bin').write_bytes(bytes(64))
+# A valid input file must not start a polling thread in unrelated processes.
+# Wine's winedevice.exe host below must still attach and publish all four axes.
+subprocess.run([sys.executable,'-c',
+    'from pathlib import Path; import time; time.sleep(.1); '
+    'assert len(list(Path("/proc/self/task").iterdir()))==1, "gamepad worker started outside Wine HID host"'],
+    env=dict(os.environ,LD_PRELOAD=str(library),LSB_GAMEPAD_STATE=str(session/'gamepad.bin')),check=True)
+print('PASS: gamepad preload is idle outside Wine HID host',flush=True)
 done=False
 def write_pad():
     with (session/'gamepad.bin').open('r+b') as f,mmap.mmap(f.fileno(),64) as m:
@@ -29,8 +36,9 @@ def write_pad():
                 time.sleep(.02);continue
             count+=2;stamp=int(time.monotonic()*1000)
             m[4:8]=struct.pack('<I',count-1)
-            buttons,hat,x=(1,3,20000) if stage in (0,2) else (0,0,0)
-            struct.pack_into('<I',m,0,0x4c534247);struct.pack_into('<IIhhhh',m,8,buttons,hat,x,0,0,0)
+            buttons,hat=(1,3) if stage in (0,2) else (0,0)
+            axes=(20000,-18000,12000,-16000) if stage==0 else (-20000,18000,-12000,16000) if stage==2 else (0,0,0,0)
+            struct.pack_into('<I',m,0,0x4c534247);struct.pack_into('<IIhhhh',m,8,buttons,hat,*axes)
             struct.pack_into('<Q',m,32,stamp)
             m[4:8]=struct.pack('<I',count);time.sleep(.02)
 worker=threading.Thread(target=write_pad,daemon=True);worker.start()

@@ -1,0 +1,128 @@
+{
+  "format": 1,
+  "bits": 32,
+  "check_policy": "load_only",
+  "dependencies": [
+    {
+      "name": "CRYPT32.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\CRYPT32.dll"
+    },
+    {
+      "name": "WS2_32.dll",
+      "ok": false,
+      "win32_error": 1114,
+      "loaded_path": ""
+    },
+    {
+      "name": "bcrypt.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\bcrypt.dll"
+    },
+    {
+      "name": "KERNEL32.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\kernel32.dll"
+    },
+    {
+      "name": "USER32.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\USER32.dll"
+    },
+    {
+      "name": "SHELL32.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\SHELL32.dll"
+    },
+    {
+      "name": "ole32.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ole32.dll"
+    },
+    {
+      "name": "ADVAPI32.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ADVAPI32.dll"
+    },
+    {
+      "name": "MSVCP140.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\MSVCP140.dll"
+    },
+    {
+      "name": "VCRUNTIME140.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\vcruntime140.dll"
+    },
+    {
+      "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    },
+    {
+      "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    },
+    {
+      "name": "api-ms-win-crt-string-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    },
+    {
+      "name": "api-ms-win-crt-heap-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    },
+    {
+      "name": "api-ms-win-crt-convert-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    },
+    {
+      "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    },
+    {
+      "name": "api-ms-win-crt-time-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    },
+    {
+      "name": "api-ms-win-crt-locale-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    },
+    {
+      "name": "api-ms-win-crt-math-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    },
+    {
+      "name": "api-ms-win-crt-environment-l1-1-0.dll",
+      "ok": true,
+      "win32_error": 0,
+      "loaded_path": "C:\\windows\\system32\\ucrtbase.dll"
+    }
+  ],
+  "ok": false
+}

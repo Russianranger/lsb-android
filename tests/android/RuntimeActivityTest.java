@@ -3,6 +3,7 @@ package io.github.russianranger.lsb;
 import android.os.Looper;
 import android.view.InputDevice;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import java.io.File;
 import java.io.RandomAccessFile;
 import java.lang.reflect.Field;
@@ -62,6 +63,27 @@ public class RuntimeActivityTest {
     }
     private void button(int action) {
         assertTrue(activity.get().dispatchKeyEvent(new KeyEvent(0,0,action,KeyEvent.KEYCODE_BUTTON_A,0,0,1,0,0,InputDevice.SOURCE_GAMEPAD)));
+    }
+    private void sticks(float x,float y,float z,float rz) {
+        MotionEvent.PointerProperties property=new MotionEvent.PointerProperties();property.id=0;
+        MotionEvent.PointerCoords axes=new MotionEvent.PointerCoords();
+        axes.setAxisValue(MotionEvent.AXIS_X,x);axes.setAxisValue(MotionEvent.AXIS_Y,y);
+        axes.setAxisValue(MotionEvent.AXIS_Z,z);axes.setAxisValue(MotionEvent.AXIS_RZ,rz);
+        MotionEvent event=MotionEvent.obtain(0,0,MotionEvent.ACTION_MOVE,1,new MotionEvent.PointerProperties[]{property},
+            new MotionEvent.PointerCoords[]{axes},0,0,1,1,999,0,InputDevice.SOURCE_JOYSTICK,0);
+        try{assertTrue(activity.get().dispatchGenericMotionEvent(event));}finally{event.recycle();}
+    }
+
+    @Test public void bothStickDirectionsAndRightVerticalReachMappedState()throws Exception {
+        RuntimeEnvironment.getApplication().getSharedPreferences("controller",0).edit().putInt("deadzone",0).commit();
+        File pad=session("axes");open();tick();
+        sticks(1,-1,.5f,-.5f);tick();ByteBuffer first=state(pad);
+        assertEquals(32767,first.getShort(16));assertEquals(-32767,first.getShort(18));
+        assertEquals(16384,first.getShort(20));assertEquals(-16383,first.getShort(22));
+        sticks(-1,1,-.5f,.5f);tick();ByteBuffer second=state(pad);
+        assertEquals(-32767,second.getShort(16));assertEquals(32767,second.getShort(18));
+        assertEquals(-16383,second.getShort(20));assertEquals(16384,second.getShort(22));
+        sticks(0,0,0,0);tick();for(int i=0;i<4;i++)assertEquals(0,state(pad).getShort(16+i*2));
     }
 
     @Test public void displayWaitsThroughRepeatedTicksBeforeFirstSession()throws Exception {

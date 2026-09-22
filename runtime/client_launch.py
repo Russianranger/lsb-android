@@ -104,6 +104,11 @@ def record(s, report):
 def validate_check(report, expected, exit_code):
     # A success-looking receipt never overrides an abnormal process exit.
     if exit_code != 0:
+        if exit_code==1 and valid_check_rows(report,expected):
+            failed=[row for row in report['dependencies'] if row['ok'] is False]
+            if failed:
+                detail=', '.join(row['name']+' (Windows error '+str(row['win32_error'])+')' for row in failed[:3])
+                raise RuntimeError('Loader dependency failed: '+detail+'. xiloader has not started; export Diagnostics.')
         raise RuntimeError('Loader dependency checker exited with code '+str(exit_code)+'. xiloader has not started; export Diagnostics.')
     rows=report.get('dependencies',[])
     if (not expected or report.get('format')!=1 or report.get('bits')!=32 or
@@ -112,6 +117,49 @@ def validate_check(report, expected, exit_code):
         any(not isinstance(row,dict) or row.get('name')!=name or row.get('ok') is not True or
             row.get('win32_error')!=0 or not row.get('loaded_path') for row,name in zip(rows,expected))):
         raise RuntimeError('Loader dependencies did not pass. View launch results for missing DLLs.')
+
+
+def valid_check_rows(report,expected):
+    """Only accept the exact, complete check receipt for failure classification."""
+    if not isinstance(report,dict):return False
+    rows=report.get('dependencies')
+    return (bool(expected) and report.get('format')==1 and report.get('bits')==32 and
+            report.get('check_policy')=='load_only' and isinstance(rows,list) and len(rows)==len(expected) and
+            all(isinstance(row,dict) and row.get('name')==name and
+                re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',name) and type(row.get('ok')) is bool and
+                type(row.get('win32_error')) is int and 0<=row['win32_error']<=0xffffffff
+                for row,name in zip(rows,expected)))
+
+
+def retry_network_initialization(report,expected,exit_code):
+    if exit_code!=1 or not valid_check_rows(report,expected) or report.get('ok') is not False:return False
+    failed=[row for row in report['dependencies'] if row['ok'] is False]
+    return (len(failed)==1 and failed[0]['name'].lower()=='ws2_32.dll' and failed[0]['win32_error']==1114 and
+            all(row['ok'] is False or (row['win32_error']==0 and row.get('loaded_path')) for row in report['dependencies']))
+
+
+def check_dependencies(s,report,loader,dependencies):
+    result=Path('/session/loader-check.json')
+    report['check_attempts']=[]
+    for attempt in range(2):
+        s.stopped()
+        result.unlink(missing_ok=True)
+        # This process receives no login payload. Retain symbol/loader failures
+        # here; arbitrary game-process output still uses the private filter.
+        env=dict(s.env,WINEDEBUG='-all,+timestamp,+pid,err+all,warn+module,trace+loaddll',BOX64_DLSYM_ERROR='1')
+        name='loader-check.log' if attempt==0 else 'loader-check-retry.log'
+        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','check',windows_path(loader),*dependencies],name,env=env)
+        try:
+            s.wait(p,90,'Loader dependency check (xiloader has not started)',accepted=(0,1))
+        finally:
+            checked=json.loads(result.read_text()) if result.is_file() else {}
+            code=p.poll();report['dependencies']=checked;report['check_exit']=code
+            report['check_attempts'].append({'exit':code,'dependencies':checked});record(s,report)
+        if attempt==0 and retry_network_initialization(checked,dependencies,code):
+            s.status('retrying_network_initialization',message='Retrying Windows networking initialization before xiloader starts')
+            s.stopped();continue
+        validate_check(checked,dependencies,code)
+        return
 
 
 def data_inventory(game):
@@ -143,17 +191,9 @@ def check(s):
     record(s,report)
     flags=cli_flags(loader);report['cli_flags']=flags
     record(s,report);s.status('checking_loader_dependencies')
-    result=Path('/session/loader-check.json');result.unlink(missing_ok=True)
     dependencies=imports[manifest['loader']]
     if not dependencies: raise ValueError('Loader has no normal imports; unsupported loader image')
-    p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','check',windows_path(manifest['loader']),*dependencies],'loader-check.log')
-    try:
-        # Keep genuine DLL failures in the structured report for the UI.
-        s.wait(p,90,'Loader dependency check (xiloader has not started)',accepted=(0,1))
-    finally:
-        if result.is_file(): report['dependencies']=json.loads(result.read_text())
-        report['check_exit']=p.poll();record(s,report)
-    validate_check(report.get('dependencies',{}),dependencies,report['check_exit'])
+    check_dependencies(s,report,manifest['loader'],dependencies)
     report['status']='ready';record(s,report)
     return manifest,report,flags
 

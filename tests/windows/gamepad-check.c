@@ -6,6 +6,7 @@
 #include <string.h>
 static IDirectInput8A *input;
 static IDirectInputDevice8A *device;
+static BOOL centered(LONG value){return value>=32000&&value<=33500;}
 static BOOL CALLBACK found(const DIDEVICEINSTANCEA *info,void *unused){
     (void)unused;
     if(!strstr(info->tszProductName,"Virtual"))return DIENUM_CONTINUE;
@@ -25,7 +26,7 @@ int wmain(void){
     if(!device){puts("FAIL: virtual DirectInput joystick was not enumerated");return 2;}
     DIDEVCAPS caps={0};caps.dwSize=sizeof(caps);IDirectInputDevice8_GetCapabilities(device,&caps);
     printf("Capabilities: axes=%lu buttons=%lu hats=%lu\n",caps.dwAxes,caps.dwButtons,caps.dwPOVs);
-    if(caps.dwAxes<4||caps.dwButtons<16||caps.dwPOVs<1)return 3;
+    if(caps.dwAxes!=6||caps.dwButtons<16||caps.dwPOVs<1)return 3;
     if(FAILED(IDirectInputDevice8_SetDataFormat(device,&c_dfDIJoystick2)))return 4;
     if(FAILED(IDirectInputDevice8_SetCooperativeLevel(device,GetDesktopWindow(),DISCL_BACKGROUND|DISCL_NONEXCLUSIVE)))return 5;
     IDirectInputDevice8_Acquire(device);
@@ -38,14 +39,16 @@ int wmain(void){
             HRESULT hr=IDirectInputDevice8_GetDeviceState(device,sizeof(s),&s);
             last=s;last_hr=hr;
             if(SUCCEEDED(hr)){
-                if(step==0||step==2)ok=(s.rgbButtons[0]&128)&&s.lX>45000&&s.rgdwPOV[0]==4500;
-                else ok=!(s.rgbButtons[0]&128)&&s.lX>=32000&&s.lX<=33500&&s.rgdwPOV[0]==0xffffffff;
+                if(step==0)ok=(s.rgbButtons[0]&128)&&s.lX>45000&&s.lY<18000&&s.lZ>42000&&s.lRz<20000&&s.rgdwPOV[0]==4500;
+                else if(step==2)ok=(s.rgbButtons[0]&128)&&s.lX<18000&&s.lY>45000&&s.lZ<24000&&s.lRz>45000&&s.rgdwPOV[0]==4500;
+                else ok=!(s.rgbButtons[0]&128)&&centered(s.lX)&&centered(s.lY)&&centered(s.lZ)&&centered(s.lRz)&&s.rgdwPOV[0]==0xffffffff;
+                ok=ok&&centered(s.lRx)&&centered(s.lRy);
                 if(ok)break;
             }else IDirectInputDevice8_Acquire(device);
             Sleep(50);
         }
-        if(!ok){printf("FAIL: gamepad stage %d hr=%08lx button0=%u x=%ld y=%ld z=%ld rx=%ld hat=%lu\n",step,(unsigned long)last_hr,last.rgbButtons[0],last.lX,last.lY,last.lZ,last.lRx,last.rgdwPOV[0]);return 10+step;}
-        printf("PASS: gamepad stage %d button0=%u x=%ld hat=%lu\n",step,last.rgbButtons[0],last.lX,last.rgdwPOV[0]);
+        if(!ok){printf("FAIL: gamepad stage %d hr=%08lx button0=%u x=%ld y=%ld z=%ld rx=%ld ry=%ld rz=%ld hat=%lu\n",step,(unsigned long)last_hr,last.rgbButtons[0],last.lX,last.lY,last.lZ,last.lRx,last.lRy,last.lRz,last.rgdwPOV[0]);return 10+step;}
+        printf("PASS: gamepad stage %d button0=%u x=%ld y=%ld z=%ld rx=%ld ry=%ld rz=%ld hat=%lu\n",step,last.rgbButtons[0],last.lX,last.lY,last.lZ,last.lRx,last.lRy,last.lRz,last.rgdwPOV[0]);
     }
     IDirectInputDevice8_Unacquire(device);IDirectInputDevice8_Release(device);IDirectInput8_Release(input);
     puts("PASS: virtual DirectInput joystick axes, buttons, hat, release and stale-input neutralization");return 0;

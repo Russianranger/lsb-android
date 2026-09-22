@@ -1,6 +1,7 @@
 import importlib.util
 import copy
 import io
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -14,6 +15,66 @@ import supervisor
 
 
 class LaunchContracts(unittest.TestCase):
+    def network_receipt(self):
+        report=json.loads((Path(__file__).parent/'fixtures/thor-051-dependencies.json').read_text())
+        return report,[row['name'] for row in report['dependencies']]
+
+    def dependency_attempts(self,attempts,report,cancel=False):
+        bad,names=self.network_receipt()
+        with tempfile.TemporaryDirectory() as tmp:
+            result=Path(tmp)/'loader-check.json'
+            processes=[Mock(poll=Mock(return_value=code)) for code,_ in attempts]
+            s=SimpleNamespace(env={},spawn=Mock(side_effect=processes),status=Mock(),stopped=Mock())
+            def wait(p,*args,**kw):
+                code,receipt=attempts[processes.index(p)]
+                if receipt is not None:result.write_text(json.dumps(receipt))
+                if code not in kw['accepted']:raise RuntimeError('checker crashed')
+            s.wait=wait
+            if cancel:s.status.side_effect=lambda *a,**k:setattr(s.stopped,'side_effect',supervisor.Stopped())
+            with patch.object(client_launch,'Path',return_value=result),patch.object(client_launch,'record'):
+                client_launch.check_dependencies(s,report,'FINAL FANTASY XI/xiloader.exe',names)
+            self.assertEqual(s.spawn.call_count,len(attempts))
+            for call in s.spawn.call_args_list:
+                self.assertEqual(call.args[0][3],'check')
+                self.assertEqual(call.args[0][5:],names)
+                self.assertNotIn('pipe_input',call.kwargs)
+
+    def test_observed_ws2_initialization_failure_rechecks_all_imports_and_retains_both(self):
+        bad,names=self.network_receipt();good=copy.deepcopy(bad);good['ok']=True
+        good['dependencies'][1].update(ok=True,win32_error=0,loaded_path=r'C:\windows\system32\WS2_32.dll')
+        report={};self.dependency_attempts([(1,bad),(0,good)],report)
+        self.assertEqual([a['exit'] for a in report['check_attempts']],[1,0])
+        self.assertEqual(report['check_attempts'][0]['dependencies'],bad)
+        client_launch.validate_check(report['dependencies'],names,report['check_exit'])
+
+    def test_persistent_ws2_failure_stops_after_one_retry_with_specific_error(self):
+        bad,_=self.network_receipt();report={}
+        with self.assertRaisesRegex(RuntimeError,r'WS2_32.dll \(Windows error 1114\)'):
+            self.dependency_attempts([(1,bad),(1,bad)],report)
+        self.assertEqual(len(report['check_attempts']),2)
+
+    def test_missing_crashed_partial_and_other_dependency_failures_are_never_retried(self):
+        bad,names=self.network_receipt()
+        cases=[]
+        for error in [126,127,5]:
+            receipt=copy.deepcopy(bad);receipt['dependencies'][1]['win32_error']=error;cases.append((1,receipt))
+        receipt=copy.deepcopy(bad);receipt['dependencies'][0].update(ok=False,win32_error=1114);cases.append((1,receipt))
+        receipt=copy.deepcopy(bad);receipt['dependencies'].pop();cases.append((1,receipt))
+        receipt=copy.deepcopy(bad);receipt['dependencies'][0]['win32_error']=True;cases.append((1,receipt))
+        receipt=copy.deepcopy(bad);receipt['dependencies'][0]['loaded_path']='';cases.append((1,receipt))
+        cases.extend([(-11,bad),(86,None)])
+        for code,receipt in cases:
+            with self.subTest(code=code,receipt=receipt):
+                self.assertFalse(client_launch.retry_network_initialization(receipt or {},names,code))
+                report={}
+                with self.assertRaises(RuntimeError):self.dependency_attempts([(code,receipt)],report)
+                self.assertEqual(len(report['check_attempts']),1)
+
+    def test_stop_cancels_network_retry_and_preserves_first_receipt(self):
+        bad,_=self.network_receipt();report={}
+        with self.assertRaises(supervisor.Stopped):self.dependency_attempts([(1,bad)],report,cancel=True)
+        self.assertEqual(len(report['check_attempts']),1)
+
     def test_immediate_stop_retains_startup_diagnostics_before_first_poll(self):
         writer=SimpleNamespace(events=supervisor.PrivateEvents())
         writer.events.feed(b'0034:warn:module:load_dll Failed to load module L"secret.dll"; status=c0000135\n')

@@ -14,6 +14,7 @@ extern int open(const char *, int, ...);
 extern int close(int);
 extern long lseek(int, long, int);
 extern long write(int, const void *, usize);
+extern long read(int, void *, usize);
 extern void *mmap(void *, usize, int, int, int, long);
 struct timespec { long sec, ns; };
 extern int clock_gettime(int, struct timespec *);
@@ -23,6 +24,28 @@ static void report(const char *message, usize length) {
     if(fd>=0){write(fd,message,length);close(fd);}
 }
 #define REPORT(s) report(s,sizeof(s)-1)
+static int hid_host(void) {
+    /* Only winedevice.exe hosts Wine's SDL HID bus. In particular, do not
+     * create a polling/dlopen thread in the dependency checker or xiloader. */
+    char args[4096];int fd=open("/proc/self/cmdline",0);
+    if(fd<0)return 0;
+    long n=read(fd,args,sizeof(args));close(fd);
+    for(long start=0;start<n;) {
+        long end=start;while(end<n&&args[end])end++;
+        if(end==n)break; /* Ignore an incomplete argument. */
+        long base=start;for(long i=start;i<end;i++)if(args[i]=='/'||args[i]=='\\')base=i+1;
+        const char expected[]="winedevice.exe";
+        if(end-base==(long)sizeof(expected)-1) {
+            int same=1;for(long i=0;i<end-base;i++) {
+                char c=args[base+i];if(c>='A'&&c<='Z')c+=32;
+                if(c!=expected[i]){same=0;break;}
+            }
+            if(same)return 1;
+        }
+        start=end+1;
+    }
+    return 0;
+}
 static void *bridge(void *unused) {
     (void)unused;
     const char *path=getenv("LSB_GAMEPAD_STATE");
@@ -51,10 +74,12 @@ static void *bridge(void *unused) {
     int (*hint)(const char*,const char*)=(void*)dlsym(sdl,"SDL_SetHint");
     if(!attach||!joyopen||!axis||!button||!hat||!update){REPORT("{\"phase\":\"unsupported_sdl\"}\n");return 0;}
     if(hint)hint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS","1");
-    int index=attach(0,4,16,1);
+    /* Wine assigns SDL joystick slots X,Y,Z,Rx,Ry,Rz in order. Keep the
+     * unused Rx/Ry slots neutral so the fourth Android axis reaches Rz. */
+    int index=attach(0,6,16,1);
     void *joy=index<0?0:joyopen(index);
     if(!joy){REPORT("{\"phase\":\"attach_failed\"}\n");return 0;}
-    REPORT("{\"phase\":\"attached\",\"axes\":4,\"buttons\":16,\"hats\":1}\n");
+    REPORT("{\"phase\":\"attached\",\"axes\":6,\"stick_axes\":\"X,Y,Z,Rz\",\"buttons\":16,\"hats\":1}\n");
     u32 previous=0xffffffff,was_stale=1;
     for(;;) {
         u32 first=__atomic_load_n((volatile u32*)(data+4),__ATOMIC_ACQUIRE);
@@ -68,7 +93,7 @@ static void *bridge(void *unused) {
             u64 millis=(u64)now.sec*1000+now.ns/1000000;
             u32 stale=stamp>millis||millis-stamp>1500;
             if(first==last&&(first!=previous||stale!=was_stale)) {
-                for(int i=0;i<4;i++)axis(joy,i,stale?0:axes[i]);
+                for(int i=0;i<6;i++)axis(joy,i,stale||i==3||i==4?0:axes[i==5?3:i]);
                 for(int i=0;i<16;i++)button(joy,i,stale?0:(buttons>>i)&1);
                 hat(joy,0,stale?0:pov&15);update();previous=first;was_stale=stale;
             }
@@ -78,6 +103,6 @@ static void *bridge(void *unused) {
     return 0;
 }
 __attribute__((constructor)) static void start(void) {
-    if(!getenv("LSB_GAMEPAD_STATE"))return;
+    if(!getenv("LSB_GAMEPAD_STATE")||!hid_host())return;
     unsigned long thread;if(!pthread_create(&thread,0,bridge,0))pthread_detach(thread);
 }
