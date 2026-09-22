@@ -50,9 +50,10 @@ label. Failure/timeout restores both 2.5.3 DLLs before starting the loader.
 Requested/selected versions, DLL hashes, fallback reason and upload preflight
 result are exported in runtime state. Candidate DXVK state cache is separate.
 
-The software OpenGL diagnostic variables are now scoped to the software
-renderer. Hardware Vulkan continues to require the real Qualcomm/Turnip probe;
-there is no automatic software-renderer substitution.
+The existing renderer environment is retained, including the required CPU X11
+WSI selection. Hardware Vulkan still requires the real Qualcomm/Turnip probe;
+there is no automatic software-renderer substitution. Both new options off
+retain the previous graphics binaries, environment and transfer path.
 
 ## Validation and Thor test
 

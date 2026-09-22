@@ -183,7 +183,6 @@ class Supervisor:
         if self.req['renderer']=='software':
             self.env['WINEDLLOVERRIDES']+=';d3d8,d3d9=b'
             self.status(graphics='WineD3D / software diagnostic',hardware_verified=False);return
-        for name in ('LIBGL_ALWAYS_SOFTWARE','GALLIUM_DRIVER','LP_NUM_THREADS'):self.env.pop(name,None)
         driver='turnip-26.0.0.so' if self.req['renderer']=='turnip26' else 'turnip.so'
         atomic(SESSION/'turnip-icd.json',{'file_format_version':'1.0.0','ICD':{'library_path':str(BUNDLE/driver),'api_version':'1.3.0'}})
         self.env.update(VK_ICD_FILENAMES=str(SESSION/'turnip-icd.json'),VK_DRIVER_FILES=str(SESSION/'turnip-icd.json'),MESA_VK_WSI_DEBUG='sw',
