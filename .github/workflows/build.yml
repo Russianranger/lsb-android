@@ -120,6 +120,12 @@ jobs:
           key: lsb-runtime-probe-v1-08c639c2
       - name: Execute PE32 registry COM D3D8 audio and input checks on ARM64
         run: bash scripts/check-runtime.sh
+      - name: Make container evidence readable by the artifact uploader
+        if: always()
+        run: |
+          for directory in out/runtime-test/logs out/runtime-test/proot-logs out/display-wire; do
+            if [ -d "$directory" ]; then sudo chown -R "$(id -u):$(id -g)" "$directory"; fi
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
