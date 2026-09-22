@@ -46,6 +46,10 @@ os.environ['LSB_TEST_AUTOCLOSE']='1'
 s=Supervisor(dict(format=1,session_id=str(uuid.uuid4()),renderer='software',audio=False,action='probe',gamepad=True))
 try:
     s.start()
+    # Both native host preloads must coexist with the actual DirectInput path.
+    s.req['shm_upload']=True;s.configure_upload()
+    assert s.state['shm_upload_active'],s.state
+    assert str(library) in s.env['LD_PRELOAD'] and 'liblsb-x11-upload.so' in s.env['LD_PRELOAD']
     s.wait(s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'Z:\fixtures\gamepad-check.exe'],'gamepad-check.log'),100,'DirectInput controller checks')
     print('PASS: real Wine virtual controller input and disconnect handling')
 finally:
