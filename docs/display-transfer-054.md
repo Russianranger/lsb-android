@@ -39,9 +39,11 @@ The screenshot shows Android's white surround around the old legacy drawable. Th
 
 Local checks cover the original core/transport tests, 84 new ZRLE checks (all tile families in both pixel formats, odd/edge tiles, 720p data, persistent streams, raw fallback, resize, invalid palettes/runs/expansion and corrupt/truncated input), Python contracts and nine Android lifecycle/bitmap/history tests. Adaptive resources compile/link and the rendered preview preserves the lettering and crystal.
 
-`check-display-wire.py` runs the production protocol decoder against a real TigerVNC server over a Unix socket, comparing three full frames per mode for Raw versus ZRLE at both RGB565 and RGB888. CI runs it with the pinned ARM64 server directly and through PRoot, alongside all existing Wine/Box64/input/audio/render/launch and MariaDB gates. The local workspace prohibits Unix socket creation, so no local real-server result is claimed. CI results and the signed artifact identity are recorded in [validation](validation.md) after completion.
+`check-display-wire.py` runs the production protocol decoder against a real TigerVNC server over a Unix socket, comparing three full frames per mode for Raw versus ZRLE at both RGB565 and RGB888. The [PR CI run](https://github.com/Russianranger/lsb-android/actions/runs/35728160635) passes it with the pinned ARM64 server directly and through PRoot, alongside all existing Wine/Box64/input/audio/render/launch and MariaDB gates. The local workspace prohibits Unix socket creation, so no local real-server result is claimed. CI results and the signed artifact identity are recorded in [validation](validation.md).
 
 Synthetic image byte savings demonstrate transport behavior and exact pixel agreement. They are not a Thor gameplay benchmark. Compression can trade CPU work for transfer savings; the device comparison determines whether this improves the remaining stutters.
+
+Both ARM64 Docker and PRoot wire checks pass against the actual pinned server. For three 1280×720 synthetic frames, RGB565 payload falls from 5,529,600 to 504,550 bytes (90.9% less), and RGB888 from 11,059,200 to 864,621 bytes (92.2% less). Raw and ZRLE frame CRCs match in each format and environment. These measurements describe this fixture's transfer size, not FFXI frame rate.
 
 ## Thor test
 
