@@ -74,12 +74,13 @@ static void *bridge(void *unused) {
     int (*hint)(const char*,const char*)=(void*)dlsym(sdl,"SDL_SetHint");
     if(!attach||!joyopen||!axis||!button||!hat||!update){REPORT("{\"phase\":\"unsupported_sdl\"}\n");return 0;}
     if(hint)hint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS","1");
-    /* Wine assigns SDL joystick slots X,Y,Z,Rx,Ry,Rz in order. Keep the
-     * unused Rx/Ry slots neutral so the fourth Android axis reaches Rz. */
-    int index=attach(0,6,16,1);
+    /* Wine assigns SDL slots X,Y,Z,Rx,Ry,Rz,Slider. Six axes with >=14
+     * buttons trigger its Xbox heuristic, which removes buttons/remaps axes.
+     * A neutral seventh slot retains the generic joystick descriptor. */
+    int index=attach(0,7,16,1);
     void *joy=index<0?0:joyopen(index);
     if(!joy){REPORT("{\"phase\":\"attach_failed\"}\n");return 0;}
-    REPORT("{\"phase\":\"attached\",\"axes\":6,\"stick_axes\":\"X,Y,Z,Rz\",\"buttons\":16,\"hats\":1}\n");
+    REPORT("{\"phase\":\"attached\",\"axes\":7,\"stick_axes\":\"X,Y,Z,Rz\",\"buttons\":16,\"hats\":1}\n");
     u32 previous=0xffffffff,was_stale=1;
     for(;;) {
         u32 first=__atomic_load_n((volatile u32*)(data+4),__ATOMIC_ACQUIRE);
@@ -93,7 +94,7 @@ static void *bridge(void *unused) {
             u64 millis=(u64)now.sec*1000+now.ns/1000000;
             u32 stale=stamp>millis||millis-stamp>1500;
             if(first==last&&(first!=previous||stale!=was_stale)) {
-                for(int i=0;i<6;i++)axis(joy,i,stale||i==3||i==4?0:axes[i==5?3:i]);
+                for(int i=0;i<7;i++)axis(joy,i,stale||i==3||i==4||i==6?0:axes[i==5?3:i]);
                 for(int i=0;i<16;i++)button(joy,i,stale?0:(buttons>>i)&1);
                 hat(joy,0,stale?0:pov&15);update();previous=first;was_stale=stale;
             }
