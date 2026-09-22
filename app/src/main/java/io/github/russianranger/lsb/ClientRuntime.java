@@ -30,7 +30,7 @@ final class ClientRuntime {
     private volatile Process process;
     private volatile boolean stopRequested;
     private AudioBridge audio;
-    private String sessionId;
+    private volatile String sessionId;
     private volatile Thread preparingThread;
     private ClientRuntime(Context c){
         context=c;home=new File(c.getFilesDir(),"rt");root=new File(home,"root");prefix=new File(home,"prefix");
@@ -184,7 +184,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.0");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.1");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}

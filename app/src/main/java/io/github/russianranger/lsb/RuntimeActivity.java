@@ -24,7 +24,18 @@ public final class RuntimeActivity extends Activity {
     private boolean failureShown;
     private ControllerInput controller;
     private String padSession="";
-    private final Runnable padTick=new Runnable(){public void run(){if(!viewing)return;try{ClientRuntime rt=ClientRuntime.get(RuntimeActivity.this);if(!padSession.equals(rt.sessionKey())){controller.close();padSession=rt.sessionKey();}if(hasWindowFocus())controller.publish(rt.gamepadState());}catch(IOException ignored){}ui.postDelayed(this,20);}};
+    private final Runnable padTick=new Runnable(){public void run(){
+        if(!viewing)return;
+        try{
+            ClientRuntime rt=ClientRuntime.get(RuntimeActivity.this);
+            // Preparation can outlast many UI ticks. Read the published session once;
+            // null means the worker has not created this run's input state yet.
+            String session=rt.sessionKey();
+            if(!java.util.Objects.equals(padSession,session)){controller.close();padSession=session;}
+            if(session!=null&&hasWindowFocus())controller.publish(rt.gamepadState());
+        }catch(IOException ignored){}
+        ui.postDelayed(this,20);
+    }};
     private long lastStats;
     private final Runnable refresh=new Runnable(){public void run(){
         if(!viewing)return;ClientRuntime rt=ClientRuntime.get(RuntimeActivity.this);
@@ -50,7 +61,7 @@ public final class RuntimeActivity extends Activity {
     private void button(LinearLayout row,String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setOnClickListener(v->action.run());row.addView(b,new LinearLayout.LayoutParams(0,-2,1));}
     @Override protected void onResume(){super.onResume();viewing=true;connect();ui.post(refresh);ui.post(padTick);}
     @Override protected void onPause(){viewing=false;ui.removeCallbacks(refresh);ui.removeCallbacks(padTick);controller.close();releaseAndClose();super.onPause();}
-    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus&&controller!=null){controller.reset();try{controller.publish(ClientRuntime.get(this).gamepadState());}catch(IOException ignored){}}}
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus&&controller!=null)controller.close();}
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e){if(hasWindowFocus()&&controller!=null&&controller.motion(e))return true;return super.dispatchGenericMotionEvent(e);}
     @Override protected void onDestroy(){releaseAndClose();input.shutdown();super.onDestroy();}
     private void connect(){
