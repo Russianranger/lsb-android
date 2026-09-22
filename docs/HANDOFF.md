@@ -1,4 +1,31 @@
-# Active milestone: enable Android shared-memory capture (0.5.6)
+# Active milestone: remaining periodic stutter after 0.5.6
+
+The latest Thor result confirms MIT-SHM is working: all 6,565 posted frames use
+shared memory and comparable capture time falls from 25.18 to 4.00 ms. The user
+reports no noticeable gameplay improvement and stutters every 3–5 seconds.
+Surface throughput remains about 22 posts/s; this is not game FPS. **0.5.6 is
+confirmed to correct capture; gameplay smoothness remains unresolved.**
+See [device comparison, driver-variable audit and next target](thor-performance-056-result.md).
+
+Turnip 26/Adreno 740 and native DXVK DLLs are verified by the available checks.
+The app's `MESA_VK_WSI_DEBUG=sw` still selects CPU-based presentation into Xvnc;
+removing it needs a compatible accelerated display path. There is no evidence
+that a speculative Turnip debug flag will fix the reported periodic pauses.
+The concrete next target is `NativePresentation.report()`: it serializes/writes
+the retained diagnostics on the frame worker every five seconds. Move reporting
+off that path and add bounded frame-gap/report-duration measurements. Its actual
+contribution is not yet measured. Shader activity, CPU scheduling and increasing
+audio underruns also need observation; five-second averages cannot isolate them.
+
+This follow-up is investigation/documentation only. The signed 0.5.6 APK and
+passing CI below remain current. Keep Native Surface on, Fast display/compression
+off and the existing matching Termux server/client `30251204_1`, original xiloader
+and accepted preparation. No runtime/driver replacements, client/source updates
+or managed-server migration.
+
+---
+
+# Completed implementation: enable Android shared-memory capture (0.5.6)
 
 The 0.5.5 Thor test improves subjectively in the second run but still stutters.
 Both sessions actually use Native Surface, with no RFB pixel traffic. The concrete
