@@ -10,9 +10,9 @@ if args.target=='guest':
     subprocess.run(['docker','build','-t','lsb-presentation:1',str(root/'native/presentation')],check=True)
     container=run('docker','create','lsb-presentation:1')
     try:
-        for name in ['x11-frame-bridge','presentation-notices.txt']:run('docker','cp',container+':/out/'+name,out/name)
+        for name in ['x11-frame-bridge','presentation-notices.txt','liblsb-x11-upload.so','x11-upload-check']:run('docker','cp',container+':/out/'+name,out/name)
     finally:run('docker','rm',container)
-    (out/'presentation-bundle.json').write_text(json.dumps({'format':1,'sha256':hashlib.sha256((out/'x11-frame-bridge').read_bytes()).hexdigest()})+'\n')
+    (out/'presentation-bundle.json').write_text(json.dumps({'format':1,'upload_files':{n:hashlib.sha256((out/n).read_bytes()).hexdigest() for n in ['liblsb-x11-upload.so','x11-upload-check']},'sha256':hashlib.sha256((out/'x11-frame-bridge').read_bytes()).hexdigest()})+'\n')
 else:
     ndk=args.ndk or Path(os.environ.get('ANDROID_HOME',''))/'ndk/27.2.12479018'
     cc=ndk/'toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang'

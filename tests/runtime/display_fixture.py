@@ -17,6 +17,19 @@ try:
         if server.poll() is not None:raise RuntimeError('X server stopped')
         if time.monotonic()>deadline:raise TimeoutError('X server socket')
         time.sleep(.05)
+    # Actual guest glibc preload, through both Docker and Android-style PRoot.
+    import struct
+    for disabled in (False,True):
+        env=dict(os.environ,DISPLAY=display,LD_PRELOAD='/presentation/liblsb-x11-upload.so',LSB_X11_UPLOAD='1',LSB_X11_UPLOAD_STATS=str(folder))
+        if disabled:env['LSB_X11_UPLOAD_DISABLE_SHM']='1'
+        check=subprocess.Popen(['/presentation/x11-upload-check'],env=env)
+        assert check.wait(timeout=12)==0
+        counters=struct.unpack('<12Q',(folder/('wsi-upload-'+str(check.pid)+'.bin')).read_bytes())
+        assert counters[1]==58 and counters[8]==2,counters
+        assert counters[2]==(0 if disabled else 40),counters
+        assert counters[3]==(58 if disabled else 18),counters
+        assert counters[7]==0,counters
+        print('PASS: native upload transport', 'forced socket fallback' if disabled else 'MIT-SHM, fenced ownership',counters,flush=True)
     x=ctypes.CDLL('libX11.so.6');P=ctypes.c_void_p;I=ctypes.c_int;U=ctypes.c_uint;L=ctypes.c_ulong
     def fn(name,result,args):
         f=getattr(x,name);f.restype=result;f.argtypes=args;return f

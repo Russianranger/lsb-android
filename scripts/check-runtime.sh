@@ -6,7 +6,7 @@ mkdir -p out/runtime-test/backend out/runtime-test/probe out/runtime-test/logs
 cp out/runtime-assets/* out/presentation/* runtime/*.py out/runtime-test/backend/
 cp out/runtime-probes/* out/runtime-test/probe/
 cp out/runtime-probes/liblsb-gamepad.so out/runtime-test/backend/
-chmod +x out/runtime-test/backend/vulkan-probe out/runtime-test/backend/wineserver out/runtime-test/backend/x11-frame-bridge
+chmod +x out/runtime-test/backend/vulkan-probe out/runtime-test/backend/wineserver out/runtime-test/backend/x11-frame-bridge out/runtime-test/backend/x11-upload-check
 # Source package expands to an ordinary GNU tar suitable for Docker import.
 docker import .tools/runtime/runtime-arm64.tar.gz lsb-runtime:base
 cat > out/runtime-test/Dockerfile <<'DOCKER'
@@ -25,6 +25,18 @@ for renderer in software turnip26; do
   -v "$PWD/out/windows-tests:/fixtures:ro" -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" \
   -v "$PWD/out/runtime-test/logs/$renderer:/logs" lsb-runtime:test sh -c 'python3 /tests/integration.py && if [ "$LSB_TEST_RENDERER" = software ]; then python3 /tests/initialization.py && python3 /tests/dependency_check.py && python3 /tests/launching.py && python3 /tests/gamepad.py; fi'
  done
+# A separate, disposable modern Mesa environment actually executes DXVK 2.7.1.
+# The pinned device rootfs and the baseline / PRoot tests stay unchanged.
+cat > out/runtime-test/Dockerfile.modern <<'DOCKER'
+FROM lsb-runtime:test
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* && echo 'deb https://deb.debian.org/debian trixie main' > /etc/apt/sources.list && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confold dist-upgrade && apt-get install -y --no-install-recommends mesa-vulkan-drivers && apt-get clean && rm -rf /var/lib/apt/lists/*
+DOCKER
+docker build -f out/runtime-test/Dockerfile.modern -t lsb-runtime:modern out/runtime-test
+mkdir -p out/runtime-test/logs/dxvk271
+docker run --rm --network none -e LSB_TEST_VULKAN_ICD=/usr/share/vulkan/icd.d/lvp_icd.aarch64.json -e LSB_TEST_RENDERER=turnip26 -e LSB_TEST_DXVK=2.7.1 \
+ -v "$PWD/out/runtime-test/backend:/opt/lsb:ro" -v "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
+ -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" -v "$PWD/out/runtime-test/logs/dxvk271:/logs" \
+ lsb-runtime:modern python3 /tests/integration.py
 # Test the same rootfs through patched PRoot; no Android device is claimed by CI.
 sudo apt-get install -y build-essential libtalloc-dev gawk
 mkdir -p out/runtime-test/proot-root out/runtime-test/classes out/runtime-test/proot-logs

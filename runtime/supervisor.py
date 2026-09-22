@@ -35,21 +35,22 @@ def pe32(path):
 def verify_bundle(folder):
     m=json.loads((folder/'bundle.json').read_text())
     if m.get('format')!=1 or m.get('candidate')!='wine10-box64-0.4.4' or m.get('dxvk')!='2.5.3':raise ValueError('Unsupported runtime component bundle')
-    required={'turnip.so','turnip-26.0.0.so','vulkan-probe','dxvk-d3d8.dll','dxvk-d3d9.dll','libasound_module_pcm_trasc.so','audio-bundle.json','wineserver','wineserver-patch.json'}
+    required={'turnip.so','turnip-26.0.0.so','vulkan-probe','dxvk-d3d8.dll','dxvk-d3d9.dll','dxvk-2.7.1-d3d8.dll','dxvk-2.7.1-d3d9.dll','libasound_module_pcm_trasc.so','audio-bundle.json','wineserver','wineserver-patch.json'}
     if set(m.get('files',{}))!=required:raise ValueError('Runtime component inventory does not match')
     for n,digest in m['files'].items():
         p=folder/n
         if p.is_symlink() or hashlib.sha256(p.read_bytes()).hexdigest()!=digest:raise ValueError('Component checksum failed: '+n)
-    for n in ('d3d8','d3d9'):
+    for n in ('d3d8','d3d9','2.7.1-d3d8','2.7.1-d3d9'):
         if not pe32(folder/('dxvk-'+n+'.dll')):raise ValueError('DXVK DLL is not x86')
     return m
 
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload'}:raise ValueError('Unexpected runtime request field')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
-    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface'):
+    if req.get('dxvk_version','2.5.3') not in ('2.5.3','2.7.1'):raise ValueError('Unsupported DXVK version')
+    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload'):
         if key in req and not isinstance(req[key],bool):raise ValueError('Unsupported '+key+' setting')
     if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
     if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','windowed540','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
@@ -182,6 +183,7 @@ class Supervisor:
         if self.req['renderer']=='software':
             self.env['WINEDLLOVERRIDES']+=';d3d8,d3d9=b'
             self.status(graphics='WineD3D / software diagnostic',hardware_verified=False);return
+        for name in ('LIBGL_ALWAYS_SOFTWARE','GALLIUM_DRIVER','LP_NUM_THREADS'):self.env.pop(name,None)
         driver='turnip-26.0.0.so' if self.req['renderer']=='turnip26' else 'turnip.so'
         atomic(SESSION/'turnip-icd.json',{'file_format_version':'1.0.0','ICD':{'library_path':str(BUNDLE/driver),'api_version':'1.3.0'}})
         self.env.update(VK_ICD_FILENAMES=str(SESSION/'turnip-icd.json'),VK_DRIVER_FILES=str(SESSION/'turnip-icd.json'),MESA_VK_WSI_DEBUG='sw',
@@ -203,6 +205,59 @@ class Supervisor:
         if not test_icd and (report.get('software') is not False or report.get('vendor_id')!=0x5143 or report.get('driver_id')!=18):raise RuntimeError('Qualcomm hardware was not verified; no software fallback was selected')
         self.state['graphics_hud']=self.env['DXVK_HUD'];self.state['vulkan']=report;self.status(graphics='DXVK 2.5.3 / '+report.get('device','unknown'),hardware_verified=not bool(test_icd),driver_sha256=bundle['files'][driver])
         self.env['WINEDLLOVERRIDES']+=';d3d8,d3d9=n'
+    def configure_upload(self):
+        self.state['shm_upload_requested']=self.req.get('shm_upload',False)
+        if not self.req.get('shm_upload',False):
+            self.status(shm_upload_active=False);return
+        previous=self.env.get('LD_PRELOAD','')
+        proc=None
+        try:
+            manifest=json.loads((BUNDLE/'presentation-bundle.json').read_text())
+            for name in ('liblsb-x11-upload.so','x11-upload-check'):
+                path=BUNDLE/name
+                if path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest()!=manifest.get('upload_files',{}).get(name):raise ValueError('Upload component checksum failed')
+            self.env.update(LD_PRELOAD=' '.join(filter(None,[previous,str(BUNDLE/'liblsb-x11-upload.so')])),LSB_X11_UPLOAD='1',LSB_X11_UPLOAD_STATS=str(LOGS))
+            proc=self.spawn([str(BUNDLE/'x11-upload-check')],'wsi-check.log',fixed_output=True)
+            self.wait(proc,20,'Shared-memory upload check')
+            counters=struct.unpack('<12Q',(LOGS/('wsi-upload-'+str(proc.pid)+'.bin')).read_bytes())
+            if counters[0]!=0x4c534257534931 or counters[2]<36 or counters[7]:raise ValueError('X11 shared-memory upload unavailable')
+            self.status(shm_upload_active=True,shm_upload_preflight_frames=counters[2])
+        except (OSError,ValueError,RuntimeError,struct.error) as error:
+            if proc is not None and proc.poll() is None:
+                os.killpg(proc.pid,signal.SIGKILL);proc.wait()
+            if previous:self.env['LD_PRELOAD']=previous
+            else:self.env.pop('LD_PRELOAD',None)
+            self.env.pop('LSB_X11_UPLOAD',None);self.env.pop('LSB_X11_UPLOAD_STATS',None)
+            self.status(shm_upload_active=False,shm_upload_fallback=str(error))
+
+    def install_dxvk(self,version):
+        for name in ('d3d8','d3d9'):
+            filename='dxvk-'+('2.7.1-' if version=='2.7.1' else '')+name+'.dll'
+            dest=PREFIX/'drive_c/windows/syswow64'/(name+'.dll')
+            tmp=dest.with_suffix('.lsb-new');shutil.copyfile(BUNDLE/filename,tmp);tmp.replace(dest)
+        cache=PREFIX/'lsb-cache'
+        if version!='2.5.3':cache=cache/('dxvk-'+version)
+        cache.mkdir(exist_ok=True)
+        self.env['DXVK_STATE_CACHE_PATH']=str(cache)
+
+    def select_dxvk(self,bundle):
+        requested=self.req.get('dxvk_version','2.5.3');version=requested
+        self.install_dxvk(version)
+        if version=='2.7.1':
+            proc=None
+            try:
+                proc=self.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine','P:\\graphics-check.exe'],'dxvk-compatibility.log')
+                self.wait(proc,45,'DXVK 2.7.1 draw and presentation check')
+                self.state['dxvk_compatibility']='eight D3D8 draw/present frames passed'
+            except RuntimeError as error:
+                if proc is not None and proc.poll() is None:
+                    os.killpg(proc.pid,signal.SIGKILL);proc.wait()
+                version='2.5.3';self.install_dxvk(version)
+                self.state['dxvk_fallback']=str(error)
+        self.status(dxvk_requested=requested,dxvk_selected=version,
+            dxvk_dll_sha256={name:bundle['files']['dxvk-'+('2.7.1-' if version=='2.7.1' else '')+name+'.dll'] for name in ('d3d8','d3d9')},
+            graphics='DXVK '+version+' / '+self.state['vulkan'].get('device','unknown'))
+
     def start_native_surface(self):
         if not self.req.get('native_surface',False):return
         try:
@@ -261,9 +316,8 @@ class Supervisor:
             p.symlink_to(target)
         self.status('checking_graphics');self.graphics(bundle)
         if self.req['renderer']!='software':
-            for name in ('d3d8','d3d9'):
-                dest=PREFIX/'drive_c/windows/syswow64'/(name+'.dll')
-                tmp=dest.with_suffix('.lsb-new');shutil.copyfile(BUNDLE/('dxvk-'+name+'.dll'),tmp);tmp.replace(dest)
+            self.configure_upload()
+            self.select_dxvk(bundle)
         if self.req.get('action')=='gamepad-config':
             from client_setup import validate_manifest,client_path,windows_path
             manifest=json.loads((SESSION/'client-manifest.json').read_text());validate_manifest(manifest)

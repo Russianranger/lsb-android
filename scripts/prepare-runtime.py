@@ -36,14 +36,14 @@ def main():
   for n in names:(OUT/n).write_bytes(z.read('assets/'+n))
   for n in ['libproot.so','libproot-loader.so']:
    target=ROOT/'out/runtime-libs/arm64-v8a'/n;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(z.read('lib/arm64-v8a/'+n))
- # DXVK contains the matching D3D8+D3D9 pair. Verified release checksum is supplied below.
- dxvk=CACHE/'dxvk-2.5.3.tar.gz'
- expected='d8e6ef7d1168095165e1f8a98c7d5a4485b080467bb573d2a9ef3e3d79ea1eb8'
- if not dxvk.exists() or digest(dxvk)!=expected:
-  with urllib.request.urlopen('https://github.com/doitsujin/dxvk/releases/download/v2.5.3/dxvk-2.5.3.tar.gz',timeout=90) as r,dxvk.open('wb') as w:shutil.copyfileobj(r,w)
- if digest(dxvk)!=expected:raise ValueError('DXVK release checksum mismatch')
- with tarfile.open(dxvk) as t:
-  for n in ['d3d8','d3d9']:(OUT/('dxvk-'+n+'.dll')).write_bytes(t.extractfile('dxvk-2.5.3/x32/'+n+'.dll').read())
+ # Both matching PE32 pairs remain packaged for reversible comparison.
+ for version,expected in [('2.5.3','d8e6ef7d1168095165e1f8a98c7d5a4485b080467bb573d2a9ef3e3d79ea1eb8'),('2.7.1','d85ce7c79f57ecd765aaa1b9e7007cb875e6fde9f6d331df799bce73d513ce87')]:
+  dxvk=CACHE/('dxvk-'+version+'.tar.gz')
+  if not dxvk.exists() or digest(dxvk)!=expected:
+   with urllib.request.urlopen('https://github.com/doitsujin/dxvk/releases/download/v'+version+'/dxvk-'+version+'.tar.gz',timeout=90) as r,dxvk.open('wb') as w:shutil.copyfileobj(r,w)
+  if digest(dxvk)!=expected:raise ValueError('DXVK release checksum mismatch: '+version)
+  with tarfile.open(dxvk) as t:
+   for n in ['d3d8','d3d9']:(OUT/('dxvk-'+('2.7.1-' if version=='2.7.1' else '')+n+'.dll')).write_bytes(t.extractfile('dxvk-'+version+'/x32/'+n+'.dll').read())
  files={f.name:digest(f) for f in OUT.iterdir() if f.is_file() and f.name!='bundle.json'}
  (OUT/'bundle.json').write_text(json.dumps({'format':1,'candidate':'wine10-box64-0.4.4','dxvk':'2.5.3','files':files},indent=2)+'\n')
  if a.release:

@@ -1,3 +1,21 @@
+# Active implementation: Vulkan presentation and DXVK (0.5.11)
+
+The user authorized GPU presentation and DXVK work. GameHub's reported 60 FPS
+came from its overlay; the user confirms smoother gameplay. This clarification
+is settled. See [0.5.11 mechanism and focused test](gpu-presentation-0511.md).
+
+New shared-memory Vulkan upload transport and an independent, reversible DXVK
+2.7.1 comparison are implemented. This removes eligible full-frame socket
+uploads, not GPU readback. Keep the baseline driver/Wine/Box64 and both graphics
+options available. CI qualification and original-key APK signing are underway;
+this section must be replaced with actual results before delivery.
+
+Preserve accepted 0.5.8 observer behavior, 60 Hz, audio/controllers, original
+xiloader and working Termux server/client `30251204_1`. No source update,
+re-import, re-preparation or managed migration. Do not redesign the 0.5.0 work.
+
+---
+
 # Latest Thor result: 0.5.10 has no noticeable gameplay improvement
 
 The user reports no improvement and says the earlier GameHub Lite / Proton 10

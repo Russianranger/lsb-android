@@ -119,13 +119,10 @@ has an FFXI/pol/xiloader-specific entry to copy into this launch path.
    runtime selectable; validate login, controller, audio, exit/relaunch and
    device performance before promoting the candidate.
 
-The only useful remaining GameHub clarification is whether the reported 60 was
-an in-game/DXVK measurement or the launcher overlay, and whether a frame-rate
-unlocker was active. FFXI's default divisor is 2 (30 FPS); divisor 1 is 60 FPS in
-[Windower's Config documentation](https://docs.windower.net/plugins/config/).
-The app's 60 Hz display polling does not change that game setting. This explains
-why cap configuration belongs in the comparison; it does not explain drops
-into the teens or dismiss the user's performance report.
+The user subsequently clarified that 60 FPS came from GameHub's overlay, and
+confirms visibly smoother gameplay. That clarification is settled; do not ask
+it again. The next authorized implementation targets GPU presentation and
+DXVK, documented in [0.5.11](gpu-presentation-0511.md).
 
 Preserve the working Termux server, client `30251204_1`, original xiloader and
 accepted preparation. No client/server source update or managed migration.
