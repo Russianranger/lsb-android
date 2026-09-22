@@ -1,4 +1,18 @@
-# Active milestone 4: loader initialization and camera axis (0.5.2)
+# Active milestone 4: display smoothness (0.5.3)
+
+The user accepts 0.5.2 boot, both controller axes, relaunch and improved audio. The new Thor diagnostics corroborate two successful launches, clean dependency checks and seven-axis DirectInput; audio underruns stay nearly flat after startup. Preserve that working baseline. The outstanding device issue is stutters/FPS drops, not launch recovery.
+
+0.5.3 replaces the three-shape RGB565 bitmap cache with a single reusable software staging allocation. An actual Android/Skia regression workload reduces 120 bitmap allocations (207,120,000 cumulative bytes) to one (1,843,200 bytes), with matching pixels including odd rectangle widths. Timing diagnostics retain up to 180 windows, identify sessions/connections, record update gaps and decode/draw costs, flush on display close and serialize/write on a bounded background worker. The previous final-only sample cannot establish gameplay FPS or its limiting stage. See [evidence, scope and Thor comparison](display-smoothness-053.md).
+
+Local Android tests pass; the release must pass the full GitHub Actions gates before APK delivery. CI result and original-signer artifact identity will be recorded here after that run. The earlier server toolchain and DirectInput failures were resolved in 0.5.0 and remain covered by required CI gates.
+
+First Thor comparison: install in place, use the **existing working Termux server** and the same accepted 1280×720/Turnip settings with Fast display enabled. Disable Capture FFXI startup result for normal gameplay, keep the DXVK FPS HUD enabled, move and rotate the camera in a repeatable area for 3–5 minutes, then export Diagnostics immediately. Report the HUD FPS range and whether drops occur during motion, zone entry or steady play. Confirm audio and Stop/relaunch still work. A 960×540 comparison is optional only after this same-settings run.
+
+Preserve accepted generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, original nested Ashita xiloader SHA-256 `78fe8ab1dee5aaac3f866001b706d19d233996e584cf78f3a47b26a0d62cdaf8`, client **30251204_1**, current Wine/Box64 runtime and matching server source. Do not update client/xiloader/server source toward **30260904_1**, re-import/re-prepare the client, or begin managed-server migration during this test. The older retry sequences below are historical.
+
+---
+
+# Previous milestone 4 checkpoint: loader initialization and camera axis (0.5.2)
 
 The 0.5.1 Thor retry reaches the runtime and completes controller setup; the Android null-session crash is no longer observed. The failed client attempt stops before xiloader: exactly `WS2_32.dll` fails initialization with Windows error 1114, while the other 19 imports pass. The following 32-bit controller-setup process successfully loads that DLL. The underlying initialization cause is not proven. See [device evidence, repair boundaries and focused retry](loader-controller-052.md).
 
@@ -8,7 +22,7 @@ Implementation `3ea8a01a2886b43ed3ac43885a39adf3b88ce21b` (following `aa33cf57db
 
 Signed `LSB-Android-0.5.2.apk` is versionCode 18, 15,903,491 bytes, SHA-256 `f6585a47626e9f6ebdc0c18ebf6e69891725014039eb395148becb68d76de6be`, using the original certificate for an install-in-place update. Every non-signature entry matches the CI artifact. Compared with 0.5.1, only `AndroidManifest.xml`, `classes.dex`, `runtime/client_launch.py` and `liblsb-gamepad.so` differ. See [validation](validation.md) for exact artifact checks and limitations.
 
-First Thor test: install in place, start the **existing working Termux server**, launch the accepted client and confirm login/world entry plus clean audio. Then open FFXI gamepad setup, reselect the virtual joystick if necessary, assign camera **Z/Rz**, and check both right-stick directions plus release/Stop/relaunch. Export Diagnostics immediately if the dependency check still stops. This is a tested axis fix and targeted launch recovery; successful Thor login with 0.5.2 is not yet established.
+First Thor test: install in place, start the **existing working Termux server**, launch the accepted client and confirm login/world entry plus clean audio. Then open FFXI gamepad setup, reselect the virtual joystick if necessary, assign camera **Z/Rz**, and check both right-stick directions plus release/Stop/relaunch. Export Diagnostics immediately if the dependency check still stops. This retry is now complete: the user confirms successful boot, recognized camera axis, clean relaunch and much better audio on 0.5.2. The next task is display smoothness; use the current instructions above.
 
 Preserve user-confirmed 0.4.8 behavior, accepted generation `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, original nested Ashita xiloader SHA-256 `78fe8ab1dee5aaac3f866001b706d19d233996e584cf78f3a47b26a0d62cdaf8`, client **30251204_1**, current runtime and matching server source. Do not update client/xiloader/server source toward **30260904_1**, re-import/re-prepare the client, or begin managed-server migration during this retry. The 0.5.1 and 0.5.0 retry instructions below are historical and superseded by the linked 0.5.2 sequence.
 

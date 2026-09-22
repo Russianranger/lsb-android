@@ -16,6 +16,7 @@ public final class RuntimeActivity extends Activity {
     private final Map<Integer,Integer> held=new HashMap<>();
     private volatile LocalSocket socket;
     private volatile RfbConnection connection;
+    private volatile DisplaySession displaySession;
     private volatile boolean viewing;
     private volatile int connectionGeneration;
     private Screen screen;
@@ -40,8 +41,8 @@ public final class RuntimeActivity extends Activity {
     private final Runnable refresh=new Runnable(){public void run(){
         if(!viewing)return;ClientRuntime rt=ClientRuntime.get(RuntimeActivity.this);
         status.setText(rt.status+(displayError.isEmpty()||!rt.launchError.isEmpty()?"":"\n"+displayError));
-        RfbConnection c=connection;
-        if(c!=null&&System.currentTimeMillis()-lastStats>5000){lastStats=System.currentTimeMillis();double[] sample=c.stats.sample(System.nanoTime());if(sample!=null)rt.recordFrames(sample);}
+        DisplaySession display=displaySession;
+        if(display!=null&&System.currentTimeMillis()-lastStats>5000){lastStats=System.currentTimeMillis();recordFrames(display);}
         if(!rt.alive()&&!rt.launchError.isEmpty()&&!failureShown){
             failureShown=true;
             new AlertDialog.Builder(RuntimeActivity.this).setTitle("Client launch stopped").setMessage(rt.launchError)
@@ -64,10 +65,18 @@ public final class RuntimeActivity extends Activity {
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus&&controller!=null)controller.close();}
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e){if(hasWindowFocus()&&controller!=null&&controller.motion(e))return true;return super.dispatchGenericMotionEvent(e);}
     @Override protected void onDestroy(){releaseAndClose();input.shutdown();super.onDestroy();}
+    private static final class DisplaySession {
+        final RfbConnection connection;final String id;final boolean fast;final int cap;
+        DisplaySession(RfbConnection c,String id,boolean fast,int cap){connection=c;this.id=id;this.fast=fast;this.cap=cap;}
+    }
+    private void recordFrames(DisplaySession display){
+        RfbConnection c=display.connection;long[] allocation=screen.allocations();
+        ClientRuntime.get(this).recordFrames(display.id,c.stats.sample(System.nanoTime()),c.width,c.height,display.fast,display.cap,allocation[0],allocation[1]);
+    }
     private void connect(){
         final int generation=++connectionGeneration;
         new Thread(()->{
-            LocalSocket s=null;
+            LocalSocket s=null;DisplaySession display=null;
             try{
                 // A full client copy can take minutes before the display server exists.
                 // Wait for the owned operation, not the old one-minute probe deadline.
@@ -80,19 +89,23 @@ public final class RuntimeActivity extends Activity {
                 if(!viewing||generation!=connectionGeneration)return;
                 s=new LocalSocket();s.connect(new LocalSocketAddress(ClientRuntime.get(this).displaySocket().getPath(),LocalSocketAddress.Namespace.FILESYSTEM));
                 if(s.getPeerCredentials().getUid()!=android.os.Process.myUid())throw new IOException("Display owner mismatch");
-                RfbConnection c=new RfbConnection(s.getInputStream(),s.getOutputStream(),screen,getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("fast_display",true));c.handshake();
+                ClientRuntime rt=ClientRuntime.get(this);String id=rt.sessionKey();
+                boolean fast=getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("fast_display",true);
+                int cap=getSharedPreferences("runtime",MODE_PRIVATE).getInt("display_fps",30);
+                RfbConnection c=new RfbConnection(s.getInputStream(),s.getOutputStream(),screen,fast);c.handshake();
+                display=new DisplaySession(c,id,fast,cap);
                 if(!viewing||generation!=connectionGeneration)return;
-                socket=s;connection=c;ui.post(()->displayError="");
+                socket=s;connection=c;displaySession=display;ui.post(()->displayError="");
                 while(viewing&&generation==connectionGeneration)c.readUpdate();
             }catch(Exception e){if(viewing&&generation==connectionGeneration)ui.post(()->displayError="Display closed: "+e.getMessage());}
-            finally{try{if(s!=null)s.close();}catch(Exception ignored){}if(generation==connectionGeneration){connection=null;socket=null;}}
+            finally{if(display!=null)recordFrames(display);try{if(s!=null)s.close();}catch(Exception ignored){}if(generation==connectionGeneration){connection=null;socket=null;displaySession=null;}}
         },"lsb-display").start();
     }
     private interface Send{void run(RfbConnection c)throws IOException;}
     private void send(Send task){RfbConnection c=connection;if(c==null||input.isShutdown())return;input.execute(()->{try{task.run(c);}catch(IOException ignored){}});}
     private void tapKey(int sym){send(c->{c.key(sym,true);c.key(sym,false);});}
     private void releaseAndClose(){
-        ++connectionGeneration;RfbConnection c=connection;LocalSocket s=socket;connection=null;socket=null;
+        ++connectionGeneration;RfbConnection c=connection;LocalSocket s=socket;connection=null;socket=null;displaySession=null;
         Collection<Integer> keys=new ArrayList<>(held.values());held.clear();
         if(!input.isShutdown())input.execute(()->{try{if(c!=null){for(int sym:keys)c.key(sym,false);c.pointer(0,0,0);}}catch(Exception ignored){}finally{try{if(s!=null)s.close();}catch(Exception ignored){}}});
     }
@@ -122,18 +135,14 @@ public final class RuntimeActivity extends Activity {
     }
     private final class Screen extends View implements RfbConnection.Screen {
         private Bitmap bitmap;private Canvas bitmapCanvas;private final Object lock=new Object();private final RectF destination=new RectF();private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);private int fw=1280,fh=720;private int[] copy=new int[0];
-        private final java.util.LinkedHashMap<Long,Bitmap> staging=new java.util.LinkedHashMap<Long,Bitmap>(4,.75f,true);
-        private byte[] wrapped;private java.nio.ByteBuffer bytes;
+        private Rgb565Staging staging;
         Screen(){super(RuntimeActivity.this);setFocusable(true);setFocusableInTouchMode(true);}
-        public void resize(int w,int h){synchronized(lock){bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);bitmapCanvas=new Canvas(bitmap);fw=w;fh=h;for(Bitmap old:staging.values())old.recycle();staging.clear();}postInvalidate();}
+        public void resize(int w,int h){synchronized(lock){bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);bitmapCanvas=new Canvas(bitmap);fw=w;fh=h;if(staging!=null)staging.close();staging=new Rgb565Staging(w,h);}postInvalidate();}
         public boolean raw565(int x,int y,int w,int h,byte[] data,int length){synchronized(lock){
             if(bitmap==null)return false;
-            if(wrapped!=data){wrapped=data;bytes=java.nio.ByteBuffer.wrap(data);}
-            long key=((long)w<<32)|h;Bitmap tile=staging.get(key);
-            if(tile==null){if(staging.size()>=3){Long old=staging.keySet().iterator().next();staging.remove(old).recycle();}tile=Bitmap.createBitmap(w,h,Bitmap.Config.RGB_565);staging.put(key,tile);}
-            if(tile.getRowBytes()!=w*2)return false;
-            bytes.position(0);bytes.limit(length);tile.copyPixelsFromBuffer(bytes);bitmapCanvas.drawBitmap(tile,x,y,null);return true;
+            return staging.apply(bitmapCanvas,x,y,w,h,data,length);
         }}
+        long[] allocations(){synchronized(lock){return new long[]{staging==null?0:staging.allocations,staging==null?0:staging.allocatedBytes};}}
         public void pixels(int x,int y,int w,int h,int[] argb){synchronized(lock){if(bitmap!=null)bitmap.setPixels(argb,0,w,x,y,w,h);}}
         public void copy(int x,int y,int w,int h,int sx,int sy){synchronized(lock){if(bitmap==null)return;if(copy.length<w*h)copy=new int[w*h];bitmap.getPixels(copy,0,w,sx,sy,w,h);bitmap.setPixels(copy,0,w,x,y,w,h);}}
         public void updated(){postInvalidateOnAnimation();}

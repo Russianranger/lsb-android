@@ -31,10 +31,12 @@ final class ClientRuntime {
     private volatile boolean stopRequested;
     private AudioBridge audio;
     private volatile String sessionId;
+    private final DisplayPerformance performance;
     private volatile Thread preparingThread;
     private ClientRuntime(Context c){
         context=c;home=new File(c.getFilesDir(),"rt");root=new File(home,"root");prefix=new File(home,"prefix");
         run=new File(home,"run");tmp=new File(home,"tmp");logs=new File(home,"logs");backend=new File(home,"backend");probes=new File(home,"probe");
+        performance=new DisplayPerformance(new File(logs,"display-performance.json"));
         for(File f:new File[]{home,run,tmp,logs})f.mkdirs();
         if(installed())status="Runtime installed. Use the Client tab for your prepared installation.";
     }
@@ -51,7 +53,9 @@ final class ClientRuntime {
         return snapshot.put("client_version",context.getSharedPreferences("compatibility",0).getString(generation.getName(),"unknown"));
     }
     File gamepadState(){return new File(run,"gamepad.bin");}
-    void recordFrames(double[] s){try{JSONObject data=new JSONObject().put("display_updates_per_second",s[1]).put("unique_draws_per_second",s[2]).put("decode_ms",s[4]).put("draw_ms",s[5]).put("pixels_per_second",s[6]).put("conversion_ms",s[8]).put("bitmap_apply_ms",s[9]).put("fast_display",context.getSharedPreferences("runtime",0).getBoolean("fast_display",true));write(new File(logs,"display-performance.json"),data.toString(2));}catch(Exception ignored){}}
+    void recordFrames(String id,ClientFrameStats.Sample sample,int width,int height,boolean fast,int cap,long allocations,long allocatedBytes){
+        performance.record(id,sample,width,height,fast,cap,allocations,allocatedBytes);
+    }
     File displaySocket(){return new File(run,"display.sock");}
     static String read(File p,int max)throws IOException {
         if(p.length()>max)throw new IOException("Metadata exceeds limits");return new String(Files.readAllBytes(p.toPath()),StandardCharsets.UTF_8);
@@ -184,7 +188,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.2");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.3");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -226,8 +230,11 @@ final class ClientRuntime {
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");
             reapOrphans();
             TarExtractor.remove(run);TarExtractor.remove(tmp);run.mkdirs();tmp.mkdirs();prefix.mkdirs();assets();
-            File[] old=logs.listFiles();if(old!=null)for(File f:old)if(f.isFile()&&!f.getName().endsWith(".previous"))LogRetention.rotate(f);
-            sessionId=UUID.randomUUID().toString();JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action);
+            synchronized(performance){
+                File[] old=logs.listFiles();if(old!=null)for(File f:old)if(f.isFile()&&!f.getName().endsWith(".previous"))LogRetention.rotate(f);
+                sessionId=UUID.randomUUID().toString();performance.reset(sessionId);
+            }
+            JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action);
             if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
                 request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
                 request.put("display_fps",context.getSharedPreferences("runtime",0).getInt("display_fps",30));

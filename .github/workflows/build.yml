@@ -40,7 +40,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Android 13 display startup and controller lifecycle
+      - name: Android 13 display pixels, timing history and controller lifecycle
         run: python3 scripts/test-android.py --android-jar "$ANDROID_HOME/platforms/android-35/android.jar"
       - name: Compile, dex, package and verify
         run: |
@@ -48,12 +48,12 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.2.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.3.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.2.apk
+            out/LSB-Android-0.5.3.apk
             out/runtime-probes/
             out/runtime-assets/
             out/windows-tests/client-com-stub.dll
