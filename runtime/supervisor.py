@@ -47,9 +47,9 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','native_surface'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface'}:raise ValueError('Unexpected runtime request field')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
-    for key in ('gamepad','dxvk_hud','native_surface'):
+    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface'):
         if key in req and not isinstance(req[key],bool):raise ValueError('Unsupported '+key+' setting')
     if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
     if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','windowed540','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
@@ -142,6 +142,11 @@ class BoundedLog:
         self.thread=threading.Thread(target=self.pump,args=(stream,),daemon=True);self.thread.start()
 
 
+def graphics_hud(req):
+    if req.get('dxvk_diagnostics',False):return 'devinfo,fps,frametimes,compiler,cs'
+    return 'devinfo,fps' if req.get('dxvk_hud',True) else ''
+
+
 class Stopped(Exception):pass
 
 
@@ -180,7 +185,7 @@ class Supervisor:
         driver='turnip-26.0.0.so' if self.req['renderer']=='turnip26' else 'turnip.so'
         atomic(SESSION/'turnip-icd.json',{'file_format_version':'1.0.0','ICD':{'library_path':str(BUNDLE/driver),'api_version':'1.3.0'}})
         self.env.update(VK_ICD_FILENAMES=str(SESSION/'turnip-icd.json'),VK_DRIVER_FILES=str(SESSION/'turnip-icd.json'),MESA_VK_WSI_DEBUG='sw',
-            DXVK_LOG_LEVEL='info',DXVK_LOG_PATH=str(LOGS),DXVK_HUD='devinfo,fps' if self.req.get('dxvk_hud',True) else '',DXVK_STATE_CACHE_PATH=str(PREFIX/'lsb-cache'),MESA_SHADER_CACHE_DIR=str(PREFIX/'lsb-cache'))
+            DXVK_LOG_LEVEL='info',DXVK_LOG_PATH=str(LOGS),DXVK_HUD=graphics_hud(self.req),DXVK_STATE_CACHE_PATH=str(PREFIX/'lsb-cache'),MESA_SHADER_CACHE_DIR=str(PREFIX/'lsb-cache'))
         (PREFIX/'lsb-cache').mkdir(exist_ok=True)
         command=[str(BUNDLE/'vulkan-probe')]
         # CI-only environment injection. Android uses env -i and never exposes this switch.
@@ -196,7 +201,7 @@ class Supervisor:
         report=records[-1]
         if report.get('presentation_frames')!=3 or report.get('api_version',0)<(1<<22|3<<12):raise RuntimeError('Vulkan presentation or version check failed')
         if not test_icd and (report.get('software') is not False or report.get('vendor_id')!=0x5143 or report.get('driver_id')!=18):raise RuntimeError('Qualcomm hardware was not verified; no software fallback was selected')
-        self.state['vulkan']=report;self.status(graphics='DXVK 2.5.3 / '+report.get('device','unknown'),hardware_verified=not bool(test_icd),driver_sha256=bundle['files'][driver])
+        self.state['graphics_hud']=self.env['DXVK_HUD'];self.state['vulkan']=report;self.status(graphics='DXVK 2.5.3 / '+report.get('device','unknown'),hardware_verified=not bool(test_icd),driver_sha256=bundle['files'][driver])
         self.env['WINEDLLOVERRIDES']+=';d3d8,d3d9=n'
     def start_native_surface(self):
         if not self.req.get('native_surface',False):return

@@ -61,7 +61,7 @@ def main():
     renderer=os.environ.get('LSB_TEST_RENDERER','software')
     for cycle in range(2):
         for n in ('stop','status.json','probe.json','display.sock'):Path('/session',n).unlink(missing_ok=True)
-        req={'format':1,'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1}
+        req={'format':1,'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1,'dxvk_diagnostics':cycle==1 and renderer!='software'}
         Path('/session/request.json').write_text(json.dumps(req));receiver=Receiver('/session/audio.sock')
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],env=dict(os.environ,LSB_TEST_AUTOCLOSE='1'))
         try:
@@ -85,6 +85,8 @@ def main():
             assert Path('/prefix/lsb-prefix-ready.json').is_file()
             if renderer!='software':
                 assert result['hardware_verified'] is False,'CI must not claim Adreno hardware'
+                assert result['graphics_hud']==('devinfo,fps,frametimes,compiler,cs' if cycle==1 else 'devinfo,fps'),result
+                if cycle==1:print('PASS: detailed DXVK HUD runs with native capture, PCM and input',flush=True)
                 log=Path('/logs/wine-probe.log').read_text(errors='replace')
                 assert 'd3d8.dll' in log and 'd3d9.dll' in log and ': native' in log
                 assert any('DXVK: v2.5.3' in f.read_text(errors='replace') for f in Path('/logs').glob('*d3d*.log'))

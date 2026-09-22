@@ -112,7 +112,7 @@ public final class RuntimeActivity extends Activity {
     }
     private void openNative(ClientRuntime rt,String id,RfbConnection c,int generation){
         closeNative();screen.nativeMode=true;
-        nativeDisplay=new NativePresentation(this,rt.nativeFrameSocket(),rt.nativeFramePixels(),rt.nativeFrameReport(),id,new NativePresentation.Events(){
+        nativeDisplay=new NativePresentation(this,rt.nativeFrameSocket(),rt.nativeFramePixels(),rt.nativeFrameReports(id),new NativePresentation.Events(){
             public boolean current(){return generation==connectionGeneration&&java.util.Objects.equals(id,rt.sessionKey());}
             public void size(int w,int h){if(viewing&&generation==connectionGeneration){screen.frameSize(w,h);fitNative();}}
             public void failed(String reason){fallbackNative(c,generation,reason);}

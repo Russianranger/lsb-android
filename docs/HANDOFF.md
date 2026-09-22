@@ -1,4 +1,24 @@
-# Active milestone: remaining periodic stutter after 0.5.6
+# Active milestone: remove reporting from the display worker (0.5.7)
+
+The authorized next step is implemented: Native Surface transfers bounded numeric
+samples to a separate diagnostics writer, preserving session isolation and the
+final report. New measurements record individual post gaps with idle context,
+stage maxima, loop delay and writer duration. An opt-in stutter HUD adds frame
+times, shader compiler and DXVK worker activity. Normal FPS HUD behavior and
+all pinned runtime/graphics/audio/controller binaries are retained.
+See [implementation, validation and Thor sequence](display-worker-057.md).
+
+Local new Android regressions and core/runtime/server contracts pass. Full CI
+and the original-signer install-in-place APK are being prepared. Physical Thor
+smoothness remains unverified. First compare with the new diagnostic HUD off;
+if hitches remain, enable it for a second launch and export both sessions.
+Keep the existing matching Termux server/client `30251204_1`, original xiloader,
+accepted preparation, 720p/30 Hz, Native Surface on and Fast display/compression
+off. No runtime/driver replacement, client/source update or managed migration.
+
+---
+
+# Previous device result: remaining periodic stutter after 0.5.6
 
 The latest Thor result confirms MIT-SHM is working: all 6,565 posted frames use
 shared memory and comparable capture time falls from 25.18 to 4.00 ms. The user

@@ -2,6 +2,14 @@ import importlib.util,json,pathlib,tempfile,unittest,uuid,io,time,hashlib
 from unittest.mock import patch,Mock
 spec=importlib.util.spec_from_file_location('supervisor',pathlib.Path(__file__).resolve().parents[2]/'runtime/supervisor.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class Contracts(unittest.TestCase):
+ def test_diagnostic_hud_is_explicit_and_does_not_change_normal_hud(self):
+  req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
+  self.assertEqual(module.graphics_hud(req),'devinfo,fps')
+  self.assertEqual(module.graphics_hud(dict(req,dxvk_hud=False)),'')
+  detailed=dict(req,dxvk_hud=False,dxvk_diagnostics=True)
+  self.assertEqual(module.validate_request(detailed),detailed)
+  self.assertEqual(module.graphics_hud(detailed),'devinfo,fps,frametimes,compiler,cs')
+  with self.assertRaises(ValueError):module.validate_request(dict(req,dxvk_diagnostics='true'))
  def test_request_excludes_game_paths_and_commands(self):
   req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
   self.assertEqual(module.validate_request(req),req)

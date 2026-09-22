@@ -32,11 +32,13 @@ final class ClientRuntime {
     private AudioBridge audio;
     private volatile String sessionId;
     private final DisplayPerformance performance;
+    private final NativePerformance nativePerformance;
     private volatile Thread preparingThread;
     private ClientRuntime(Context c){
         context=c;home=new File(c.getFilesDir(),"rt");root=new File(home,"root");prefix=new File(home,"prefix");
         run=new File(home,"run");tmp=new File(home,"tmp");logs=new File(home,"logs");backend=new File(home,"backend");probes=new File(home,"probe");
         performance=new DisplayPerformance(new File(logs,"display-performance.json"));
+        nativePerformance=new NativePerformance(new File(logs,"native-display-performance.json"));
         for(File f:new File[]{home,run,tmp,logs})f.mkdirs();
         if(installed())status="Runtime installed. Use the Client tab for your prepared installation.";
     }
@@ -59,7 +61,7 @@ final class ClientRuntime {
     File displaySocket(){return new File(run,"display.sock");}
     File nativeFrameSocket(){return new File(run,"native-display.sock");}
     File nativeFramePixels(){return new File(run,"framebuffer.bin");}
-    File nativeFrameReport(){return new File(logs,"native-display-performance.json");}
+    NativePerformance.Stream nativeFrameReports(String id){return nativePerformance.open(id);}
     boolean nativeSurfaceRequested(){try{return new JSONObject(read(new File(run,"request.json"),16384)).optBoolean("native_surface",false);}catch(Exception e){return false;}}
 
     static String read(File p,int max)throws IOException {
@@ -193,7 +195,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.6");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.7");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -235,16 +237,17 @@ final class ClientRuntime {
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");
             reapOrphans();
             TarExtractor.remove(run);TarExtractor.remove(tmp);run.mkdirs();tmp.mkdirs();prefix.mkdirs();assets();
-            synchronized(performance){
+            synchronized(performance){synchronized(nativePerformance){
                 File[] old=logs.listFiles();if(old!=null)for(File f:old)if(f.isFile()&&!f.getName().endsWith(".previous"))LogRetention.rotate(f);
-                sessionId=UUID.randomUUID().toString();performance.reset(sessionId);
-            }
+                sessionId=UUID.randomUUID().toString();performance.reset(sessionId);nativePerformance.reset(sessionId);
+            }}
             JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action);
             if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
                 request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
                 request.put("display_fps",context.getSharedPreferences("runtime",0).getInt("display_fps",30));
                 request.put("native_surface",context.getSharedPreferences("runtime",0).getBoolean("native_surface",true));
                 request.put("dxvk_hud",context.getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));
+                request.put("dxvk_diagnostics",context.getSharedPreferences("runtime",0).getBoolean("dxvk_diagnostics",false));
                 try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}
             }
             if(action.equals("gamepad-config")){request.put("gamepad",true);try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}}
@@ -333,6 +336,7 @@ final class ClientRuntime {
         Process active=process;if(active!=null&&!active.waitFor(30,TimeUnit.SECONDS)){active.destroy();if(!active.waitFor(5,TimeUnit.SECONDS))active.destroyForcibly();}
     }
     void exportLogs(ZipOutputStream zip)throws Exception {
+        nativePerformance.flush(2000);
         SafeZip.entry(zip,"runtime/state.json",state().toString(2));
         PreparedClientStore ps=prepared();
         for(String kind:new String[]{"current","previous","candidate"}){
