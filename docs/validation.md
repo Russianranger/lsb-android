@@ -47,13 +47,13 @@ entries, including graphics/native/audio/controller/loader components and the
 purple icon, are byte-identical. Here the changed launcher helper is app-owned;
 the user's original xiloader is retained.
 
-**Device boundary.** The three-second wait plus scan work is a strong candidate
-for the repeating Thor pauses. CI can verify that this work stops and supervision
-survives; the effect on the proprietary game's smoothness requires the next
-Thor run. Keep the existing Termux server/client `30251204_1`, original loader,
-accepted preparation, 720p/30 Hz and Native Surface. Do not update sources or
-start managed-server migration. Use the detailed HUD on the same route and
-export immediately after checking audio, camera axes and Stop/relaunch.
+**Accepted device result.** The user confirms the consistent stutters have
+stopped. The 0.5.8 receipt proves scans stop at 13.74 seconds and remain stopped
+through normal exit at 261.59 seconds. Matched log windows show 172 → 19 display
+gaps over 100 ms without the recurring clusters. Remaining FPS in the 20s with
+dips into the teens is unresolved. [Bundle and measurements](thor-stutter-058.md).
+Keep the existing Termux server/client `30251204_1`, original loader and accepted
+preparation. Do not update sources or start managed-server migration.
 
 ---
 

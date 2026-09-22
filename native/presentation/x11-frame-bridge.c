@@ -77,7 +77,7 @@ int main(int argc,char **argv){
         int fd=accept(listener,NULL,NULL);if(fd<0){if(errno==EINTR)continue;break;}
         struct timeval timeout={.tv_sec=5};setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
         XImage *image=NULL;XShmSegmentInfo shm={.shmid=-1};int shared=0,lastw=0,lasth=0;uint64_t last=0;
-        unsigned char *previous=NULL;size_t previous_size=0;
+        int published=0;
         uint64_t last_capture=0;int pointer_x=-1,pointer_y=-1;struct frame_stats stats={.since=now_ns()};
         unsigned char request;
         while(recv(fd,&request,1,0)==1&&request==1){
@@ -90,7 +90,7 @@ int main(int argc,char **argv){
             Window root,child;int rx=0,ry=0,wx=0,wy=0;unsigned mask=0;
             XQueryPointer(d,DefaultRootWindow(d),&root,&child,&rx,&ry,&wx,&wy,&mask);
             int resized=a.width!=lastw||a.height!=lasth;
-            int dirty=!previous||resized||rx!=pointer_x||ry!=pointer_y;
+            int dirty=!published||resized||rx!=pointer_x||ry!=pointer_y;
             pointer_x=rx;pointer_y=ry;
             while(XPending(d)){XEvent event;XNextEvent(d,&event);if((damage_ready&&event.type==damage_event+XDamageNotify)||event.type==fixes_event+XFixesCursorNotify)dirty=1;}
             if(damage_ready&&!dirty&&now_ns()-last_capture<2000000000ull){stats.idle++;if(unchanged(fd,header,shared,&stats))break;continue;}
@@ -129,21 +129,24 @@ int main(int argc,char **argv){
             uint64_t captured=now_ns();header[4]=(uint32_t)((captured-capture)/1000);header[7]=(uint32_t)shared;
             uint32_t wire[8];for(int i=0;i<8;i++)wire[i]=htonl(header[i]);
             stats.capture_ns+=captured-capture;
-            int identical=!resized&&previous&&previous_size==header[6];
-            if(identical)for(uint32_t y=0;y<header[2];y++)if(memcmp(previous+(size_t)y*header[3],image->data+(size_t)y*image->bytes_per_line,header[3])){identical=0;break;}
+            /* The consumer maps pixels read-only and returns ownership with
+             * each request. The published mapping is already our last frame;
+             * compare against it instead of keeping a second full-frame copy.
+             * Reconnects and size changes must always publish a complete frame. */
+            int identical=!resized&&published;
+            if(identical)for(uint32_t y=0;y<header[2];y++)if(memcmp(mapped+(size_t)y*header[3],image->data+(size_t)y*image->bytes_per_line,header[3])){identical=0;break;}
             if(identical){stats.duplicates++;if(unchanged(fd,header,shared,&stats))break;continue;}
-            if(previous_size!=header[6]){unsigned char *next=realloc(previous,header[6]);if(!next)break;previous=next;previous_size=header[6];}
-            for(uint32_t y=0;y<header[2];y++)memcpy(previous+(size_t)y*header[3],image->data+(size_t)y*image->bytes_per_line,header[3]);
             uint64_t sending=now_ns(),calls=0;
             /* The request grants exclusive write ownership. Publish pixels before
              * the header; the consumer sends its next request only after posting. */
             for(uint32_t y=0;y<header[2];y++)memcpy(mapped+(size_t)y*header[3],image->data+(size_t)y*image->bytes_per_line,header[3]);
+            published=1;
             atomic_thread_fence(memory_order_release);
             if(lsb_send_all(fd,wire,sizeof(wire),&calls))break;
             stats.frames++;stats.send_ns+=now_ns()-sending;stats.calls+=calls;stats.bytes+=header[6];report(&stats,0);
         }
         if(image){if(shared){XShmDetach(d,&shm);XSync(d,False);shmdt(shm.shmaddr);image->data=NULL;}XDestroyImage(image);}
-        report(&stats,1);free(previous);close(fd);
+        report(&stats,1);close(fd);
     }
     if(damage_ready)XDamageDestroy(d,damage);
     close(listener);unlink(argv[1]);munmap(mapped,LSB_MAX_PIXELS*4);close(mapfd);XCloseDisplay(d);return 0;

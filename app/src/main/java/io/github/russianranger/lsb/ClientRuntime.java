@@ -63,6 +63,7 @@ final class ClientRuntime {
     File nativeFramePixels(){return new File(run,"framebuffer.bin");}
     NativePerformance.Stream nativeFrameReports(String id){return nativePerformance.open(id);}
     boolean nativeSurfaceRequested(){try{return new JSONObject(read(new File(run,"request.json"),16384)).optBoolean("native_surface",false);}catch(Exception e){return false;}}
+    int activeDisplayFps(){try{return new JSONObject(read(new File(run,"request.json"),16384)).optInt("display_fps",30)==60?60:30;}catch(Exception e){return 30;}}
 
     static String read(File p,int max)throws IOException {
         if(p.length()>max)throw new IOException("Metadata exceeds limits");return new String(Files.readAllBytes(p.toPath()),StandardCharsets.UTF_8);
@@ -195,7 +196,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.8");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.9");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}

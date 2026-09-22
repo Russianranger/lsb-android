@@ -1,5 +1,25 @@
 # Periodic launcher scan correction: 0.5.8
 
+## Accepted device result
+
+The user confirms 0.5.8 stops the consistent stutters. Bundle
+`lsb-support (3)(4).zip`, SHA-256
+`24514d946fd0fe055b49206d0ff8a2198e662b08c04e1009258b28a57b11d05d`,
+records session `f234fccc-5b9a-45ad-a84a-47da1879bf13`. Its observer completes
+after 30 samples at 13,740 ms and stays idle through normal exit at 261,588 ms.
+The final startup snapshot alone takes 743 ms, supporting the reason to keep
+this work out of gameplay. All 5,927 posted frames use MIT-SHM; no reporting
+windows are dropped. The pinned hardware renderer and original loader remain.
+
+For both retained sessions, select the 28 five-second windows starting between
+70 and 210 seconds with more than 30 posted frames. The previous 0.5.7 run has
+172 post gaps over 100 ms; 0.5.8 has 19, without the repeated clusters. Surface
+throughput is 22.44 versus 23.92 posts/s. These are not game-FPS measurements
+or a controlled route comparison. 0.5.8 capture averages 3.79 ms, Surface lock
+0.228 ms, pixel conversion/copy 0.426 ms and posting 1.094 ms. Audio finishes
+with eight underruns. The user still reports game FPS in the 20s with dips into
+the teens; that separate performance issue remains open.
+
 ## Thor evidence from 0.5.7
 
 The user still observes recurring gameplay pauses. The screenshot shows Turnip
@@ -89,7 +109,8 @@ checks, 62 launch cases across Wine/Box64 and PRoot, three supervised native
 captures, detailed DXVK HUD, memfd/MIT-SHM, controller/preload/audio checks and
 real MariaDB deployment/update/rollback. Runtime job `106924157036` explicitly
 records each new idle/normal-exit, Stop and late-crash check passing in both
-runtime environments. No CI failures remain pending. Thor smoothness is unverified.
+runtime environments. No CI failures remain pending. The subsequent device
+result above accepts the periodic-stutter fix, while game FPS remains unresolved.
 
 The first ARM64 run passed the new seven-second idle/normal-exit scenario, then
 exposed a fixture race in `window-stop`: Stop arrived after native receipt

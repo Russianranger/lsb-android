@@ -61,7 +61,7 @@ def main():
     renderer=os.environ.get('LSB_TEST_RENDERER','software')
     for cycle in range(2):
         for n in ('stop','status.json','probe.json','display.sock'):Path('/session',n).unlink(missing_ok=True)
-        req={'format':1,'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1,'dxvk_diagnostics':cycle==1 and renderer!='software'}
+        req={'format':1,'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1,'display_fps':60 if cycle==1 else 30,'dxvk_diagnostics':cycle==1 and renderer!='software'}
         Path('/session/request.json').write_text(json.dumps(req));receiver=Receiver('/session/audio.sock')
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],env=dict(os.environ,LSB_TEST_AUTOCLOSE='1'))
         try:
@@ -70,9 +70,18 @@ def main():
                 try:return json.loads(Path('/session/probe.json').read_text()).get('d3d8_frames',0)>=25
                 except (OSError,ValueError):return False
             wait(ready,'32-bit probe did not render')
+            # Verify the actual live X server received the selected rate. This
+            # also covers the standard-display fallback in the same session.
+            x_commands=[]
+            for f in Path('/proc').glob('[0-9]*/cmdline'):
+                try:c=f.read_bytes().split(b'\0')
+                except OSError:continue # Unrelated processes may exit during enumeration.
+                if any(Path(os.fsdecode(a)).name=='Xtigervnc' for a in c) and b':7' in c and b'/session/display.sock' in c:x_commands.append(c)
+            assert any(b'-FrameRate' in c and c[c.index(b'-FrameRate')+1]==str(req['display_fps']).encode() for c in x_commands), 'X server rate differs from request'
             if cycle==1:
                 wait(native_pixels,'Wine triangle did not reach shared native framebuffer',6)
-                print('PASS: supervised Native Surface captures real Wine D3D8 pixels alongside audio and RFB input',flush=True)
+                assert 'cap=60' in Path('/logs/native-display.log').read_text()
+                print('PASS: supervised Native Surface captures real Wine D3D8 pixels at 60 Hz alongside audio and RFB input',flush=True)
             with display() as s:
                 key(s);wait(lambda:pixels(s),'Triangle did not reach the display',6)
             wait(lambda:sum(r['nonzero_samples'] for r in receiver.reports)>100,'Wine did not produce PCM',20)

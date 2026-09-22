@@ -94,7 +94,7 @@ public final class RuntimeActivity extends Activity {
                 if(s.getPeerCredentials().getUid()!=android.os.Process.myUid())throw new IOException("Display owner mismatch");
                 ClientRuntime rt=ClientRuntime.get(this);String id=rt.sessionKey();
                 boolean fast=getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("fast_display",true);
-                int cap=getSharedPreferences("runtime",MODE_PRIVATE).getInt("display_fps",30);
+                int cap=rt.activeDisplayFps();
                 RfbConnection c=new RfbConnection(s.getInputStream(),s.getOutputStream(),screen,fast,getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("compressed_display",true));
                 boolean nativeRequested=rt.nativeSurfaceRequested();screen.nativeMode=nativeRequested;
                 display=new DisplaySession(c,id,fast,cap);c.handshake(!nativeRequested);

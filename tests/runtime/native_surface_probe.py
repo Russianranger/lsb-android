@@ -17,12 +17,12 @@ def verify_native_surface(folder,display,x,d,window,gc):
     x.XSetForeground.argtypes=[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_ulong]
     x.XFillRectangle.argtypes=[ctypes.c_void_p,ctypes.c_ulong,ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_uint,ctypes.c_uint]
     # XGetImage fallback is tested separately from the required MIT-SHM path.
-    for no_shm in (False,True):
+    for fps,no_shm in ((30,False),(30,True),(60,False),(60,True)):
         sock=folder/'native.sock';pixels=folder/'framebuffer.bin'
         sock.unlink(missing_ok=True)
-        log=folder/('native-xgetimage.log' if no_shm else 'native-shm.log')
+        log=folder/(('native-xgetimage' if no_shm else 'native-shm')+('-60' if fps==60 else '')+'.log')
         with log.open('w') as output:
-            process=subprocess.Popen([str(helper),str(sock),str(pixels),'30']+(['--no-shm'] if no_shm else []),env=dict(os.environ,DISPLAY=display),stdout=output,stderr=subprocess.STDOUT)
+            process=subprocess.Popen([str(helper),str(sock),str(pixels),str(fps)]+(['--no-shm'] if no_shm else []),env=dict(os.environ,DISPLAY=display),stdout=output,stderr=subprocess.STDOUT)
             try:
                 deadline=time.monotonic()+10
                 while not sock.exists():
@@ -50,22 +50,32 @@ def verify_native_surface(folder,display,x,d,window,gc):
                                 finally:client.settimeout(5)
                                 return h
                             h=frame();assert not h[7]&2,'Reconnect must deliver a complete first frame'
-                            if not no_shm and not reconnect:
+                            if fps==30 and not no_shm and not reconnect:
                                 for py in range(0,600,7):
                                     for px in range(0,1100,11):
                                         expected=(((px//4+py//8)&31)<<19)|(((px//8+py//4)&63)<<10)|((((px^py)//4)&31)<<3)
                                         assert struct.unpack_from('<I',mapped,(py*1280+px)*4)[0]&0xffffff==expected,(px,py)
                             # A changed X window must trigger a new mapped frame.
-                            colour=0x123456+reconnect+int(no_shm)*2
+                            before=mapped[:]
+                            colour=0x123456+reconnect+int(no_shm)*2+fps
                             x.XSetForeground(d,gc,colour);x.XFillRectangle(d,window,gc,0,0,200,100);x.XSync(d,0)
+                            time.sleep(.04)
+                            assert mapped[:]==before,'Producer changed pixels before ownership returned'
                             h=frame();assert not h[7]&2,'Changed frame was skipped'
                             for py in range(100):
                                 for px in range(200):assert struct.unpack_from('<I',mapped,(py*1280+px)*4)[0]&0xffffff==colour
                             snapshot=mapped[:];start=time.monotonic()
                             for _ in range(5):assert frame()[7]&2,'Idle image should retain the Surface'
-                            assert time.monotonic()-start>=.10,'Producer ignored frame cap'
+                            assert time.monotonic()-start>=4/fps,'Producer ignored frame cap'
                             assert mapped[:]==snapshot,'Unchanged response modified pixels'
-                print('PASS: native shared-file exact pixels, changed/idle frames, reconnect, permissions and cap; '+('XGetImage' if no_shm else 'MIT-SHM'),flush=True)
+                            # XDamage fires even when the same colour is repainted.
+                            # Exercise full-image comparison against the mapping,
+                            # rather than only the no-damage idle fast path.
+                            x.XFillRectangle(d,window,gc,0,0,200,100);x.XSync(d,0)
+                            assert frame()[7]&2,'Identical repaint must not be published again'
+                            assert mapped[:]==snapshot,'Duplicate comparison changed the published image'
+                assert 'cap='+str(fps) in log.read_text()
+                print('PASS: native shared-file exact pixels, changed/idle/duplicate frames, ownership, reconnect, permissions and '+str(fps)+' Hz cap; '+('XGetImage' if no_shm else 'MIT-SHM'),flush=True)
             finally:
                 process.terminate()
                 try:process.wait(timeout=5)

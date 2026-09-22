@@ -74,6 +74,18 @@ public class RuntimeActivityTest {
         try{assertTrue(activity.get().dispatchGenericMotionEvent(event));}finally{event.recycle();}
     }
 
+    @Test public void displayRateTracksActiveLaunchInsteadOfNextLaunchPreference()throws Exception {
+        File request=new File(runtime.run,"request.json");Files.deleteIfExists(request.toPath());
+        assertEquals(30,runtime.activeDisplayFps());
+        ClientRuntime.write(request,"{\"display_fps\":30}");
+        runtime.context.getSharedPreferences("runtime",0).edit().putInt("display_fps",60).commit();
+        assertEquals(30,runtime.activeDisplayFps());
+        ClientRuntime.write(request,"{\"display_fps\":60}");
+        runtime.context.getSharedPreferences("runtime",0).edit().putInt("display_fps",30).commit();
+        assertEquals(60,runtime.activeDisplayFps());
+        ClientRuntime.write(request,"{}");assertEquals(30,runtime.activeDisplayFps());
+    }
+
     @Test public void bothStickDirectionsAndRightVerticalReachMappedState()throws Exception {
         RuntimeEnvironment.getApplication().getSharedPreferences("controller",0).edit().putInt("deadzone",0).commit();
         File pad=session("axes");open();tick();

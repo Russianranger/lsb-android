@@ -1,4 +1,21 @@
-# Active milestone: stop intrusive gameplay module scans (0.5.8)
+# Accepted Thor result: periodic stutter fixed in 0.5.8
+
+The user confirms the consistent stutters have stopped. The new 0.5.8 receipt
+shows startup observation complete at 13,740 ms, with no further scans through
+exit at 261,588 ms. In matched 70–210-second log windows, gaps over 100 ms
+fall from 172 to 19 and the recurring clusters disappear. These are display
+delivery measurements, not game FPS; the routes were not controlled benchmarks.
+The remaining issue is game FPS in the 20s with drops into the teens.
+
+0.5.9 implements the supported 60 Hz display cap, retains 30 Hz as the existing
+default, and removes redundant native frame copying. The accepted startup-only
+observer and all working login, audio, controller and source paths are retained.
+This display option does not unlock the game's own FPS limit. Full CI and signing
+are in progress. [Implementation, evidence and Thor sequence](display-refresh-059.md).
+
+---
+
+# Completed implementation: stop intrusive gameplay module scans (0.5.8)
 
 The 0.5.7 Thor result still stutters. New timing evidence shows capture and the
 Android frame worker remain responsive during repeated game-image pauses; the
@@ -28,7 +45,8 @@ The APK is built with the original signer and matches the final CI payload. Arti
 `LSB-Android-0.5.8.apk`, versionCode 24, 15,940,768 bytes, SHA-256
 `0e7548c3e5fd39e19aefb6c28daabaa5cf19bb9c01937ebe25ab2a7326f40b01`. Keep the existing matching Termux server/client `30251204_1`, original
 xiloader, accepted preparation and pinned runtime/driver/audio/controller path.
-No source updates or managed-server migration. Physical improvement is unverified.
+No source updates or managed-server migration. The periodic-stutter correction
+is accepted on Thor; remaining game FPS drops are still unresolved.
 
 ---
 
