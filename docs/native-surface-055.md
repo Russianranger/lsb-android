@@ -43,6 +43,15 @@ Metrics distinguish Surface posts, capture, request wait, native copy, lock/post
 unchanged frames and zero socket pixel bytes. They are not game-FPS measurements.
 The running viewer identifies Native Surface or the reason for fallback.
 
+## Validation
+
+All six gates pass in [run 35759197659](https://github.com/Russianranger/lsb-android/actions/runs/35759197659), including actual ARM64/PRoot
+capture with MIT-SHM and fallback, Wine-rendered pixels, all 56 launch scenarios,
+controller/audio regressions and real MariaDB recovery. The APK uses the original
+signing certificate and preserves all existing native/runtime binaries and icon
+resources. [Exact evidence and artifact identity](validation.md). Physical Thor
+smoothness remains the acceptance criterion.
+
 ## First Thor test
 
 1. Install 0.5.5 over the existing app. Keep the working Termux server, client

@@ -7,10 +7,25 @@ from the active display path via an optional shared-file Native Surface, with
 automatic fallback. X11 readback remains; actual Thor gains are unverified.
 See [evidence, implementation and focused Thor test](native-surface-055.md).
 
-Local checks pass: 116 core/preparation/login checks, RGB565 transport, 90 ZRLE
-checks including input-only/fallback, 39 runtime contracts, 5 server contracts and
-native frame bounds/colour conversion. Full ARM64/Android/Windows/server CI and
-original-certificate APK verification are being run for this implementation.
+**All six CI gates passed** for implementation
+`a70eac356cb1bccb6b2fc23014ead33e0c7655fb` in [run 35759197659](https://github.com/Russianranger/lsb-android/actions/runs/35759197659):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35759204024) passes all five applicable gates; its release
+job is correctly skipped. Validation includes 116 core/preparation/login checks,
+RGB565 and 90 ZRLE checks, 39 runtime/5 server contracts, 10 Android API 33 tests,
+36 native Windows checks and all 56 ARM64/PRoot launch scenarios. Real native
+capture tests pass with MIT-SHM and XGetImage in both environments; supervised
+Wine/D3D8 pixels reach the shared framebuffer alongside PCM and RFB input.
+Existing DirectInput axes/release, preload isolation, audio/Stop checks and real
+MariaDB deployment/update/rollback pass. No CI failures remain pending.
+
+**Signed install-in-place APK:** `LSB-Android-0.5.5.apk`, versionCode 21,
+15,932,576 bytes, SHA-256 `02b3fa438f10459737bebf9cc9814b9bb3f277bbf5bce27fba1cb328e0783a7e`.
+Original signing certificate, APK v2/v3 signatures, alignment and ZIP integrity
+verify. Every non-signature entry matches CI; all previous runtime/native binaries,
+audio/controller/loader components and purple icon match 0.5.4 byte-for-byte.
+[Full evidence and limitations](validation.md). Actual Thor FPS improvement is
+unverified; do not call this an accepted smoothness fix before the device test.
 
 Preserve the working matching Termux server/client `30251204_1`, original xiloader,
 accepted preparation, Wine/Box64, graphics/audio/controller baseline and purple
@@ -21,7 +36,7 @@ on, capture off, 720p, same 30 Hz cap, compression retained for fallback.
 
 # Historical 0.5.4 handoff (superseded by 0.5.5 above)
 
-# Active milestone 4: lossless display transfer and purple icon (0.5.4)
+# Historical milestone 4: lossless display transfer and purple icon (0.5.4)
 
 **Latest Thor result:** 0.5.4 still jumps around 6–28 game FPS with Fast display and compression on; compression off is reported far worse. The new bundle verifies about 65% payload savings with compression, stable single-bitmap allocation, and more long delivery gaps in the uncompressed comparison. Smoothness remains unresolved. Both launches still used startup capture. See [measured comparison and next test](thor-performance-054-result.md). Keep both performance options on; the next action uses existing 0.5.4 settings, with no runtime/driver replacement or new APK.
 

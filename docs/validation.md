@@ -1,3 +1,66 @@
+# Shared-memory Native Surface: 0.5.5 (2026-09-22)
+
+**Device evidence.** The capture-off 720p/540p comparison improves the game HUD by
+only about 2 FPS and does not resolve stutters. The local support bundle confirms
+capture off, successful launches and the accepted runtime/preparation. Display
+throughput differs more than the reported game FPS; neither counter isolates the
+underlying game CPU/GPU bottleneck. [Evidence and Thor test](native-surface-055.md).
+
+**Implementation.** `a70eac356cb1bccb6b2fc23014ead33e0c7655fb`, following
+`9dfba89532a71f9be4a9991bd3a3d35ada1e5de4`, adds an ARM64 X11 capture helper,
+owner-only shared pixel file and Android JNI Surface presenter. The active path
+has no RFB pixel payload, compression, Java decoder or Bitmap update. It retains
+X11 readback/native pixel copying, unchanged-frame detection, input over the
+existing RFB socket and automatic full-refresh fallback. Missing/invalid optional
+components cannot abort the game launch. Native counters run off the UI thread.
+
+**Build/local checks.** The 116 core/preparation/login checks, RGB565 transport,
+90 ZRLE checks including input-only/fallback, 39 runtime and 5 server contracts,
+native protocol bounds/RGBA conversion, all 10 Android API 33 tests, compilation,
+dex and APK packaging pass. Native fallback tests reject stale/paused workers
+and restore the existing bitmap/full framebuffer request.
+
+**Artifact identity.** `LSB-Android-0.5.5.apk`, versionCode 21,
+**15,932,576 bytes**, SHA-256 `02b3fa438f10459737bebf9cc9814b9bb3f277bbf5bce27fba1cb328e0783a7e`.
+Original certificate SHA-256 `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`; APK v2/v3 signatures,
+ZIP integrity and alignment verify. Every non-signature entry matches the CI
+build. Against 0.5.4, only the manifest, Android DEX and supervisor change, plus
+four additions: native Surface JNI, ARM64 capture helper, its checksum manifest
+and libXdamage notice. No entry is removed. All previous native/runtime binaries,
+DXVK, Turnip, audio/controller/loader components, bundle hashes and purple icon
+resources are byte-identical. Guest helper is AArch64 GNU/Linux, depending on
+X11/Xext/Xfixes/libc and the guest loader; JNI is AArch64 Android API 26 with
+libandroid/libdl/libc dependencies and 16 KiB ELF segment alignment.
+
+**Full validation passed.** [Push run 35759197659](https://github.com/Russianranger/lsb-android/actions/runs/35759197659) passes all six gates:
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. [PR run 35759204024](https://github.com/Russianranger/lsb-android/actions/runs/35759204024) independently passes its five
+applicable gates; release is skipped by the existing push-only condition.
+There are no failed gates for this implementation. CI repeats the core/native/
+Android checks above and passes all 36 native Windows checks. ARM64 Docker and
+PRoot each pass the full 28 launch scenarios (56 total), the real DirectInput
+axes/buttons/hat/release/expiry checks, native preload symbol/host isolation,
+controller-preloaded Thor dependency checks, audio/render and Stop regressions.
+The real MariaDB gate passes deployment, full export, failed-import preservation,
+account/character-preserving update, rollback both ways and managed readiness/stop.
+
+Both ARM64 environments pass exact shared-file image samples, changed/idle frames,
+reconnect, private-file permissions and pacing, separately with MIT-SHM and the
+explicit XGetImage fallback. Logs confirm MIT-SHM attached without X errors in
+both Docker and PRoot. Existing real TigerVNC Raw/ZRLE comparisons also pass.
+Three supervised native captures verify Wine D3D8 pixels alongside PCM/RFB input:
+Docker software, Docker DXVK using Lavapipe, and PRoot software. These are guest
+rendering/capture checks, not a physical Android Surface or Adreno benchmark.
+The new helper is built and packaged as ARM64 separately from the pinned runtime.
+
+**Device boundary.** These checks do not establish Thor game FPS or physical
+Surface smoothness. Preserve the matching existing Termux server/client
+`30251204_1`, original loader and accepted preparation. No source update toward
+`30260904_1` or managed migration. First comparison uses native on, 720p, startup
+capture off, the same 30 Hz cap and DXVK HUD; compression stays on for fallback.
+
+---
+
 # Lossless display transfer and purple icon: 0.5.4 (2026-09-22)
 
 **Subsequent Thor result.** The user reports 6–28 FPS with both performance options on and substantially worse behavior with compression off. The new logs confirm 65% compression savings, one staging allocation throughout, and 222 versus 391 gaps over 100 ms in equal-duration comparison portions. This is not an accepted smoothness fix. Both runs still had startup capture enabled. [Device evidence and the next same-APK comparison](thor-performance-054-result.md) supersede the older test instructions below: fresh capture-off launch at 720p, then the existing 540p option if needed, with Fast display/compression on and the matching Termux/client environment retained. No production code changed and no new CI or APK result is claimed for this documentation update.
