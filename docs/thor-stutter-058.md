@@ -69,15 +69,45 @@ Fixed numeric fields record the startup-only policy, completion flag, last sampl
 time, and last/max/total sample durations. This makes it possible to verify on
 Thor that sampling ends long before gameplay ends. No proprietary file is
 modified. Runtime, driver, native display, controller, audio, source versions and
-purple icon remain unchanged.
+purple icon remain unchanged. `ClientRuntime.assets()` copies the packaged helper
+into the app-owned probe directory on each fresh launch, before mounting the
+accepted client generation. An install-in-place update therefore uses the new
+helper without re-import, runtime installation or client re-preparation.
 
 Three additional real Wine/PRoot scenarios hold a visible FFXI-class fixture
 window open, prove the full receipt remains unchanged across more than two old
 scan intervals, and verify normal exit, Stop and a later unhandled exception
 remain supervised. Existing launch/error/privacy/render/controller/audio/server
 checks are retained. Local core checks and 40 runtime / 5 server contracts pass.
-The local cross compiler is unavailable; native builds and full integration are
-being verified in CI. No Thor smoothness result is claimed yet.
+All six gates pass in [run 35780131808](https://github.com/Russianranger/lsb-android/actions/runs/35780131808)
+for `c5b3ac3760c846ec139a1fe624113a09df4ecb61`, including implementation
+`7795ddec15d77af7c395257cfd029128f567efe5` and the fixture synchronization below.
+The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35780138540)
+passes all five applicable gates, with release correctly skipped.
+CI passes all 14 Android tests, 36 native Windows checks plus 288 corruption
+checks, 62 launch cases across Wine/Box64 and PRoot, three supervised native
+captures, detailed DXVK HUD, memfd/MIT-SHM, controller/preload/audio checks and
+real MariaDB deployment/update/rollback. Runtime job `106924157036` explicitly
+records each new idle/normal-exit, Stop and late-crash check passing in both
+runtime environments. No CI failures remain pending. Thor smoothness is unverified.
+
+The first ARM64 run passed the new seven-second idle/normal-exit scenario, then
+exposed a fixture race in `window-stop`: Stop arrived after native receipt
+publication but before the supervisor's 300 ms poll consumed it. The retained
+report correctly represented its earlier state (`complete=false`, 13 samples),
+so comparing it with the newer native receipt was invalid. Test-only follow-up
+`c5b3ac3760c846ec139a1fe624113a09df4ecb61` waits for the matching session and
+completed receipt in the supervisor's published report before issuing Stop.
+All invariants remain checked, and the existing immediate-Stop scenario remains.
+No application code or test assertion was weakened for this correction.
+
+The APK uses versionCode 24 and the original signing certificate. It is
+15,940,768 bytes, SHA-256
+`0e7548c3e5fd39e19aefb6c28daabaa5cf19bb9c01937ebe25ab2a7326f40b01`.
+APK v2/v3 signatures, alignment and ZIP integrity verify, and every non-signature
+entry matches CI artifact `10717629448`. Against 0.5.7, exactly three entries
+change: `AndroidManifest.xml`, `classes.dex` (version strings only) and
+`assets/runtime/client-launch.exe`. All other entries are byte-identical.
 
 ## Thor comparison
 

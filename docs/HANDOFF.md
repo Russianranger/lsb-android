@@ -12,8 +12,21 @@ remain. New integration scenarios verify that the observer stays idle while a
 healthy window remains open and that normal exit, Stop and late crash still work.
 [Evidence, source audit, correction and Thor sequence](thor-stutter-058.md).
 
-Local core/runtime/server contracts pass. Full CI and the signed APK are in
-progress. Keep the existing matching Termux server/client `30251204_1`, original
+**All six CI gates passed** in [run 35780131808](https://github.com/Russianranger/lsb-android/actions/runs/35780131808)
+for `c5b3ac3760c846ec139a1fe624113a09df4ecb61` (implementation `7795ddec15d77af7c395257cfd029128f567efe5`
+plus the test synchronization correction): `presentation`, `verify`,
+`windows-launcher`, `runtime`, `server-deployment` and `runtime-release`.
+The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35780138540)
+passes all five applicable gates; its release job is correctly skipped.
+All 62 launch scenarios pass. The new idle/normal-exit, Stop and late-crash
+checks pass separately in ARM64 Wine/Box64 and PRoot. All 14 Android tests,
+three supervised native captures, detailed HUD, memfd/MIT-SHM, controller/preload,
+audio and real MariaDB deployment/update/rollback checks pass. No CI failures
+remain pending.
+
+The APK is built with the original signer and matches the final CI payload. Artifact:
+`LSB-Android-0.5.8.apk`, versionCode 24, 15,940,768 bytes, SHA-256
+`0e7548c3e5fd39e19aefb6c28daabaa5cf19bb9c01937ebe25ab2a7326f40b01`. Keep the existing matching Termux server/client `30251204_1`, original
 xiloader, accepted preparation and pinned runtime/driver/audio/controller path.
 No source updates or managed-server migration. Physical improvement is unverified.
 
@@ -43,8 +56,8 @@ No CI failures remain pending.
 The original-signer APK is built and verified: `LSB-Android-0.5.7.apk`,
 versionCode 23, 15,940,768 bytes, SHA-256
 `374e1c17bee9f5cab76c6f5567462446d1f2b43416103ffe26668f4d03c6b2b8`.
-Physical Thor smoothness remains unverified. First compare with the new diagnostic HUD off;
-if hitches remain, enable it for a second launch and export both sessions.
+The subsequent Thor comparison confirms stutters remain with both HUD modes.
+The 0.5.8 investigation and test sequence above supersede this initial device check.
 Keep the existing matching Termux server/client `30251204_1`, original xiloader,
 accepted preparation, 720p/30 Hz, Native Surface on and Fast display/compression
 off. No runtime/driver replacement, client/source update or managed migration.

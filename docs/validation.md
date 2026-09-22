@@ -1,3 +1,62 @@
+# Stop periodic gameplay module scans: 0.5.8 (2026-09-22)
+
+**Device evidence.** The 0.5.7 bundle `lsb-support (2)(3).zip`, SHA-256
+`e91350800e475f7c09b0b9f165860d11282f7422ea664cfbf88590e40400caf4`,
+confirms recurring frame gaps in both HUD modes while MIT-SHM capture and the
+Android frame worker remain responsive. Millisecond background report costs and
+zero dropped windows do not explain the larger repeating pauses. The launcher
+continues cross-process DLL snapshots after startup on a three-second timer;
+Wine implements these reads with target-thread suspension. [Evidence and limits](thor-stutter-058.md).
+
+**Implementation.** `7795ddec15d77af7c395257cfd029128f567efe5` retains startup
+window/module evidence, then waits for the child process without further scans
+or periodic receipt writes. New fixed numeric fields expose completion and
+startup scan timing. No driver/runtime/audio/controller or proprietary client
+files change. Three new real Wine/PRoot scenarios prove the running receipt
+stays unchanged across old scan intervals, then exercise normal exit, explicit
+Stop and an unhandled exception after observation completes.
+
+**Validation passed.** Local 116 core/preparation/login checks, RGB565,
+90 ZRLE checks, 40 runtime and 5 server contracts pass.
+[Push run 35780131808](https://github.com/Russianranger/lsb-android/actions/runs/35780131808)
+passes all six gates for `c5b3ac3760c846ec139a1fe624113a09df4ecb61`:
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. The [PR run](https://github.com/Russianranger/lsb-android/actions/runs/35780138540)
+passes all five applicable gates, with release correctly skipped. CI compiles
+the native helpers/fixtures and APK and passes all 14 Android tests, native display
+checks, 36 native Windows checks plus 288 corruption checks, and real MariaDB
+deployment/update/rollback. Runtime job `106924157036` passes all **62 launch
+scenarios**, including each new idle/normal-exit, Stop and late-crash case under
+both Wine/Box64 and PRoot. Three supervised native Wine captures, detailed DXVK
+HUD, Android-compatible memfd/MIT-SHM, gamepad load/preload isolation, controller
+input/disconnect, audio and Stop checks pass. No CI failures remain pending.
+
+The first attempt passed the seven-second
+idle/normal-exit case, then caught a fixture race: the Stop test had not waited
+for the supervisor to consume the completed native receipt. Test-only commit
+`c5b3ac3760c846ec139a1fe624113a09df4ecb61` synchronizes on the matching published
+supervisor state, preserving all assertions and the separate immediate-Stop test.
+
+**Signed artifact.** `LSB-Android-0.5.8.apk`, versionCode 24,
+**15,940,768 bytes**, SHA-256 `0e7548c3e5fd39e19aefb6c28daabaa5cf19bb9c01937ebe25ab2a7326f40b01`.
+Original signer SHA-256 `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`;
+APK v2/v3 signatures, alignment and ZIP integrity verify. Every non-signature
+entry matches CI artifact `10717629448`. Against 0.5.7, only the Android manifest,
+DEX version strings and `assets/runtime/client-launch.exe` differ; all remaining
+entries, including graphics/native/audio/controller/loader components and the
+purple icon, are byte-identical. Here the changed launcher helper is app-owned;
+the user's original xiloader is retained.
+
+**Device boundary.** The three-second wait plus scan work is a strong candidate
+for the repeating Thor pauses. CI can verify that this work stops and supervision
+survives; the effect on the proprietary game's smoothness requires the next
+Thor run. Keep the existing Termux server/client `30251204_1`, original loader,
+accepted preparation, 720p/30 Hz and Native Surface. Do not update sources or
+start managed-server migration. Use the detailed HUD on the same route and
+export immediately after checking audio, camera axes and Stop/relaunch.
+
+---
+
 # Display-worker reporting and stutter diagnostics: 0.5.7 (2026-09-22)
 
 **Device evidence.** The latest 0.5.6 Thor run confirms shared-memory capture
