@@ -79,7 +79,7 @@ def verify_native_surface(folder,display,x,d,window,gc):
                             x.XFillRectangle(d,window,gc,0,0,200,100);x.XSync(d,0)
                             assert frame()[7]&2,'Identical repaint must not be published again'
                             assert mapped[:]==snapshot,'Duplicate comparison changed the published image'
-                            verify_metadata(x,d,window,frame,mapped,colour)
+                            verify_metadata(x,d,window,gc,frame,mapped,colour)
                             # Stable polls and pixel changes must reuse metadata.
                             for n in range(12):
                                 x.XSetForeground(d,gc,colour+n+1);x.XFillRectangle(d,window,gc,0,0,200,100);x.XSync(d,0)

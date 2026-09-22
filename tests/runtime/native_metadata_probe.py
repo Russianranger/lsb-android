@@ -2,7 +2,7 @@
 import ctypes,struct
 
 
-def verify_metadata(x,d,window,frame,mapped,background):
+def verify_metadata(x,d,window,gc,frame,mapped,background):
     P=ctypes.c_void_p;L=ctypes.c_ulong;I=ctypes.c_int;U=ctypes.c_uint
     class Color(ctypes.Structure):
         _fields_=[('pixel',L),('red',ctypes.c_ushort),('green',ctypes.c_ushort),('blue',ctypes.c_ushort),('flags',ctypes.c_char),('pad',ctypes.c_char)]
@@ -59,7 +59,12 @@ def verify_metadata(x,d,window,frame,mapped,background):
                 assert (width,height) in modes,modes
                 assert randr.XRRSetScreenConfig(d,config,root,modes.index((width,height)),1,0)==0
                 x.XSync(d,0);changed((width,height))
-                assert pixel(10,10,width)==background,'Resize changed source pixels'
+                # TigerVNC clears window contents on a screen mode change.
+                # Repaint the fixture as an application handles Expose; first
+                # validate the resize header independently of this new damage.
+                x.XSetForeground(d,gc,background);x.XFillRectangle(d,window,gc,0,0,200,100);x.XSync(d,0)
+                changed((width,height))
+                assert pixel(10,10,width)==background,'Resized capture lost repainted pixels'
             finally:randr.XRRFreeScreenConfigInfo(config)
         resize(800,600);resize(1280,720)
     finally:
