@@ -193,7 +193,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.5");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.6");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -276,6 +276,9 @@ final class ClientRuntime {
                 "-b",new File(backend,"wineserver").getPath()+":/opt/wine/bin/wineserver","-w","/probe",
                 "/usr/bin/env","-i","HOME=/root","USER=root","PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","LANG=C.UTF-8","TMPDIR=/tmp","PYTHONUNBUFFERED=1",
                 "LSB_RUNTIME_OWNER="+home.getPath(),"/usr/bin/python3","/opt/lsb/supervisor.py"));
+            // Android has no native SysV IPC. Enable the already bundled memfd
+            // emulation for both Xvnc and its capture helper in this PRoot tree.
+            if(request.optBoolean("native_surface",false))command.add(1,"--sysvipc");
             if(clientOperation)command.addAll(command.indexOf("-w"),Arrays.asList("-b",new File(candidate,"client").getPath()+":/client"));
             ProcessBuilder pb=new ProcessBuilder(command);pb.environment().put("PROOT_LOADER",new File(nativeDir,"libproot-loader.so").getPath());
             pb.environment().put("PROOT_TMP_DIR",tmp.getPath());pb.environment().put("PROOT_NO_SECCOMP","1");pb.environment().put("LSB_RUNTIME_OWNER",home.getPath());

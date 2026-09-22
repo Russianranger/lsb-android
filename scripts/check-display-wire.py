@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='lsb-wire-') as temporary:
         proot=root/'out/runtime-test/proot-src/src';guest=root/'out/runtime-test/proot-root';(folder/'tmp').mkdir()
         for name in ('session','tests','presentation'):(guest/name).mkdir(exist_ok=True)
         env.update(PROOT_LOADER=str(proot/'loader/loader'),PROOT_NO_SECCOMP='1',PROOT_TMP_DIR=str(folder/'tmp'))
-        command=[str(proot/'proot'),'--link2symlink','--kill-on-exit','-0','-r',str(guest),'-b','/dev','-b','/proc','-b','/sys','-b',str(folder)+':/session','-b',str(folder/'tmp')+':/tmp','-b',str(root/'tests/runtime')+':/tests','-b',str(root/'out/presentation')+':/presentation','-w','/tests','/usr/bin/env','-i','HOME=/root','PATH=/usr/bin:/bin','python3','/tests/display_fixture.py','/session']
+        command=[str(proot/'proot'),'--link2symlink','--kill-on-exit','--sysvipc','-0','-r',str(guest),'-b','/dev','-b','/proc','-b','/sys','-b',str(folder)+':/session','-b',str(folder/'tmp')+':/tmp','-b',str(root/'tests/runtime')+':/tests','-b',str(root/'out/presentation')+':/presentation','-w','/tests','/usr/bin/env','-i','HOME=/root','PATH=/usr/bin:/bin','python3','/tests/display_fixture.py','/session']
     with (work/(args.backend+'.log')).open('w') as log:
         process=subprocess.Popen(command,env=env,stdout=log,stderr=subprocess.STDOUT)
         try:
@@ -31,3 +31,8 @@ with tempfile.TemporaryDirectory(prefix='lsb-wire-') as temporary:
             try:process.wait(timeout=10)
             except subprocess.TimeoutExpired:process.terminate();process.wait(timeout=10)
     if process.returncode:raise RuntimeError('Fixture failed: '+str(process.returncode))
+    if args.backend=='proot':
+        evidence=Path(log.name).read_text()
+        if 'TRASC PRoot: SysV shared memory uses memfd' not in evidence:
+            raise AssertionError('MIT-SHM must exercise PRoot memfd emulation, not host SysV IPC')
+        print('PASS: PRoot MIT-SHM uses the Android-compatible memfd emulation',flush=True)

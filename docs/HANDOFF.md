@@ -1,3 +1,26 @@
+# Active milestone: enable Android shared-memory capture (0.5.6)
+
+The 0.5.5 Thor test improves subjectively in the second run but still stutters.
+Both sessions actually use Native Surface, with no RFB pixel traffic. The concrete
+remaining fault is X11 capture falling back to XGetImage: `shmget` returns errno
+38 because the app omitted PRoot's `--sysvipc` option. The packaged runtime already
+supports memfd-backed emulation. Capture averages about 25–27 ms/frame while the
+Android pixel copy is about 0.43 ms. [Device evidence and correction](thor-native-capture-056.md).
+
+0.5.6 enables that option only for Native Surface launches. The CI display fixture
+now forces emulation and requires its memfd marker so native Linux SysV IPC cannot
+mask the omission again. Full CI and signed-artifact validation are in progress.
+The earlier 0.5.5 Linux MIT-SHM result is not proof of Android emulated capture.
+
+Preserve the existing Termux server/client `30251204_1`, original xiloader,
+accepted preparation and all pinned runtime/graphics/audio/controller binaries.
+First next-device check keeps the better second-run settings and verifies actual
+MIT-SHM capture in Diagnostics; no source update or managed migration.
+
+---
+
+# Historical 0.5.5 handoff (capture fault superseded above)
+
 # Active milestone: shared-memory Native Surface trial (0.5.5)
 
 The latest Thor comparison confirms startup capture off at both resolutions, yet

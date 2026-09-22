@@ -41,7 +41,7 @@ trap 'rm -rf "$short"' EXIT
 mkdir -p "$short/session" "$short/prefix" "$short/tmp"
 mkdir -p out/runtime-test/proot-root/opt/lsb out/runtime-test/proot-root/probe out/runtime-test/proot-root/tests out/runtime-test/proot-root/fixtures out/runtime-test/proot-root/client
 PROOT_LOADER="$PWD/out/runtime-test/proot-src/src/loader/loader" PROOT_NO_SECCOMP=1 PROOT_TMP_DIR="$short/tmp" \
- out/runtime-test/proot-src/src/proot --link2symlink --kill-on-exit -0 -r "$PWD/out/runtime-test/proot-root" \
+ out/runtime-test/proot-src/src/proot --link2symlink --kill-on-exit --sysvipc -0 -r "$PWD/out/runtime-test/proot-root" \
  -b /dev -b /proc -b /sys -b "$PWD/out/runtime-test/backend:/opt/lsb" \
  -b "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver" \
  -b "$PWD/out/runtime-test/probe:/probe" -b "$PWD/tests/runtime:/tests" -b "$PWD/out/windows-tests:/fixtures" \
