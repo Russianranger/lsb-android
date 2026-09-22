@@ -1,5 +1,5 @@
 """Real PE32 COM/D3D8, RFB pixels/input and PCM through ARM64 Wine/Box64."""
-import json,os,subprocess,socket,struct,time,sys,uuid
+import json,os,subprocess,socket,struct,time,sys,uuid,mmap
 from pathlib import Path
 from collections import Counter
 from audio_receiver import Receiver
@@ -48,12 +48,20 @@ def pixels(s):
             raw=recv(s,w*h*4);colors.update(raw[i:i+3] for i in range(0,len(raw),4))
         return colors[bytes([72,48,24])]>50000 and len(colors)>1000
 
+def native_pixels():
+    with socket.socket(socket.AF_UNIX) as s,open('/session/framebuffer.bin','rb') as backing,mmap.mmap(backing.fileno(),0,access=mmap.ACCESS_READ) as mapped:
+        s.settimeout(5);s.connect('/session/native-display.sock');s.sendall(b'\x01')
+        h=struct.unpack('>8I',recv(s,32))
+        assert h[:4]==(0x4c534631,1280,720,5120) and h[6]==1280*720*4 and h[7]==1,h
+        colors=Counter(mapped[i:i+3] for i in range(0,len(mapped),4))
+        return colors[bytes([72,48,24])]>50000 and len(colors)>1000
+
 def main():
     for folder in ('/prefix','/session','/logs'):Path(folder).mkdir(exist_ok=True)
     renderer=os.environ.get('LSB_TEST_RENDERER','software')
     for cycle in range(2):
         for n in ('stop','status.json','probe.json','display.sock'):Path('/session',n).unlink(missing_ok=True)
-        req={'format':1,'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4())}
+        req={'format':1,'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1}
         Path('/session/request.json').write_text(json.dumps(req));receiver=Receiver('/session/audio.sock')
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],env=dict(os.environ,LSB_TEST_AUTOCLOSE='1'))
         try:
@@ -62,12 +70,16 @@ def main():
                 try:return json.loads(Path('/session/probe.json').read_text()).get('d3d8_frames',0)>=25
                 except (OSError,ValueError):return False
             wait(ready,'32-bit probe did not render')
+            if cycle==1:
+                wait(native_pixels,'Wine triangle did not reach shared native framebuffer',6)
+                print('PASS: supervised Native Surface captures real Wine D3D8 pixels alongside audio and RFB input',flush=True)
             with display() as s:
                 key(s);wait(lambda:pixels(s),'Triangle did not reach the display',6)
             wait(lambda:sum(r['nonzero_samples'] for r in receiver.reports)>100,'Wine did not produce PCM',20)
             p.wait(timeout=40);assert p.returncode==0
             result=json.loads(Path('/session/status.json').read_text());probe=result['probe']
             assert result['phase']=='completed' and result['automatic_checks_passed'],result
+            if cycle==1:assert result.get('native_surface_requested') and 'native_surface_fallback' not in result,result
             assert probe['key_events']>0 and probe['pointer_events']>0,probe
             assert probe['bits']==32 and probe['registry32'] and probe['com'] and probe['audio_submitted'],probe
             assert Path('/prefix/lsb-prefix-ready.json').is_file()

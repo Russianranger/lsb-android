@@ -49,7 +49,7 @@ def main():
  if a.release:
   for n in PIN:fetch(n)
  packaged=ROOT/'out/runtime-packaged-assets/runtime';packaged.mkdir(parents=True,exist_ok=True)
- for folder in (OUT, ROOT/'runtime', ROOT/'out/runtime-probes'):
+ for folder in (OUT, ROOT/'runtime', ROOT/'out/runtime-probes', ROOT/'out/presentation'):
   if folder.exists():
    for f in folder.iterdir():
     if f.is_file():shutil.copyfile(f,packaged/f.name)

@@ -1,5 +1,6 @@
 plugins { id 'com.android.application' }
 android {
+    ndkVersion '27.2.12479018'
     namespace 'io.github.russianranger.lsb'
     compileSdk 35
     defaultConfig {
@@ -33,3 +34,14 @@ tasks.register('prepareRuntime', Exec) {
     commandLine 'python3', 'scripts/prepare-runtime.py'
 }
 tasks.named('preBuild').configure { dependsOn 'prepareRuntime' }
+
+tasks.register('buildNativePresentation', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'scripts/build-presentation.py', 'android', '--ndk', android.ndkDirectory
+    doFirst {
+        if (!rootProject.file('out/presentation/x11-frame-bridge').isFile()) {
+            throw new GradleException('Build/download the ARM64 presentation artifact first (scripts/build-presentation.py guest).')
+        }
+    }
+}
+tasks.named('prepareRuntime').configure { dependsOn 'buildNativePresentation' }

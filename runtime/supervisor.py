@@ -319,7 +319,8 @@ class Supervisor:
                 except ProcessLookupError:pass
                 p.wait(timeout=3)
         for writer in self.logs:writer.thread.join(2)
-        (SESSION/'display.sock').unlink(missing_ok=True)
+        for name in ('display.sock','native-display.sock','framebuffer.bin'):
+            (SESSION/name).unlink(missing_ok=True)
         self.status(display_ready=False,ended_at=time.time())
 
 
