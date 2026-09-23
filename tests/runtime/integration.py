@@ -65,7 +65,7 @@ def main():
         req.update(turnip_sysmem=cycle==1,dxvk_two_compilers=cycle==1)
         if req['engine']=='fex':req['fex_x87']=cycle==1
         Path('/session/request.json').write_text(json.dumps(req));receiver=Receiver('/session/audio.sock')
-        p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],env=dict(os.environ,LSB_TEST_AUTOCLOSE='1'))
+        p=subprocess.Popen(['python3','/tests/trace_probe.py'],env=dict(os.environ,LSB_TEST_AUTOCLOSE='1'))
         try:
             def ready():
                 if p.poll() is not None:raise AssertionError(Path('/session/status.json').read_text())

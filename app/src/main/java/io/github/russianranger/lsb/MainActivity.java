@@ -20,6 +20,10 @@ import java.util.*;
 import java.util.zip.*;
 
 public final class MainActivity extends Activity {
+    private static String appVersion(Context context) {
+        try { String version=context.getPackageManager().getPackageInfo(context.getPackageName(),0).versionName;return version==null?"unknown":version; }
+        catch (android.content.pm.PackageManager.NameNotFoundException error) { return "unknown"; }
+    }
     private static final int PICK = 20, CREATE = 21;
     private static final int BG = Color.rgb(12, 20, 31), CARD = Color.rgb(24, 36, 49), TEXT = Color.rgb(232, 239, 247), MUTED = Color.rgb(163, 182, 198), ACCENT = Color.rgb(106, 207, 193);
     private String tab = "Client", pending = "";
@@ -105,7 +109,7 @@ public final class MainActivity extends Activity {
         try(InputStream in=getAssets().open("art/"+(tab.equals("Server")?"server-background.png":"client-background.png"))){ImageView art=new ImageView(this);art.setImageDrawable(android.graphics.drawable.Drawable.createFromStream(in,null));art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));}catch(IOException ignored){}
         View shade=new View(this);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xe5091526,0x66091526,0x11091526}));hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout title=column();title.setPadding(dp(20),dp(12),dp(16),dp(8));TextView heading=label("LSB",30,TEXT);heading.setTypeface(android.graphics.Typeface.create("serif",Typeface.BOLD));title.addView(heading);title.addView(label("A world of adventure, on your device",13,Color.rgb(175,219,255)));hero.addView(title);page.addView(hero,new LinearLayout.LayoutParams(-1,dp(106)));
-        page.addView(label("Client & server launcher · 0.5.14",11,MUTED));
+        page.addView(label("Client & server launcher · "+appVersion(this),11,MUTED));
         LinearLayout nav = new LinearLayout(this);
         for (String name : new String[]{"Client", "Controller", "Server", "Runtime", "Profile", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(44));b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(name.equals(tab)?Color.rgb(38,80,111):Color.rgb(23,41,60)));
@@ -228,9 +232,9 @@ public final class MainActivity extends Activity {
         int selected=Arrays.asList(displayProfiles).indexOf(getSharedPreferences("runtime",MODE_PRIVATE).getString("display_profile","windowed720"));
         display.setSelection(Math.max(0,selected));card.addView(display);
         card.addView(label("Applied when you launch. Windowed mode saves the original display settings once, so you can restore them later. Your client files are retained.",13,MUTED));
-        CheckBox startupTrace=new CheckBox(this);startupTrace.setText("Capture FFXI startup result");startupTrace.setTextColor(TEXT);
+        CheckBox startupTrace=new CheckBox(this);startupTrace.setText("Capture FFXI startup and graphics");startupTrace.setTextColor(TEXT);
         startupTrace.setChecked(getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("startup_trace",false));card.addView(startupTrace);
-        card.addView(label("Runs a temporary diagnostic copy to identify where startup stops. Your original loader stays unchanged. Turn off to launch the original directly.",13,MUTED));
+        card.addView(label("Captures startup and a bounded graphics sample for missing menus or distorted geometry. Use a short test, then Stop and export Diagnostics. May affect FPS during capture; turn off for normal play.",13,MUTED));
         LinearLayout performance=column();card.addView(performance);
         runtimeSelector(performance,rt);
         CheckBox refresh60=new CheckBox(this);refresh60.setText("60 Hz display refresh");refresh60.setTextColor(TEXT);refresh60.setChecked(getSharedPreferences("runtime",0).getInt("display_fps",30)==60);refresh60.setOnCheckedChangeListener((b,v)->getSharedPreferences("runtime",0).edit().putInt("display_fps",v?60:30).apply());performance.addView(refresh60);
@@ -481,7 +485,7 @@ public final class MainActivity extends Activity {
             SafeZip.entry(zip, "runtime-profile.json", profile(ctx)); SafeZip.entry(zip, "inventory.json", s.inventory()); SafeZip.entry(zip, "summary.txt", s.summary()); SafeZip.entry(zip, "session.properties", s.config().properties());
             SafeZip.entry(zip, "playonline-candidates.txt", String.join("\n", s.playOnlineChoices()) + "\n");
             if (s.hasPendingImport()) SafeZip.entry(zip, "pending-playonline.txt", "Waiting for PlayOnline selection\n" + String.join("\n", s.pendingChoices()) + "\n");
-            SafeZip.entry(zip, "device.txt", "app=0.5.14\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=prepared_client_launch\n");
+            SafeZip.entry(zip, "device.txt", "app="+appVersion(ctx)+"\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=prepared_client_launch\n");
             for (String name : new String[]{"operations.log", "server-probe.txt", "repair-preview.txt"}) { File f = new File(ctx.getFilesDir(), name); if (f.exists()) SafeZip.entry(zip, name, FilesEx.read(f, 262144)); }
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }

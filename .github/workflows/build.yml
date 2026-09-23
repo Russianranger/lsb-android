@@ -65,12 +65,12 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.15.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.16.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.15.apk
+            out/LSB-Android-0.5.16.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/
@@ -86,6 +86,16 @@ jobs:
             out/windows-tests/dependency-detach.dll
             out/windows-tests/dependency-attach.dll
             out/windows-tests/dependency-cycle.exe
+      - name: Preserve APK verification tools
+        run: |
+          mkdir -p out/apk-tools/lib out/apk-tools/lib64
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" out/apk-tools/lib/
+          cp "$ANDROID_HOME/build-tools/35.0.0/aapt2" "$ANDROID_HOME/build-tools/35.0.0/zipalign" out/apk-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib64/libc++.so" out/apk-tools/lib64/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-verification-tools
+          path: out/apk-tools/
       - name: Note device build signing
         run: echo 'This is a disposable-certificate build check. Use the separately delivered device APK for updates.' >> "$GITHUB_STEP_SUMMARY"
   windows-launcher:

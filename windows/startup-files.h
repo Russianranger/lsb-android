@@ -76,7 +76,7 @@ static HWND WINAPI observed_window(DWORD ex,LPCSTR cls,LPCSTR title,DWORD style,
     event("main_window_create",hwnd?0:error,hwnd!=NULL);SetLastError(error);return hwnd;
 }
 static void* WINAPI observed_d3d8(UINT sdk){
-    void *object=real_d3d8(sdk);DWORD error=GetLastError();event("main_d3d8_create",0,object!=NULL);SetLastError(error);return object;
+    void *object=real_d3d8(sdk);DWORD error=GetLastError();event("main_d3d8_create",0,object!=NULL);gt_attach((IDirect3D8*)object);SetLastError(error);return object;
 }
 static void observe_directory(void){
     DWORD saved=GetLastError();char module[MAX_PATH],cwd[MAX_PATH];

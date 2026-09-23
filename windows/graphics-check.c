@@ -27,7 +27,14 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR args,int show){
     }
     if(device)IDirect3DDevice8_Release(device);
     int result=FAILED(hr)?12:0;
-    if(!result && !wcscmp(args,L"--pixels")) {
+    if(!result && (!wcscmp(args,L"--pixels")||!wcscmp(args,L"--trace-pixels"))) {
+        if(!wcscmp(args,L"--trace-pixels")){
+            HMODULE trace=LoadLibraryW(L"P:\\startup-trace.dll");
+            typedef void (WINAPI *Attach)(IDirect3D8*);
+            Attach attach=trace?(Attach)(void*)GetProcAddress(trace,"LsbGraphicsTrace"):NULL;
+            if(!attach){IDirect3D8_Release(api);DestroyWindow(window);return 14;}
+            attach(api); /* Keep DLL loaded until process exit; hooks may be active. */
+        }
         result=check_pixels(api,window,D3DCREATE_SOFTWARE_VERTEXPROCESSING,"swvp");
         if(!result)result=check_pixels(api,window,D3DCREATE_HARDWARE_VERTEXPROCESSING,"hwvp");
     }

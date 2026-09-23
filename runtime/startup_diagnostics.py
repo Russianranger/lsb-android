@@ -5,6 +5,7 @@ Patterns follow Wine 10 and DXVK 2.5.3. Unknown messages contribute counts only.
 """
 import re
 import threading
+from graphics_diagnostics import GraphicsDiagnostics
 
 
 class StartupDiagnostics:
@@ -33,6 +34,7 @@ class StartupDiagnostics:
 
     def __init__(self):
         self.lock = threading.Lock()
+        self.graphics = GraphicsDiagnostics()
         self.records = []
         self.counts = {}
         self.seen = set()
@@ -62,11 +64,16 @@ class StartupDiagnostics:
 
     def snapshot(self):
         with self.lock:
-            return {'format': 1, 'policy': 'fixed_metadata_only',
+            report = {'format': 1, 'policy': 'fixed_metadata_only',
                     'records': [dict(r) for r in self.records], 'counts': dict(self.counts),
                     'dropped_records': self.dropped}
+            graphics=self.graphics.snapshot()
+            if graphics is not None:report['graphics']=graphics
+            return report
 
     def line(self, data):
+        if data.startswith(b'lsb-d3d8-v1 '):
+            self.graphics.line(data);return
         startup = re.fullmatch(rb'lsb-startup-v1 ([a-z0-9_]+) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{8})', data)
         if startup:
             name,pid,tid,code,detail=startup.groups()

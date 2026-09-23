@@ -1,3 +1,26 @@
+# 0.5.16 D3D8 game capture: implementation under qualification
+
+The user completed the actual-game DXVK 2.5.3 comparison. The selected DLL
+hashes confirm 2.5.3; screenshots show the same missing menu and severe
+corruption at about 13 FPS. All 500 game uploads use SHM without failure.
+A 2.7.1-specific defect is less likely; the rendering fault remains unresolved.
+The earlier on/off pixel checks and this version comparison are complete.
+
+[Current audit, implementation and next device procedure](d3d8-game-capture-0516.md).
+0.5.16 adds an opt-in, bounded capture of the game's actual D3D8 states and
+sampled submitted positions. It records numeric metadata without GPU readbacks
+or recurring process scans. It is a diagnostic build, not a graphics fix.
+Qualification is in progress; do not deliver an unqualified APK.
+
+Preserve the prepared client, original loader and working Termux server.
+Existing authorization to change/push the repo remains active. The next device
+step after qualification is one brief actual-game launch with **Capture FFXI
+startup and graphics** enabled, then Stop/export and disable capture.
+
+Earlier entries below are historical.
+
+---
+
 # Thor 0.5.15 results received: game rendering still unresolved
 
 **All three requested exports have been audited.** Both strict64 and full80

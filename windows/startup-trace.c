@@ -30,6 +30,7 @@ static void event(const char *name,DWORD code,DWORD detail){
     if(n>0&&n<(int)sizeof(row))WriteFile(GetStdHandle(STD_ERROR_HANDLE),row,(DWORD)n,&written,NULL);
     SetLastError(saved);
 }
+#include "graphics-trace.h"
 #include "startup-files.h"
 static HRESULT WINAPI start(void *self,IUnknown *pol,void *message){
     DWORD incoming=GetLastError();Slot *slot=NULL;
@@ -128,6 +129,8 @@ static unsigned hook(HMODULE module,BOOL main){
     return count;
 }
 __declspec(dllexport) void WINAPI LsbStartupTrace(void){}
+/* App-owned fixture entry; real launches attach through Direct3DCreate8. */
+__declspec(dllexport) void WINAPI LsbGraphicsTrace(IDirect3D8 *api){gt_attach(api);}
 BOOL WINAPI DllMain(HINSTANCE dll,DWORD reason,LPVOID reserved){
     (void)reserved;
     if(reason==DLL_PROCESS_ATTACH){DisableThreadLibraryCalls(dll);event("observer_loaded",0,0);event("loader_import_hooks",0,hook(GetModuleHandleW(NULL),FALSE));}
