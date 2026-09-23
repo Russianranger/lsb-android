@@ -28,7 +28,7 @@ native=(-v "$PWD/out/fex-test/wine:/opt/wine:ro" -e LSB_TEST_ENGINE=fex)
 docker run --rm --network none "${common[@]}" "${native[@]}" \
  -v "$PWD/out/fex-test/baseline-prefix:/baseline-prefix:ro" -v "$PWD/out/fex-test/client:/client" \
  -v "$PWD/out/fex-test/session:/session" -v "$PWD/out/fex-test/logs/migrated:/logs" \
- lsb-fex:base sh -ec 'python3 /tests/fex_prefix.py copy; python3 /tests/integration.py; python3 /tests/dependency_check.py; python3 /tests/launching.py; python3 /tests/gamepad.py; python3 /tests/fex_prefix.py verify'
+ lsb-fex:base sh -ec 'python3 /tests/fex_prefix.py copy; python3 /tests/fex_crash.py; python3 /tests/integration.py; python3 /tests/dependency_check.py; python3 /tests/launching.py; python3 /tests/gamepad.py; python3 /tests/fex_prefix.py verify'
 cat > out/fex-test/Dockerfile <<'DOCKER'
 FROM lsb-fex:base
 RUN sha256sum /usr/bin/Xtigervnc > /tmp/xserver.sha256 && rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* && echo 'deb https://deb.debian.org/debian trixie main' > /etc/apt/sources.list && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confold install --no-install-recommends mesa-vulkan-drivers && sha256sum -c /tmp/xserver.sha256 && apt-get clean && rm -rf /var/lib/apt/lists/*

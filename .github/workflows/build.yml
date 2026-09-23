@@ -81,6 +81,7 @@ jobs:
             out/windows-tests/display-config.exe
             out/windows-tests/version-registry.exe
             out/windows-tests/gamepad-check.exe
+            out/windows-tests/fex-crash.exe
             out/windows-tests/login-missing.exe
             out/windows-tests/dependency-detach.dll
             out/windows-tests/dependency-attach.dll
