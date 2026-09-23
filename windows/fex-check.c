@@ -1,7 +1,52 @@
 /* App-owned finite PE32 proof: native Wine host must be ARM64, not emulated AMD64. */
 #include <windows.h>
 #include <stdio.h>
-int wmain(void) {
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Only fixed runtime controls; never enumerate the environment or print values. */
+static const char *env_keys[]={"FEX_X87REDUCEDPRECISION","FEX_X87STRICTREDUCEDPRECISION",
+    "DXVK_HUD","DXVK_CONFIG","MESA_VK_WSI_DEBUG","TU_DEBUG","WINEDLLOVERRIDES"};
+static uint64_t environment_hash(void) {
+    uint64_t hash=14695981039346656037ULL;
+    for(unsigned i=0;i<sizeof(env_keys)/sizeof(env_keys[0]);i++) {
+        char value[4096]={0};DWORD n=GetEnvironmentVariableA(env_keys[i],value,sizeof(value));
+        if(n>=sizeof(value))return 0;
+        const char *key=env_keys[i];while(*key){hash^=(unsigned char)*key++;hash*=1099511628211ULL;}
+        hash^='=';hash*=1099511628211ULL;
+        for(DWORD j=0;j<=n;j++){hash^=(unsigned char)value[j];hash*=1099511628211ULL;}
+    }
+    return hash;
+}
+static int arithmetic(int mode) {
+    unsigned short saved,cw=0x037f;double large=9007199254740992.0,delta=0,quarter=.25,sum=0;
+    __asm__ volatile("fnstcw %0":"=m"(saved));
+    __asm__ volatile("fldcw %0"::"m"(cw));
+    /* Detect actual translated precision, not merely an inherited variable. */
+    __asm__ volatile("fldl %1; fld1; faddp; fsubl %1; fstpl %0":"=m"(delta):"m"(large):"st");
+    LARGE_INTEGER frequency,before,after,sleep_before,sleep_after;
+    if(!QueryPerformanceFrequency(&frequency)||frequency.QuadPart<=0)return 30;
+    QueryPerformanceCounter(&before);
+    for(unsigned i=0;i<100000;i++)
+        __asm__ volatile("fldl %0; faddl %1; fstpl %0":"+m"(sum):"m"(quarter):"st");
+    QueryPerformanceCounter(&after);
+    __asm__ volatile("fldcw %0"::"m"(saved));
+    if(delta!=(mode?0.0:1.0)||sum!=25000.0)return 31;
+    QueryPerformanceCounter(&sleep_before);Sleep(20);QueryPerformanceCounter(&sleep_after);
+    if(after.QuadPart<before.QuadPart||sleep_after.QuadPart<=sleep_before.QuadPart)return 32;
+    printf("LSB_FEX_ARITH mode=%d iterations=100000 elapsed_us=%llu qpc_frequency=%llu sleep_us=%llu PASS\n",mode,
+        (unsigned long long)((after.QuadPart-before.QuadPart)*1000000/frequency.QuadPart),
+        (unsigned long long)frequency.QuadPart,
+        (unsigned long long)((sleep_after.QuadPart-sleep_before.QuadPart)*1000000/frequency.QuadPart));
+    return 0;
+}
+int wmain(int argc,wchar_t **argv) {
+    if(argc!=3&&argc!=4)return 26;
+    int mode=!wcscmp(argv[1],L"1");
+    if(!mode&&wcscmp(argv[1],L"0"))return 26;
+    uint64_t expected=wcstoull(argv[2],NULL,16),actual=environment_hash();
+    if(!actual||actual!=expected){printf("LSB_FEX_ENV mismatch expected=%016llx actual=%016llx\n",(unsigned long long)expected,(unsigned long long)actual);return 27;}
     typedef BOOL (WINAPI *machine_fn)(HANDLE,USHORT *,USHORT *);
     machine_fn machine=(machine_fn)(void *)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"IsWow64Process2");
     USHORT process=0,native=0;
@@ -16,5 +61,17 @@ int wmain(void) {
     if(result||type!=REG_QWORD||size!=8)return 25;
     printf("LSB_FEX_HOST isar0=%016llx isar1=%016llx ctr=%016llx\n",isar0,isar1,ctr);
     printf("LSB_FEX_CHECK bits=32 process=%04x native=%04x PASS\n",process,native);
-    return 0;
+    if(argc==4){
+        printf("LSB_FEX_ENV child=1 hash=%016llx PASS\n",(unsigned long long)actual);
+        return arithmetic(mode);
+    }
+    /* Exercise the same CreateProcess/inherited environment boundary as the loader. */
+    wchar_t command[160];swprintf(command,160,L"\"P:\\fex-check.exe\" %d %016llx --child",mode,(unsigned long long)expected);
+    STARTUPINFOW startup={0};PROCESS_INFORMATION child={0};startup.cb=sizeof(startup);
+    fflush(stdout);
+    if(!CreateProcessW(L"P:\\fex-check.exe",command,NULL,NULL,TRUE,0,NULL,NULL,&startup,&child))return 28;
+    DWORD code=29;
+    if(WaitForSingleObject(child.hProcess,30000)==WAIT_OBJECT_0)GetExitCodeProcess(child.hProcess,&code);
+    else TerminateProcess(child.hProcess,29);
+    CloseHandle(child.hThread);CloseHandle(child.hProcess);return code;
 }

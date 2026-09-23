@@ -63,6 +63,7 @@ def main():
         for n in ('stop','status.json','probe.json','display.sock'):Path('/session',n).unlink(missing_ok=True)
         req={'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1,'display_fps':60 if cycle==1 else 30,'dxvk_diagnostics':cycle==1 and renderer!='software','shm_upload':cycle==1,'dxvk_version':'2.7.1' if cycle==1 else '2.5.3'}
         req.update(turnip_sysmem=cycle==1,dxvk_two_compilers=cycle==1)
+        if req['engine']=='fex':req['fex_x87']=cycle==1
         Path('/session/request.json').write_text(json.dumps(req));receiver=Receiver('/session/audio.sock')
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],env=dict(os.environ,LSB_TEST_AUTOCLOSE='1'))
         try:
@@ -89,6 +90,7 @@ def main():
             p.wait(timeout=40);assert p.returncode==0
             result=json.loads(Path('/session/status.json').read_text());probe=result['probe']
             assert result['phase']=='completed' and result['automatic_checks_passed'],result
+            if req['engine']=='fex':assert result['fex_arithmetic']['mode']==('strict64' if cycle==1 else 'full80'),result
             if cycle==1:assert result.get('native_surface_requested') and 'native_surface_fallback' not in result,result
             assert probe['key_events']>0 and probe['pointer_events']>0,probe
             assert probe['bits']==32 and probe['registry32'] and probe['com'] and probe['audio_submitted'],probe

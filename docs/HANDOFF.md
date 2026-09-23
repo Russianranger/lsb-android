@@ -1,3 +1,47 @@
+# Current work: Thor FEX regression audit (0.5.14)
+
+Thor 0.5.13 is **not accepted for real FFXI**: character selection was mostly
+black and about 5 FPS. The graphics test passed, but that is not proof of game
+compatibility. The current support ZIP has FEX client session
+`f1565fe7-80be-48eb-a70a-3236450689e4`; its previous runtime session is a FEX
+probe, while `client-launch.json.previous` is the older 0.5.12 Box64 run.
+Do not mislabel that older launch as a second FEX game result.
+
+Audit: native FEX execution, Turnip 26/Adreno 740, DXVK 2.7.1, 60 Hz, Native
+Surface and 365 actual game SHM uploads are confirmed. No software fallback,
+socket-upload fallback or attachment failures. Game upload copy averages
+0.736 ms and ring wait 0.0038 ms; late Surface delivery is 5.04 posts/s with
+unchanged scenes between posts. The black scene/slow producer is upstream of
+Android presentation. 104 normalized first-chance exceptions are fewer than
+the old Box64 run's 161, not evidence of an exception storm. Audio runs; its
+three early underruns stabilize. Startup observation ends at 8.194 s and does
+not resume. Existing COM/module warnings also occurred on the working Box64
+path; these receipts do not establish their cause or a new FEX failure.
+
+A concrete test environment bug was found: Android's standalone Windows checks
+omitted all client graphics preferences, running DXVK 2.5.3 without SHM, Native
+Surface or selected 60 Hz. 0.5.14 shares that request construction with launch.
+The client's separate eight-frame 2.7.1 preflight did pass in the failed run;
+correcting standalone-test parity alone is **not claimed to fix game FPS**.
+
+FEX's upstream default uses full 80-bit x87 software emulation. 0.5.14 adds an
+explicit, default-off **FEX faster x87 arithmetic** comparison using strict
+64-bit mode. A PE32 child verifies both inherited controls and actual precision
+with `(2^53 + 1) - 2^53`, exact arithmetic, a fixed-work timing sample and QPC.
+The same proof runs with the exact launch environment before starting xiloader.
+Only a hash of seven fixed controls is retained; no environment dump or new
+post-login polling. Box64's launch environment is unchanged. No memory-ordering
+relaxation, runtime binary/source update or claimed equivalence to GameHub.
+This x87 mode is a hypothesis for translation cost, not a confirmed black-menu
+fix. Runtime checking and device acceptance must remain distinct.
+
+Current local runtime contracts: 56 pass. CI qualification and signed device
+artifact for 0.5.14 have not yet completed; replace this sentence with actual
+results before delivery. Preserve the working Termux server, client
+`30251204_1`, original xiloader, prepared generation and Box64 rollback.
+
+---
+
 # Completed milestone: selectable FEX runtime (0.5.13)
 
 The latest 0.5.12 Thor result shows no meaningful improvement from sysmem or

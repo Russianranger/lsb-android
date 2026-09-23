@@ -220,6 +220,10 @@ def run(s, display):
         env=dict(s.env,WINEDEBUG='-all,+timestamp,+pid,err+all,warn+module,warn+seh,trace+seh,trace+loaddll,fixme+ole',
                  BOX64_LOG='0',BOX64_NOBANNER='1',DXVK_LOG_LEVEL='info',DXVK_LOG_PATH='none')
         env['WINEDLLOVERRIDES']+=';winedbg='
+        if getattr(s,'engine','box64')=='fex':
+            env={k:v for k,v in env.items() if not k.startswith('BOX64_')}
+            from fex_runtime import check as check_fex
+            check_fex(s,env=env,launch=True)
         # No credentials in argv/environment. Native helper supplies the Windows CLI.
         p=s.spawn(s.wine_command(r'P:\client-launch.exe','launch',windows_path(loader),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile,windows_path(manifest['game'])),
                   'loader-events.log',env=env,pipe_input=True)

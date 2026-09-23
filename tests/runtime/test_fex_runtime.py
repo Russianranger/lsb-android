@@ -18,6 +18,22 @@ class FexContracts(unittest.TestCase):
         for value in ('latest','../fex',None,True):
             with self.assertRaises(ValueError):Supervisor(dict(req,engine=value))
 
+    def test_fex_precision_is_explicit_reversible_and_baseline_is_unchanged(self):
+        req=dict(format=1,renderer='software',audio=False,session_id=str(uuid.uuid4()))
+        for enabled in (False,True):
+            native=Supervisor(dict(req,engine='fex',fex_x87=enabled))
+            for key in ('FEX_X87REDUCEDPRECISION','FEX_X87STRICTREDUCEDPRECISION'):
+                self.assertEqual(native.env[key],'1' if enabled else '0')
+                self.assertNotIn(key,Supervisor(dict(req,fex_x87=enabled)).env)
+        for value in ('1',1,None):
+            with self.assertRaises(ValueError):Supervisor(dict(req,fex_x87=value))
+
+    def test_child_environment_hash_excludes_secrets_and_detects_missing_control(self):
+        a={'FEX_X87REDUCEDPRECISION':'1','FEX_X87STRICTREDUCEDPRECISION':'1','DXVK_HUD':'fps'}
+        self.assertEqual(fex.environment_hash(a),fex.environment_hash(dict(a,PASSWORD='secret')))
+        self.assertNotEqual(fex.environment_hash(a),fex.environment_hash(dict(a,DXVK_HUD='')))
+        self.assertNotEqual(fex.environment_hash(a),fex.environment_hash(dict(a,FEX_X87REDUCEDPRECISION='0')))
+
     def test_stopped_prefix_registry_selects_only_x86_translator(self):
         with tempfile.TemporaryDirectory() as t:
             p=Path(t);hive=p/'system.reg'

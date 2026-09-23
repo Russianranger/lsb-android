@@ -203,7 +203,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.13");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.14");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -232,6 +232,16 @@ final class ClientRuntime {
             if(name.equals("x11-upload-check")||name.equals("vulkan-probe")||name.equals("wineserver")||name.equals("x11-frame-bridge"))Os.chmod(dest.getPath(),0700);
         }
     }
+    void applyGraphicsSettings(JSONObject request)throws Exception {
+        request.put("display_fps",context.getSharedPreferences("runtime",0).getInt("display_fps",30));
+        request.put("native_surface",context.getSharedPreferences("runtime",0).getBoolean("native_surface",true));
+        request.put("shm_upload",context.getSharedPreferences("runtime",0).getBoolean("shm_upload",true));
+        request.put("dxvk_version",context.getSharedPreferences("runtime",0).getBoolean("dxvk_271",false)?"2.7.1":"2.5.3");
+        request.put("turnip_sysmem",context.getSharedPreferences("runtime",0).getBoolean("turnip_sysmem",false));
+        request.put("dxvk_two_compilers",context.getSharedPreferences("runtime",0).getBoolean("dxvk_two_compilers",false));
+        request.put("dxvk_hud",context.getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));
+        request.put("dxvk_diagnostics",context.getSharedPreferences("runtime",0).getBoolean("dxvk_diagnostics",false));
+    }
     void run(String renderer,boolean sound,String action,LoginRequest login,String displayProfile,boolean startupTrace)throws Exception {
         boolean initialize=Arrays.asList("initialize","installer","repair-launcher").contains(action),clientOperation=!"probe".equals(action);
         File candidate=null;File selectedPrefix=prefix;
@@ -256,16 +266,10 @@ final class ClientRuntime {
             JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action).put("engine",useFex?"fex":"box64");
             if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
                 request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
-                request.put("display_fps",context.getSharedPreferences("runtime",0).getInt("display_fps",30));
-                request.put("native_surface",context.getSharedPreferences("runtime",0).getBoolean("native_surface",true));
-                request.put("shm_upload",context.getSharedPreferences("runtime",0).getBoolean("shm_upload",true));
-                request.put("dxvk_version",context.getSharedPreferences("runtime",0).getBoolean("dxvk_271",false)?"2.7.1":"2.5.3");
-                request.put("turnip_sysmem",context.getSharedPreferences("runtime",0).getBoolean("turnip_sysmem",false));
-                request.put("dxvk_two_compilers",context.getSharedPreferences("runtime",0).getBoolean("dxvk_two_compilers",false));
-                request.put("dxvk_hud",context.getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));
-                request.put("dxvk_diagnostics",context.getSharedPreferences("runtime",0).getBoolean("dxvk_diagnostics",false));
                 try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}
             }
+            if(action.equals("launch")||action.equals("probe"))applyGraphicsSettings(request);
+            if(useFex)request.put("fex_x87",context.getSharedPreferences("runtime",0).getBoolean("fex_x87",false));
             if(action.equals("gamepad-config")){request.put("gamepad",true);try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}}
             write(new File(run,"request.json"),request.toString());
             write(new File(run,"status.json"),new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",initialize?"copying_client":"preparing_runtime").put("game_files_mounted",false).toString());

@@ -82,13 +82,36 @@ def refresh_host_builtins(wine,prefix):
         changed.append(str(target.relative_to(prefix)))
     return changed
 
-def check(supervisor):
-    p=supervisor.spawn(supervisor.wine_command(r'P:\fex-check.exe'),'fex-check.log',fixed_output=True)
+ENV_KEYS=('FEX_X87REDUCEDPRECISION','FEX_X87STRICTREDUCEDPRECISION',
+          'DXVK_HUD','DXVK_CONFIG','MESA_VK_WSI_DEBUG','TU_DEBUG','WINEDLLOVERRIDES')
+
+def environment_hash(env):
+    value=14695981039346656037
+    for key in ENV_KEYS:
+        for byte in (key+'='+env.get(key,'')+'\0').encode('utf-8'):
+            value=((value^byte)*1099511628211)&0xffffffffffffffff
+    return f'{value:016x}'
+
+def check(supervisor,env=None,launch=False):
+    env=supervisor.env if env is None else env
+    mode='1' if supervisor.req.get('fex_x87',False) else '0'
+    expected=environment_hash(env)
+    name='fex-launch-check.log' if launch else 'fex-check.log'
+    p=supervisor.spawn(supervisor.wine_command(r'P:\fex-check.exe',mode,expected),name,env=env,fixed_output=True)
     supervisor.wait(p,45,'FEX 32-bit execution check')
     supervisor.logs[-1].thread.join(3)
-    text=Path('/logs/fex-check.log').read_text(errors='replace')
+    text=(Path('/logs')/name).read_text(errors='replace')
     if 'LSB_FEX_CHECK bits=32 process=014c native=aa64 PASS' not in text or not re.search(r'Loaded .*libwow64fex\.dll.*builtin',text,re.I):
         raise RuntimeError('FEX execution was not verified; select Box64 to return to the working runtime')
     host=re.search(r'LSB_FEX_HOST isar0=([0-9a-f]{16}) isar1=([0-9a-f]{16}) ctr=([0-9a-f]{16})',text)
     if not host:raise RuntimeError('FEX host CPU features were not verified')
+    if f'LSB_FEX_ENV child=1 hash={expected} PASS' not in text:
+        raise RuntimeError('FEX Windows child did not inherit the selected environment')
+    arithmetic=re.search(r'LSB_FEX_ARITH mode=([01]) iterations=100000 elapsed_us=(\d+) qpc_frequency=(\d+) sleep_us=(\d+) PASS',text)
+    if not arithmetic or arithmetic[1]!=mode:
+        raise RuntimeError('FEX arithmetic mode was not verified; turn off faster x87 or select Box64')
+    report={'mode':'strict64' if mode=='1' else 'full80','iterations':100000,
+            'elapsed_us':int(arithmetic[2]),'qpc_frequency':int(arithmetic[3]),'sleep_us':int(arithmetic[4]),
+            'child_environment_verified':True,'environment_hash':expected}
+    supervisor.status(**{'fex_launch_arithmetic' if launch else 'fex_arithmetic':report})
     supervisor.status(fex_execution_verified=True,fex_host_registers=dict(zip(('isar0','isar1','ctr'),host.groups())))

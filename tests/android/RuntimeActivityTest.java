@@ -74,6 +74,22 @@ public class RuntimeActivityTest {
         try{assertTrue(activity.get().dispatchGenericMotionEvent(event));}finally{event.recycle();}
     }
 
+    @Test public void graphicsProbeReceivesClientGraphicsPreferences()throws Exception {
+        android.content.SharedPreferences preferences=RuntimeEnvironment.getApplication().getSharedPreferences("runtime",0);
+        preferences.edit().putInt("display_fps",60).putBoolean("native_surface",true)
+            .putBoolean("shm_upload",true).putBoolean("dxvk_271",true)
+            .putBoolean("turnip_sysmem",true).putBoolean("dxvk_two_compilers",true).apply();
+        try {
+            org.json.JSONObject probe=new org.json.JSONObject().put("action","probe");
+            org.json.JSONObject launch=new org.json.JSONObject().put("action","launch");
+            runtime.applyGraphicsSettings(probe);runtime.applyGraphicsSettings(launch);
+            for(String key:new String[]{"display_fps","native_surface","shm_upload","dxvk_version","turnip_sysmem","dxvk_two_compilers","dxvk_hud","dxvk_diagnostics"})
+                assertEquals(key,launch.get(key),probe.get(key));
+            assertEquals(60,probe.getInt("display_fps"));assertEquals("2.7.1",probe.getString("dxvk_version"));
+            assertTrue(probe.getBoolean("shm_upload"));assertTrue(probe.getBoolean("native_surface"));
+        } finally {preferences.edit().clear().commit();}
+    }
+
     @Test public void displayRateTracksActiveLaunchInsteadOfNextLaunchPreference()throws Exception {
         File request=new File(runtime.run,"request.json");Files.deleteIfExists(request.toPath());
         assertEquals(30,runtime.activeDisplayFps());

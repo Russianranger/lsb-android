@@ -47,11 +47,11 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','engine'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','engine','fex_x87'}:raise ValueError('Unexpected runtime request field')
     if req.get('engine','box64') not in ('box64','fex'):raise ValueError('Unsupported runtime engine')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
     if req.get('dxvk_version','2.5.3') not in ('2.5.3','2.7.1'):raise ValueError('Unsupported DXVK version')
-    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload','turnip_sysmem','dxvk_two_compilers'):
+    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload','turnip_sysmem','dxvk_two_compilers','fex_x87'):
         if key in req and not isinstance(req[key],bool):raise ValueError('Unsupported '+key+' setting')
     if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
     if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','windowed540','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
@@ -171,6 +171,10 @@ class Supervisor:
             # Disable the automatic debugger explicitly; FEX must return a
             # crashed child's exit status instead of waiting inside winedbg.
             self.env['WINEDLLOVERRIDES']+=';winedbg.exe='
+            # Explicit, reversible x87 comparison. Never relax memory ordering.
+            # Verify the arithmetic behavior inside a PE32 child before login.
+            reduced='1' if req.get('fex_x87',False) else '0'
+            self.env.update(FEX_X87REDUCEDPRECISION=reduced,FEX_X87STRICTREDUCEDPRECISION=reduced)
             self.state['runtime_candidate']='Wine 10 native ARM64 / FEX 2510 WoW64'
     def wine_command(self,*args):
         return ([] if self.engine=='fex' else ['/usr/local/bin/box64'])+['/opt/wine/bin/wine',*args]
