@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 /* Only fixed runtime controls; never enumerate the environment or print values. */
 static const char *env_keys[]={"FEX_X87REDUCEDPRECISION","FEX_X87STRICTREDUCEDPRECISION",

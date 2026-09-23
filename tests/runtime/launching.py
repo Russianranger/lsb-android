@@ -47,6 +47,7 @@ def main():
         manifest['key_files'][manifest['loader']]=hashlib.sha256(loader.read_bytes()).hexdigest()
         (SESSION/'client-manifest.json').write_text(json.dumps(manifest))
         request={'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher' if case=='check-only' else 'launch'}
+        if request['engine']=='fex':request['fex_x87']=case=='relaunch'
         if case in ('launch','windowed-existing'):request['display_profile']='windowed720'
         elif case=='restore-display':request['display_profile']='restore'
         if case in STARTUP:
@@ -113,6 +114,9 @@ def main():
         assert report['authentication_verified'] is False and report['world_entry_verified'] is False
         if case in ('launch','relaunch','windowed-existing','restore-display'):
             assert p.returncode==0 and state['phase']=='completed' and report['status']=='exited',state
+            if request['engine']=='fex':
+                arithmetic=state['fex_launch_arithmetic']
+                assert arithmetic['mode']==('strict64' if case=='relaunch' else 'full80') and arithmetic['child_environment_verified'],arithmetic
             assert report['process']['child_exit']==0
             observed=report['process']['observation']
             assert observed['ffxi_window_seen'] and 'FFXiMain.dll' in observed['modules_seen'],observed

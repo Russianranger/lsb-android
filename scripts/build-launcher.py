@@ -13,7 +13,7 @@ if not cc:
     if local.exists(): cc = str(local)
 if not cc: raise SystemExit('Install gcc-mingw-w64-i686-posix, or set LSB_MINGW_CC to its compiler.')
 assets = root/'out/launcher-assets'; assets.mkdir(parents=True, exist_ok=True)
-flags = ['-std=c11', '-Os', '-Wall', '-Wextra', '-Wno-misleading-indentation', '-static', '-static-libgcc', '-municode', '-mwindows', '-Wl,--no-insert-timestamp', '-s']
+flags = ['-std=c11', '-Os', '-Wall', '-Wextra', '-Werror=implicit-function-declaration', '-Wno-misleading-indentation', '-static', '-static-libgcc', '-municode', '-mwindows', '-Wl,--no-insert-timestamp', '-s']
 libs = ['-luser32', '-ladvapi32', '-lshell32', '-lole32', '-luuid']
 def build(source, output, extra=()):
     subprocess.run([cc, *flags, str(root/source), *extra, '-o', str(output), *libs], check=True)
