@@ -5,6 +5,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include <cpuid.h>
+
+static int cpu_features(int child){
+    unsigned a=0,b=0,c=0,d=0,three=0,sse2=0;
+    if(__get_cpuid(1,&a,&b,&c,&d))sse2=!!(d&bit_SSE2);
+    if(__get_cpuid(0x80000001,&a,&b,&c,&d))three=!!(d&0x80000000u);
+    unsigned api_three=!!IsProcessorFeaturePresent(PF_3DNOW_INSTRUCTIONS_AVAILABLE);
+    unsigned api_sse2=!!IsProcessorFeaturePresent(PF_XMMI64_INSTRUCTIONS_AVAILABLE);
+    int passed=three==api_three&&sse2&&api_sse2;
+    printf("LSB_FEX_FEATURES child=%d three_cpuid=%u three_api=%u sse2_cpuid=%u sse2_api=%u %s\n",
+        child,three,api_three,sse2,api_sse2,passed?"PASS":"FAIL");
+    return passed?0:33;
+}
 
 /* Only fixed runtime controls; never enumerate the environment or print values. */
 static const char *env_keys[]={"FEX_X87REDUCEDPRECISION","FEX_X87STRICTREDUCEDPRECISION",
@@ -62,6 +75,7 @@ int wmain(int argc,wchar_t **argv) {
     if(result||type!=REG_QWORD||size!=8)return 25;
     printf("LSB_FEX_HOST isar0=%016llx isar1=%016llx ctr=%016llx\n",isar0,isar1,ctr);
     printf("LSB_FEX_CHECK bits=32 process=%04x native=%04x PASS\n",process,native);
+    int feature_result=cpu_features(argc==4);if(feature_result)return feature_result;
     if(argc==4){
         printf("LSB_FEX_ENV child=1 hash=%016llx PASS\n",(unsigned long long)actual);
         return arithmetic(mode);

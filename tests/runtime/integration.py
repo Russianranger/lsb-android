@@ -90,7 +90,9 @@ def main():
             p.wait(timeout=40);assert p.returncode==0
             result=json.loads(Path('/session/status.json').read_text());probe=result['probe']
             assert result['phase']=='completed' and result['automatic_checks_passed'],result
-            if req['engine']=='fex':assert result['fex_arithmetic']['mode']==('strict64' if cycle==1 else 'full80'),result
+            if req['engine']=='fex':
+                assert result['fex_arithmetic']['mode']==('strict64' if cycle==1 else 'full80'),result
+                assert result['fex_cpu_features']==dict(three_dnow=False,sse2=True,windows_api_matches_cpuid=True,parent_child_agree=True),result
             if cycle==1:assert result.get('native_surface_requested') and 'native_surface_fallback' not in result,result
             assert probe['key_events']>0 and probe['pointer_events']>0,probe
             assert probe['bits']==32 and probe['registry32'] and probe['com'] and probe['audio_submitted'],probe

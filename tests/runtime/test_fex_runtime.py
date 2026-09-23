@@ -5,6 +5,13 @@ import fex_runtime as fex
 from supervisor import Supervisor
 
 class FexContracts(unittest.TestCase):
+    def test_cpu_feature_receipts_reject_missing_inconsistent_or_changed_children(self):
+        def line(child,three=0,api=0,sse2=1):
+            return f'LSB_FEX_FEATURES child={child} three_cpuid={three} three_api={api} sse2_cpuid={sse2} sse2_api={sse2} PASS\n'
+        self.assertEqual(fex.cpu_features(line(0)+line(1)),dict(three_dnow=False,sse2=True,windows_api_matches_cpuid=True,parent_child_agree=True))
+        for invalid in (line(0),line(0)+line(0),line(0,api=1)+line(1,api=1),line(0,sse2=0)+line(1,sse2=0),line(0)+line(1,three=1,api=1)):
+            with self.assertRaises(RuntimeError):fex.cpu_features(invalid)
+
     def test_engine_selection_preserves_baseline_and_removes_box64_environment(self):
         req=dict(format=1,renderer='software',audio=False,session_id=str(uuid.uuid4()))
         baseline=Supervisor(req);native=Supervisor(dict(req,engine='fex'))

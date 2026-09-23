@@ -57,11 +57,20 @@ are checked. The original must reproduce the mismatch; the corrected
 translator must agree and select SSE2. Both numeric paths must pass in all
 four runs. An unexpected result fails the build rather than being ignored.
 
-Local MinGW compilation, native-host numeric checks, Python syntax and
-patch application checks pass. Real ARM64 build/regression qualification
-is pending. Runtime v2 and APK integration must wait for these results and
-the regular compatibility gates. No graphics fix is claimed before a
-subsequent FEX device run renders the previously broken screens correctly.
+The real ARM64 build [35909118469](https://github.com/Russianranger/lsb-android/actions/runs/35909118469) passed at source commit `5cccf6c8ca6272d2ee765f5e0fe3aba2f80ea5af`. Its four recorded runs reproduce the expected result in both precision modes:
+
+| Translator | Windows / CPUID 3DNow | Selection | Exit | Math |
+| --- | --- | --- | --- | --- |
+| Original, full80 and strict64 | 1 / 0 | x87 fallback | 10 (expected mismatch) | 72/72 each |
+| Corrected, full80 and strict64 | 0 / 0 | SSE2 | 0 | 72/72 each |
+
+Original translator SHA-256: `c8df803f1aaabd9b13d35c5930aeae48460295394bd384ff9743691cb1867921`.
+Corrected translator SHA-256: `70c6c7f6fb0948b60a691a0d29075ac7ef571453d9f3eda1945d4858f7f73373`.
+The downloadable artifact (`10771564577`, 401,488,337 bytes) SHA-256 is `56b070cd6b9ad05ae1fa0f5bf47f30fea87981304b0e828c0bf6fc78b03a5da0`. Its `cpu-evidence/` holds all four raw logs and `cpu-dispatch.json`.
+
+APK 0.5.17 pins the new immutable runtime-v2 archive: `3534f21b23272940e94901d1c9e1f9c57b9e3b1c645bc3cdbd101f0fd30fa8fb`, 318,095,586 bytes; inventory `f397fdd90b96cd38d11ba3632680af94f750b32ed7be7db42e142b4d66dbebeb`. Runtime-v1 stays intact. Both runtime installation checks and the automatic game-launch preflight verify matching CPU features in the Windows parent and child, recording `fex_cpu_features` / `fex_launch_cpu_features` in the status evidence.
+
+Local MinGW compilation, native-host numeric checks, Python checks and patch application checks pass. Full compatibility qualification and signed APK delivery are pending. No graphics fix is claimed before a subsequent FEX device run renders the previously broken screens correctly.
 
 The earlier arithmetic, DXVK and paired game captures remain complete.
 Do not request the DLLs or those comparisons again. Preserve client

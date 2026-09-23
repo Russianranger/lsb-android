@@ -36,6 +36,7 @@ if args.tests:
     build('tests/windows/login-stub.c', tests/'login-stub.exe', ['-mconsole'])
     build('tests/windows/fex-crash.c', tests/'fex-crash.exe', ['-mconsole'])
     build('tests/windows/texture-submission.c', tests/'texture-submission.exe', ['-mconsole','-ld3d8'])
+    build('tests/windows/cpu-dispatch.c', tests/'cpu-dispatch.exe', ['-mconsole','-msse2'])
     build('tests/windows/display-config.c', tests/'display-config.exe', ['-mconsole'])
     build('tests/windows/gamepad-check.c', tests/'gamepad-check.exe', ['-mconsole','-ldinput8','-ldxguid'])
     build('tests/windows/version-registry.c', tests/'version-registry.exe', ['-mconsole'])

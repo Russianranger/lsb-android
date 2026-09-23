@@ -115,6 +115,7 @@ def main():
         if case in ('launch','relaunch','windowed-existing','restore-display'):
             assert p.returncode==0 and state['phase']=='completed' and report['status']=='exited',state
             if request['engine']=='fex':
+                assert state['fex_launch_cpu_features']==dict(three_dnow=False,sse2=True,windows_api_matches_cpuid=True,parent_child_agree=True),state
                 arithmetic=state['fex_launch_arithmetic']
                 assert arithmetic['mode']==('strict64' if case=='relaunch' else 'full80') and arithmetic['child_environment_verified'],arithmetic
             assert report['process']['child_exit']==0

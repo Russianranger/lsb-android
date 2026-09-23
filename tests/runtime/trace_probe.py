@@ -10,6 +10,12 @@ from graphics_diagnostics import GraphicsDiagnostics
 original=supervisor.Supervisor.check_graphics_pixels
 
 def checked(self):
+    proc=self.spawn(self.wine_command(r'Z:\fixtures\cpu-dispatch.exe'),'cpu-dispatch.log',fixed_output=True)
+    self.wait(proc,45,'CPU dispatch and affine math fixture')
+    self.logs[-1].thread.join(3)
+    cpu=Path('/logs/cpu-dispatch.log').read_text(errors='replace')
+    assert 'LSB_CPU_MATH samples=72 failures=0 PASS' in cpu and 'MISMATCH' not in cpu and ' FAIL' not in cpu,cpu[-2000:]
+    print('PASS: real Windows/CPUID feature agreement and 72 full-stack x87/SSE affine samples',flush=True)
     original(self)
     proc=self.spawn(self.wine_command(r'P:\graphics-check.exe','--trace-pixels'),'graphics-trace-fixture.log',fixed_output=True)
     self.wait(proc,60,'Observed D3D8 pixel fixture')

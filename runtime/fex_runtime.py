@@ -30,6 +30,7 @@ def verify(wine,bundle,prefix):
                 raise ValueError('FEX Wine host must be native ARM64')
     result={k:expected[k] for k in ('candidate','sha256','wine_commit','fex_commit','guest','host')}
     result['wine_backports']=expected.get('wine_backports',[])
+    result['fex_patches']=expected.get('fex_patches',[])
     return result
 
 def select_translator(prefix):
@@ -92,6 +93,15 @@ def environment_hash(env):
             value=((value^byte)*1099511628211)&0xffffffffffffffff
     return f'{value:016x}'
 
+def cpu_features(text):
+    rows=re.findall(r'^LSB_FEX_FEATURES child=([01]) three_cpuid=([01]) three_api=([01]) sse2_cpuid=([01]) sse2_api=([01]) PASS\s*$',text,re.M)
+    if len(rows)!=2 or {r[0] for r in rows}!={'0','1'} or rows[0][1:]!=rows[1][1:]:
+        raise RuntimeError('FEX parent/child CPU features were not verified')
+    _,three,api,sse2,api_sse2=rows[0]
+    if three!=api or sse2!='1' or api_sse2!='1':
+        raise RuntimeError('FEX Windows CPU features disagree with guest instructions')
+    return dict(three_dnow=three=='1',sse2=True,windows_api_matches_cpuid=True,parent_child_agree=True)
+
 def check(supervisor,env=None,launch=False):
     env=supervisor.env if env is None else env
     mode='1' if supervisor.req.get('fex_x87',False) else '0'
@@ -107,6 +117,8 @@ def check(supervisor,env=None,launch=False):
     if not host:raise RuntimeError('FEX host CPU features were not verified')
     if f'LSB_FEX_ENV child=1 hash={expected} PASS' not in text:
         raise RuntimeError('FEX Windows child did not inherit the selected environment')
+    features=cpu_features(text)
+    supervisor.status(**{'fex_launch_cpu_features' if launch else 'fex_cpu_features':features})
     arithmetic=re.search(r'LSB_FEX_ARITH mode=([01]) iterations=100000 elapsed_us=(\d+) qpc_frequency=(\d+) sleep_us=(\d+) PASS',text)
     if not arithmetic or arithmetic[1]!=mode:
         raise RuntimeError('FEX arithmetic mode was not verified; turn off faster x87 or select Box64')

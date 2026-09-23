@@ -1,19 +1,24 @@
-# Exact client received: CPU-feature correction in progress
+# FEX CPU-feature correction: ARM64 regression passed; 0.5.17 qualification pending
 
-Both uploaded client DLLs match the Box64/FEX capture hashes. Private code
-inspection identifies a concrete FEX feature-reporting mismatch: Windows
-reports 3DNow while CPUID disables it. The game's D3DX dispatcher consequently
-retains x87 math and never reaches its SSE2 choice. Local replay confirms
-that behavior; live ARM64 regression and device confirmation remain pending.
+The exact uploaded client DLLs match both game exports. Their D3DX selection
+logic skips SSE2 when Windows claims 3DNow but CPUID rejects it. The pinned
+FEX 2510 Windows build has that inconsistency. A narrow patch now makes
+Windows follow guest CPUID without enabling 3DNow or changing Wine versions.
 
-[Evidence, limits and candidate correction](ffxi-cpu-dispatch-0517.md).
-A narrow FEX patch makes the Windows report follow CPUID. The isolated runtime
-build checks the same independent fixture against original/corrected FEX in
-both precision modes, requiring the original mismatch and correct numeric
-results. Runtime/APK integration follows qualification, not a guessed upgrade.
-Do not request the DLLs or completed device comparisons again. Preserve the
-prepared client, original loader, Box64 fallback and Termux server. Repo
-changes and pushes remain authorized. Earlier entries below are historical.
+Real ARM64 build [35909118469](https://github.com/Russianranger/lsb-android/actions/runs/35909118469)
+reproduced the original mismatch and verified corrected SSE2 selection in
+both full80 and strict64. All 72 numeric samples passed in each of four runs.
+See [exact hashes, branch replay limits and receipts](ffxi-cpu-dispatch-0517.md).
+The 0.5.17 integration pins this runtime as immutable v2 and checks CPU-feature
+agreement in both Windows parent and child during installation/launch checks.
+Full compatibility CI and signed APK delivery are pending. Actual Thor
+rendering remains unconfirmed; do not claim the game fault is fixed yet.
+
+Do not request the DLLs or completed arithmetic/DXVK/capture comparisons
+again. After qualification, deliver one update signed with the existing key;
+install the new FEX runtime and compare the same two screens once. Preserve
+client `30251204_1`, original xiloader, Box64 fallback and working Termux server.
+Repo changes and pushes remain authorized. Earlier entries are historical.
 
 ---
 
