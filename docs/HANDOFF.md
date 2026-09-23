@@ -1,23 +1,38 @@
-# FEX CPU-feature correction: ARM64 regression passed; 0.5.17 qualification pending
+# 0.5.17 delivered: FEX CPU-feature correction qualified; Thor rendering check next
 
-The exact uploaded client DLLs match both game exports. Their D3DX selection
-logic skips SSE2 when Windows claims 3DNow but CPUID rejects it. The pinned
-FEX 2510 Windows build has that inconsistency. A narrow patch now makes
-Windows follow guest CPUID without enabling 3DNow or changing Wine versions.
+The exact uploaded client DLLs match the working Box64 and broken FEX exports.
+Private inspection/replay identified inconsistent FEX CPU reporting: Windows
+claimed 3DNow while CPUID disabled it, preventing the linked D3DX dispatcher
+from reaching SSE2. A narrow FEX 2510 patch now makes those reports agree.
+The actual game's rendering correction still needs the phone result.
 
-Real ARM64 build [35909118469](https://github.com/Russianranger/lsb-android/actions/runs/35909118469)
-reproduced the original mismatch and verified corrected SSE2 selection in
-both full80 and strict64. All 72 numeric samples passed in each of four runs.
-See [exact hashes, branch replay limits and receipts](ffxi-cpu-dispatch-0517.md).
-The 0.5.17 integration pins this runtime as immutable v2 and checks CPU-feature
-agreement in both Windows parent and child during installation/launch checks.
-Full compatibility CI and signed APK delivery are pending. Actual Thor
-rendering remains unconfirmed; do not claim the game fault is fixed yet.
+Implementation: `451f1290369d01244f0afb5278c1555df7e6780c`.
+Isolated ARM64 build `35909118469` reproduced the original mismatch and verified
+the corrected path in full80/strict64; all 72 math samples passed in each run.
+Full FEX qualification passed with 132 PASS records. Independent Box64 passed
+with 151; the release workflow's single targeted Box64 retry also passed.
+Workflow `35910276196`, attempt 2, completed all seven jobs successfully.
+Earlier graphics-fixture timeouts are retained and documented, with no reduced
+assertions. [Detailed evidence and identities](ffxi-cpu-dispatch-0517.md).
 
-Do not request the DLLs or completed arithmetic/DXVK/capture comparisons
-again. After qualification, deliver one update signed with the existing key;
-install the new FEX runtime and compare the same two screens once. Preserve
-client `30251204_1`, original xiloader, Box64 fallback and working Termux server.
+[Runtime v2](https://github.com/Russianranger/lsb-android/releases/tag/runtime-fex-v2)
+is published and matches the tested archive and sources. Runtime SHA-256:
+`3534f21b23272940e94901d1c9e1f9c57b9e3b1c645bc3cdbd101f0fd30fa8fb`.
+`LSB-Android-0.5.17.apk` (versionCode 33, 18,292,884 bytes) is signed with the
+existing certificate and saved as Library ID `libfile_f1b1eee0d580819196f494b031d7f63d`.
+APK SHA-256: `f85f9f3775d813c7c31b98728e39b453dfc72f9e38ae6b9fa66e2d51af6b7148`.
+
+Next: install the APK update, then **Runtime → Install FEX runtime**. Enable
+FEX and retain faster x87, DXVK 2.7.1, Turnip 26 and Native Surface/shared-memory
+settings. One normal run of the agreement and character-selection screens,
+two screenshots and one support export will verify the candidate on Thor.
+The automatic launch preflight records `fex_launch_cpu_features` for both
+Windows parent/child processes; check this and the new runtime hash first if
+rendering still fails. Actual FEX gameplay/world entry are not yet confirmed.
+
+Do not request the DLLs or repeat the completed arithmetic/DXVK/capture matrix.
+Preserve client `30251204_1`, original xiloader, working Box64 and Termux server.
+No reimport, preparation reset, client update or server migration is needed.
 Repo changes and pushes remain authorized. Earlier entries are historical.
 
 ---
