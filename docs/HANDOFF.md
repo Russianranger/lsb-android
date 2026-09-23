@@ -1,3 +1,24 @@
+# 0.5.19: FEX x87 condition-flag correction in qualification
+
+Broader draw qualification exposed a concrete pinned FEX bug: its x87-store
+NaN helper overwrites the integer condition flags used by a following branch.
+The texture test took ordinary UP paths where its source requested indexed UP.
+A focused translator patch saves/restores NZCV; an independent 12-case fixture
+reproduces 8 full80 / 4 strict64 failures before the patch and requires zero
+after it.
+Runtime build `35932750549` passes at `3519328` (0/12 after fix in both modes).
+Final qualification,
+manifest pin, original-signature APK and immutable runtime v3 delivery follow.
+[Source diagnosis, regression and receipts](x87-flags-0519.md).
+
+The previously planned diagnostic-only 0.5.19 APK is withheld. The next candidate
+needs the corrected FEX runtime download as well as the APK. This supersedes
+older APK-only instructions below. No client/loader/server changes or resets.
+Actual Thor rendering remains unverified; do not claim a confirmed game fix.
+User authorized changes/pushes. No additional permission needed.
+
+---
+
 # 0.5.18 Thor math passes; 0.5.19 broader draw diagnostic in qualification
 
 Latest export `lsb-support(9).zip` (SHA-256

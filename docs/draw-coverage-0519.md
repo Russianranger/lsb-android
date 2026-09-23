@@ -39,7 +39,7 @@ vertex. Buffered draws retain the previous limited capture only.
 Groups include FVF, stride, primitive/indexed mode, stage-zero texture
 type/size/format, alpha test/blend, color/alpha operations and arguments,
 texture-coordinate index and transform flags. Up to 24 groups are retained
-in each of four elapsed-time windows: 0–15, 15–30, 30–60 and 60–180 seconds.
+in each of four elapsed-time windows: 0–30, 30–60, 60–120 and 120–180 seconds.
 Descriptors and cumulative summaries replace prior snapshots for the same
 group, bounding the parser at 288 batch records plus four limit receipts.
 The original 64-row record budget remains separate.
@@ -84,3 +84,28 @@ character selection, stay there about 60 seconds, then Stop/export Diagnostics
 and disable capture. This supplies different evidence from the completed math
 test. One FEX launch is sufficient; no Box64 recapture or standalone checks.
 Preserve the prepared `30251204_1` client, original xiloader and Termux server.
+
+## Build identity (runtime qualification pending)
+
+Implementation `b692e9fa16a4cbea021294f75f55f8a35fe1b223`; workflow `35931125813`. Android verify
+job `107417803911` and Windows job `107418381209` pass. Windows retains its
+36 process/registry checks and the 192-sample math/FP-state fixture.
+The earlier 90-second candidate's PR job `107417162332` failed resolving five
+Maven Central dependencies before APK compilation; its independent push build
+passed. The final build resolves dependencies and passes normally. No assertions,
+timeouts or dependencies were weakened to work around that download failure.
+
+Artifact `10781456663`: 28,562,893-byte ZIP, SHA-256
+`34b225d580d27dc700898dd15d7c91cb6f6b3b27a960c3b156818f13b557d5f6`. CI APK SHA-256:
+`1c6bee283e09a32042b1f725fb86b62bef661114945932f24cdc6d99ae8e1d2e`.
+
+`LSB-Android-0.5.19.apk`: versionCode 35, 18,296,980 bytes, SHA-256
+`73fa5b78c2c1de0c3b61908c76b23d624c643d295cff360bb7c8a7a058892e31`. Original signer:
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`. Observer:
+`f1d8a899e54b071c8a78fe3e7ab28e178479a5c8c6b104e7f21f7dcb379165de`.
+
+ZIP integrity, original v2/v3 signature, alignment, package/version and complete
+CI payload identity are verified. Compared with 0.5.18, exactly three entries
+change: Android manifest, `graphics_diagnostics.py`, and `startup-trace.dll`.
+FEX, Box64, DXVK, Turnip, presentation, audio and input assets are byte-identical.
+The build is not delivered until ARM64 qualification completes.

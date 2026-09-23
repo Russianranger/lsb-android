@@ -22,6 +22,12 @@ def checked(self):
     math=Path('/logs/game-math.log').read_text(errors='replace')
     assert 'LSB_GAME_MATH samples=192 guards=4 fp_preserved=1 corruptions_detected=16 PASS' in math and ' FAIL' not in math,math[-2000:]
     print('PASS: game math oracle, invalid-image rejection, injected error detection and floating-state preservation',flush=True)
+    proc=self.spawn(self.wine_command(r'Z:\fixtures\x87-flags.exe'),'x87-flags.log',fixed_output=True)
+    self.wait(proc,45,'x87 store condition flags fixture')
+    self.logs[-1].thread.join(3)
+    flags=Path('/logs/x87-flags.log').read_text(errors='replace')
+    assert 'LSB_X87_FLAGS samples=12 failures=0 PASS' in flags and 'MISMATCH' not in flags,flags[-2000:]
+    print('PASS: four x87 store forms preserve following branch conditions, all 12 cases',flush=True)
     original(self)
     proc=self.spawn(self.wine_command(r'P:\graphics-check.exe','--trace-pixels'),'graphics-trace-fixture.log',fixed_output=True)
     self.wait(proc,60,'Observed D3D8 pixel fixture')
@@ -70,6 +76,9 @@ def checked(self):
     assert sum(r['sampled_vertices'] for r in stats)==1512,summary
     assert sum(r['uv_vertices'] for r in stats)==1512,summary
     assert any(r['event']=='batch' and r['indexed']==1 for r in batches),summary
+    expected_paths={21:0,0x31545844:1,0x33545844:1}
+    descriptors=[r for r in batches if r['event']=='batch']
+    assert len(descriptors)==9 and all(r['indexed']==expected_paths[r['texture0_format']] for r in descriptors),summary
     for field in ('invalid_indices','unsupported_draws','nonfinite_positions','invalid_rhw','nonfinite_uv','large_uv','zero_alpha'):
         assert all(r[field]==0 for r in stats),(field,summary)
     assert not summary['batch_limits'],summary

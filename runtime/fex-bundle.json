@@ -12,10 +12,14 @@
     {
       "name": "cpu-features.patch",
       "sha256": "6169ca731a0a0ab633f0e0ddc936aef766ba1b374f50400c45adf633d19c90d7"
+    },
+    {
+      "name": "x87-flags.patch",
+      "sha256": "365754ac438f8a87f50f983c6e38a7aad2b4cf50eb8bc24dd387df06ee4cd3ee"
     }
   ],
-  "sha256": "3534f21b23272940e94901d1c9e1f9c57b9e3b1c645bc3cdbd101f0fd30fa8fb",
-  "bytes": 318095586,
-  "manifest_sha256": "f397fdd90b96cd38d11ba3632680af94f750b32ed7be7db42e142b4d66dbebeb",
-  "url": "https://github.com/Russianranger/lsb-android/releases/download/runtime-fex-v2/runtime-fex-arm64.tar.gz"
+  "sha256": "030f38066af7b786c142e199cb84adec037840b0f029338849e43f99203a93e1",
+  "bytes": 318095727,
+  "manifest_sha256": "c186367efab62f9981586623f84644d3ae002fc678d3c167a8b0efad13522b89",
+  "url": "https://github.com/Russianranger/lsb-android/releases/download/runtime-fex-v3/runtime-fex-arm64.tar.gz"
 }

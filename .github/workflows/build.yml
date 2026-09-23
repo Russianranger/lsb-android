@@ -87,6 +87,7 @@ jobs:
             out/windows-tests/texture-submission.exe
             out/windows-tests/cpu-dispatch.exe
             out/windows-tests/game-math.exe
+            out/windows-tests/x87-flags.exe
             out/windows-tests/login-missing.exe
             out/windows-tests/dependency-detach.dll
             out/windows-tests/dependency-attach.dll
@@ -175,7 +176,7 @@ jobs:
         with:
           name: fex-runtime
           path: out/fex-runtime
-          run-id: 35909118469
+          run-id: 35932750549
           github-token: ${{ github.token }}
       - name: Verify pinned FEX artifact identity
         run: python3 scripts/verify-fex-artifact.py
@@ -233,22 +234,22 @@ jobs:
         with:
           name: fex-runtime
           path: out/fex-runtime
-          run-id: 35909118469
+          run-id: 35932750549
           github-token: ${{ github.token }}
       - run: python3 scripts/verify-fex-artifact.py
       - name: Publish qualified FEX runtime and corresponding sources
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view runtime-fex-v2 >/dev/null 2>&1; then
-            gh release create runtime-fex-v2 --target "$GITHUB_SHA" --prerelease --title 'LSB native ARM64 Wine / FEX runtime v2' --notes 'Pinned Wine 10 ARM64 + FEX 2510 WoW64, built on Bookworm for the existing Android rootfs. Separate runtime and prefixes; Box64 rollback retained. Corrects Windows 3DNow reporting to match guest CPUID, allowing legacy math dispatchers to reach SSE2. Before/after tests reproduce the original mismatch and verify the correction in both x87 modes. Regular compatibility gates pass; actual Thor FFXI rendering still requires validation. This is not the GameHub Proton/async-DXVK fork. Includes exact corresponding sources and build recipe. No client, loader or server files.'
+          if ! gh release view runtime-fex-v3 >/dev/null 2>&1; then
+            gh release create runtime-fex-v3 --target "$GITHUB_SHA" --prerelease --title 'LSB native ARM64 Wine / FEX runtime v3' --notes 'Pinned Wine 10 ARM64 + FEX 2510 WoW64, built on Bookworm for the existing Android rootfs. Separate runtime and prefixes; Box64 rollback retained. Preserves guest condition flags across x87 stores; fixes a reproduced wrong-branch defect in full80 and strict64. Retains the Windows/CPUID feature correction. Independent before/after regressions and rendering checks qualify the translator; actual Thor FFXI rendering still needs a device result. Regular compatibility gates pass. This is not the GameHub Proton/async-DXVK fork. Includes exact corresponding sources and build recipe. No client, loader or server files.'
           fi
           for file in runtime-fex-arm64.tar.gz runtime-fex-sources.tar.gz fex-bundle.json; do
-            if ! gh release view runtime-fex-v2 --json assets --jq '.assets[].name' | grep -qx "$file"; then
-              gh release upload runtime-fex-v2 "out/fex-runtime/$file"
+            if ! gh release view runtime-fex-v3 --json assets --jq '.assets[].name' | grep -qx "$file"; then
+              gh release upload runtime-fex-v3 "out/fex-runtime/$file"
             else
               mkdir -p "$RUNNER_TEMP/fex-existing"
-              gh release download runtime-fex-v2 --pattern "$file" --dir "$RUNNER_TEMP/fex-existing"
+              gh release download runtime-fex-v3 --pattern "$file" --dir "$RUNNER_TEMP/fex-existing"
               cmp "out/fex-runtime/$file" "$RUNNER_TEMP/fex-existing/$file"
             fi
           done
