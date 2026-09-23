@@ -42,6 +42,13 @@ final class ClientRuntime {
         for(File f:new File[]{home,run,tmp,logs})f.mkdirs();
         if(installed())status="Runtime installed. Use the Client tab for your prepared installation.";
     }
+    FexRuntime fex()throws Exception{return new FexRuntime(context,home);}
+    boolean fexInstalled(){try{return fex().installed();}catch(Exception e){return false;}}
+    synchronized String installFex(SafeZip.Progress progress)throws Exception {
+        if(alive())throw new IOException("Stop the runtime first");reapOrphans();
+        if(!installed())throw new IOException("Install the baseline runtime first");
+        return fex().install(progress);
+    }
     boolean installed(){return new File(root,"lsb-runtime.sha256").isFile();}
     boolean alive(){Process p=process;return active||starting||(p!=null&&p.isAlive());}
     String sessionKey(){return sessionId;}
@@ -196,7 +203,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.12");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.13");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -220,7 +227,7 @@ final class ClientRuntime {
     private void assets()throws Exception {
         backend.mkdirs();probes.mkdirs();
         for(String name:context.getAssets().list("runtime")){
-            File dest=new File(name.equals("graphics-check.exe")||name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")||name.equals("startup-trace.dll")?probes:backend,name);
+            File dest=new File(name.equals("fex-check.exe")||name.equals("graphics-check.exe")||name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")||name.equals("startup-trace.dll")?probes:backend,name);
             try(InputStream in=context.getAssets().open("runtime/"+name);OutputStream out=new FileOutputStream(dest)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
             if(name.equals("x11-upload-check")||name.equals("vulkan-probe")||name.equals("wineserver")||name.equals("x11-frame-bridge"))Os.chmod(dest.getPath(),0700);
         }
@@ -228,6 +235,8 @@ final class ClientRuntime {
     void run(String renderer,boolean sound,String action,LoginRequest login,String displayProfile,boolean startupTrace)throws Exception {
         boolean initialize=Arrays.asList("initialize","installer","repair-launcher").contains(action),clientOperation=!"probe".equals(action);
         File candidate=null;File selectedPrefix=prefix;
+        boolean useFex=!initialize&&context.getSharedPreferences("runtime",0).getBoolean("fex",false);
+        FexRuntime selectedFex=null;
         synchronized(WorkService.class){synchronized(this){if(alive()||WorkService.busy)throw new IOException("Wait for the current operation");active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();}}
         launchError="";
         try{
@@ -237,13 +246,14 @@ final class ClientRuntime {
             if(!installed()||!read(new File(root,"lsb-runtime.sha256"),128).equals(RUNTIME_SHA))throw new IOException("Install the pinned runtime first");
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");
             reapOrphans();
+            if(useFex){selectedFex=fex();if(!selectedFex.installed())throw new IOException("Install FEX on the Runtime tab first");}
             TarExtractor.remove(run);TarExtractor.remove(tmp);run.mkdirs();tmp.mkdirs();prefix.mkdirs();assets();
             synchronized(performance){synchronized(nativePerformance){
                 File[] old=logs.listFiles();if(old!=null)for(File f:old)if(f.getName().matches("wsi-upload-[0-9]+\\.bin\\.previous"))f.delete();
                 if(old!=null)for(File f:old)if(f.isFile()&&!f.getName().endsWith(".previous"))LogRetention.rotate(f);
                 sessionId=UUID.randomUUID().toString();performance.reset(sessionId);nativePerformance.reset(sessionId);
             }}
-            JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action);
+            JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action).put("engine",useFex?"fex":"box64");
             if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
                 request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
                 request.put("display_fps",context.getSharedPreferences("runtime",0).getInt("display_fps",30));
@@ -271,6 +281,7 @@ final class ClientRuntime {
             }else if(clientOperation){
                 candidate=launchGeneration();selectedPrefix=new File(candidate,"prefix");status="Checking the prepared client…";
             }
+            if(useFex)selectedPrefix=selectedFex.prefix(selectedPrefix,candidate==null?"probe":candidate.getName(),text->status=text);
             interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");
             if(clientOperation){
                 write(new File(run,"client-manifest.json"),clientManifest(candidate).toString(2));
@@ -282,9 +293,11 @@ final class ClientRuntime {
             List<String> command=new ArrayList<>(Arrays.asList(new File(nativeDir,"libproot.so").getPath(),"--link2symlink","--kill-on-exit","-0","-r",root.getPath(),
                 "-b","/dev","-b","/proc","-b","/sys","-b",selectedPrefix.getPath()+":/prefix","-b",run.getPath()+":/session","-b",logs.getPath()+":/logs",
                 "-b",backend.getPath()+":/opt/lsb","-b",probes.getPath()+":/probe","-b",tmp.getPath()+":/tmp",
-                "-b",new File(backend,"wineserver").getPath()+":/opt/wine/bin/wineserver","-w","/probe",
+                "-w","/probe",
                 "/usr/bin/env","-i","HOME=/root","USER=root","PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","LANG=C.UTF-8","TMPDIR=/tmp","PYTHONUNBUFFERED=1",
                 "LSB_RUNTIME_OWNER="+home.getPath(),"/usr/bin/python3","/opt/lsb/supervisor.py"));
+            if(useFex)command.addAll(command.indexOf("-w"),Arrays.asList("-b",selectedFex.wine().getPath()+":/opt/wine"));
+            else command.addAll(command.indexOf("-w"),Arrays.asList("-b",new File(backend,"wineserver").getPath()+":/opt/wine/bin/wineserver"));
             // Android has no native SysV IPC. Enable the already bundled memfd
             // emulation for both Xvnc and its capture helper in this PRoot tree.
             if(request.optBoolean("native_surface",false))command.add(1,"--sysvipc");

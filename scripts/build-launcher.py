@@ -24,6 +24,7 @@ build('windows/client-launch.c', probes/'client-launch.exe', ['-mconsole'])
 build('windows/startup-trace.c', probes/'startup-trace.dll', ['-shared', '-Wl,--kill-at'])
 build('windows/probe-com.c', probes/'probe-com.dll', ['-shared', '-Wl,--kill-at'])
 subprocess.run([cc, *flags, str(root/'windows/runtime-probe.c'), '-o', str(probes/'runtime-probe.exe'), *libs, '-ld3d8', '-lwinmm', '-luuid', '-lm'], check=True)
+build('windows/fex-check.c', probes/'fex-check.exe', ['-mconsole'])
 build('windows/graphics-check.c', probes/'graphics-check.exe', ['-ld3d8'])
 if args.tests:
     tests = root/'out/windows-tests'; tests.mkdir(parents=True, exist_ok=True)

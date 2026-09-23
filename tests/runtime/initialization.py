@@ -26,7 +26,7 @@ def main():
         manifest={'format':1,'generation':str(uuid.uuid4()),'region':region,'pol':str(pol.relative_to(client)),
                   'game':str(game.relative_to(client)),'core':str(core.relative_to(client)),
                   'loader':str((game/'xiloader.exe').relative_to(client)),'key_files':key_files,'inventory_sha256':'0'*64}
-        req={'format':1,'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'initialize'}
+        req={'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'initialize'}
         if label=='prerequisite-retry':
             req['action']='installer';shutil.copyfile('/fixtures/prerequisite-stub.exe','/session/prerequisite.exe')
         Path('/session/client-manifest.json').write_text(json.dumps(manifest));Path('/session/request.json').write_text(json.dumps(req))

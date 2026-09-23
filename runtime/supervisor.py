@@ -47,7 +47,8 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','engine'}:raise ValueError('Unexpected runtime request field')
+    if req.get('engine','box64') not in ('box64','fex'):raise ValueError('Unsupported runtime engine')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
     if req.get('dxvk_version','2.5.3') not in ('2.5.3','2.7.1'):raise ValueError('Unsupported DXVK version')
     for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload','turnip_sysmem','dxvk_two_compilers'):
@@ -162,6 +163,15 @@ class Supervisor:
             BOX64_DYNAREC_STRONGMEM='1',BOX64_DYNAREC_BIGBLOCK='2',BOX64_DYNAREC_SAFEFLAGS='1',BOX64_MAXCPU='0',
             BOX64_RCFILE=str(SESSION/'box64.rc'),BOX64_LOG='1',BOX64_NOBANNER='0',
             LIBGL_ALWAYS_SOFTWARE='1',GALLIUM_DRIVER='llvmpipe',LP_NUM_THREADS='4',WINE_D3D_CONFIG='csmt=1')
+        self.engine=self.req.get('engine','box64')
+        self.state['runtime_engine']=self.engine
+        if self.engine=='fex':
+            self.env={k:v for k,v in self.env.items() if not k.startswith('BOX64_')}
+            self.state['runtime_candidate']='Wine 10 native ARM64 / FEX 2510 WoW64'
+    def wine_command(self,*args):
+        return ([] if self.engine=='fex' else ['/usr/local/bin/box64'])+['/opt/wine/bin/wine',*args]
+    def server_command(self,*args):
+        return ([] if self.engine=='fex' else ['/usr/local/bin/box64'])+['/opt/wine/bin/wineserver',*args]
     def status(self,phase=None,**fields):
         if phase:self.state['phase']=phase
         self.state.update(fields);atomic(SESSION/'status.json',self.state);atomic(LOGS/'runtime-state.json',self.state)
@@ -178,7 +188,7 @@ class Supervisor:
             time.sleep(.15)
         if proc.returncode not in accepted:raise RuntimeError(label+' exited with code '+str(proc.returncode)+'; export Diagnostics')
     def wine(self,args,timeout=180,label='Wine setup'):
-        self.wait(self.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',*args],'wine-setup.log'),timeout,label)
+        self.wait(self.spawn(self.wine_command(*args),'wine-setup.log'),timeout,label)
     def graphics(self,bundle):
         if self.req['renderer']=='software':
             self.env['WINEDLLOVERRIDES']+=';d3d8,d3d9=b'
@@ -245,7 +255,7 @@ class Supervisor:
         if version=='2.7.1':
             proc=None
             try:
-                proc=self.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine','P:\\graphics-check.exe'],'dxvk-compatibility.log')
+                proc=self.spawn(self.wine_command('P:\\graphics-check.exe'),'dxvk-compatibility.log')
                 self.wait(proc,45,'DXVK 2.7.1 draw and presentation check')
                 self.state['dxvk_compatibility']='eight D3D8 draw/present frames passed'
             except RuntimeError as error:
@@ -276,7 +286,7 @@ class Supervisor:
             if active['turnip_sysmem']:self.env['TU_DEBUG']='sysmem'
             if active['dxvk_two_compilers']:
                 self.env['DXVK_CONFIG']=';'.join(filter(None,[previous['DXVK_CONFIG'],'dxvk.numCompilerThreads = 2']))
-            proc=self.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine','P:\\graphics-check.exe'],'graphics-tuning.log',fixed_output=True)
+            proc=self.spawn(self.wine_command('P:\\graphics-check.exe'),'graphics-tuning.log',fixed_output=True)
             self.wait(proc,45,'Graphics tuning draw and presentation check')
             self.logs[-1].thread.join(3)
             if active['dxvk_two_compilers'] and 'DXVK: Using 2 compiler threads' not in (LOGS/'graphics-tuning.log').read_text(errors='replace'):
@@ -311,6 +321,10 @@ class Supervisor:
     def start(self):
         for p in (SESSION,PREFIX,LOGS):p.mkdir(parents=True,exist_ok=True)
         self.status();bundle=verify_bundle(BUNDLE)
+        if self.engine=='fex':
+            from fex_runtime import verify,select_translator
+            self.state['fex_runtime']=verify(Path('/opt/wine'),BUNDLE,PREFIX)
+            select_translator(PREFIX)
         (SESSION/'box64.rc').write_text('[wine]\nBOX64_MAXCPU=0\n[wine64]\nBOX64_MAXCPU=0\n[explorer.exe]\nBOX64_DYNAREC_BIGBLOCK=0\n')
         if self.req['audio']:
             if not (SESSION/'audio.sock').is_socket():raise RuntimeError('Android audio bridge is unavailable')
@@ -334,10 +348,14 @@ class Supervisor:
         # Setup uses Wine's own defaults, without loading native DXVK before system files exist.
         marker=PREFIX/'lsb-prefix-ready.json'
         signature={'format':1,'runtime':'08c639c26506dc6fbd15464bec475337087bb23cb7c0c5ace2db5240ee36424f'}
+        if self.engine=='fex':signature={'format':1,'runtime':self.state['fex_runtime']['sha256']}
         ready=False
         try:ready=json.loads(marker.read_text())==signature
         except (OSError,ValueError):pass
         if self.req.get('action','probe')=='probe':marker.unlink(missing_ok=True)
+        if self.engine=='fex' and not ready:
+            from fex_runtime import refresh_host_builtins
+            self.state['fex_migrated_host_files']=refresh_host_builtins(Path('/opt/wine'),PREFIX)
         self.wine(['wineboot','-i' if ready else '-u'],240,'Fresh Windows prefix initialization')
         for name in ('ntdll.dll','kernel32.dll','kernelbase.dll'):
             if not pe32(PREFIX/'drive_c/windows/syswow64'/name):raise RuntimeError('Missing 32-bit Windows system file: '+name)
@@ -349,6 +367,12 @@ class Supervisor:
             if p.is_symlink():p.unlink()
             if p.exists():raise RuntimeError('Reserved probe drive is occupied')
             p.symlink_to(target)
+        if self.engine=='fex':
+            from fex_runtime import check
+            check(self)
+            # Conversion is complete only after native-host/PE32 execution proof.
+            # Keep later launches on wineboot -i, preserving the copied settings.
+            if not ready:atomic(marker,signature)
         self.status('checking_graphics');self.graphics(bundle)
         if self.req['renderer']!='software':
             self.configure_upload()
@@ -364,7 +388,7 @@ class Supervisor:
             if not choices:choices=[p for p in files if 'config' in p.name.lower()]
             args=[windows_path(choices[0].relative_to('/client').as_posix())] if choices else ['control','joy.cpl']
             self.status('configuring_controller',message='FFXI controller configuration' if choices else 'Windows gamepad calibration (FFXI config executable not found)')
-            self.wait(self.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',*args],'gamepad-config.log'),3600,'Controller configuration')
+            self.wait(self.spawn(self.wine_command(*args),'gamepad-config.log'),3600,'Controller configuration')
             self.status('completed');return
         if self.req.get('action') in ('launch','check-launcher'):
             from client_launch import check, run
@@ -382,7 +406,7 @@ class Supervisor:
             atomic(marker,signature)
             return
         self.status('starting_probe',prefix_system_files_verified=True)
-        args=['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\runtime-probe.exe']
+        args=self.wine_command(r'P:\runtime-probe.exe')
         if os.environ.get('LSB_TEST_AUTOCLOSE')=='1':args+=['--autotest']
         p=self.spawn(args,'wine-probe.log');self.status('probe_running')
         last=None
@@ -401,7 +425,7 @@ class Supervisor:
         if not passed:raise RuntimeError('Windows probe did not complete all registry/COM/D3D8 checks; export Diagnostics')
         atomic(marker,signature);self.status('completed')
     def stop(self):
-        try:subprocess.run(['/usr/local/bin/box64','/opt/wine/bin/wineserver','-k'],env=self.env,timeout=12,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:subprocess.run(self.server_command('-k'),env=self.env,timeout=12,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         except (OSError,subprocess.TimeoutExpired):pass
         for p in reversed(self.children):
             if p.poll() is None:

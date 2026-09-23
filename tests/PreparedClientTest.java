@@ -10,6 +10,13 @@ public final class PreparedClientTest {
         File seed=new File(home,"seed");FilesEx.text(new File(seed,"lsb-prefix-ready.json"),"{}");
         FilesEx.text(new File(seed,"user.reg"),"original hive");FilesEx.mkdir(new File(seed,"dosdevices"));
         Files.createSymbolicLink(new File(seed,"dosdevices/z:").toPath(),Paths.get("/"));
+        File isolated=new File(home,"fex-prefix");
+        PreparedClientStore.copyRuntimePrefix(seed,isolated,CoreTest.QUIET);
+        FilesEx.text(new File(isolated,"user.reg"),"FEX hive");
+        CoreTest.ok(FilesEx.read(new File(seed,"user.reg"),100).equals("original hive"),"FEX prefix edits preserve original registry bytes");
+        CoreTest.ok(Files.readSymbolicLink(new File(isolated,"dosdevices/z:").toPath()).equals(Paths.get("/")),"FEX copy preserves guest links without traversal");
+        CoreTest.fails(()->PreparedClientStore.copyRuntimePrefix(seed,seed,CoreTest.QUIET),"reject in-place prefix conversion");
+        CoreTest.fails(()->PreparedClientStore.copyRuntimePrefix(seed,isolated,CoreTest.QUIET),"refuse overwriting an existing runtime prefix");
         PreparedClientStore store=new PreparedClientStore(new File(home,"prepared"));
         File a=store.prepare(imported,seed,CoreTest.QUIET);
         CoreTest.ok(store.complete(a)&&store.selected("current")==null,"copy alone never activates client");

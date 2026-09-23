@@ -3,7 +3,7 @@ from unittest.mock import patch,Mock
 spec=importlib.util.spec_from_file_location('supervisor',pathlib.Path(__file__).resolve().parents[2]/'runtime/supervisor.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class Contracts(unittest.TestCase):
  def tuning_fixture(self,folder,request,env=None):
-  s=object.__new__(module.Supervisor);s.req=dict(renderer='turnip26',**request)
+  s=object.__new__(module.Supervisor);s.engine="box64";s.req=dict(renderer='turnip26',**request)
   s.env=dict(env or {});s.state={};s.status=Mock();s.spawn=Mock();s.wait=Mock();s.logs=[Mock()]
   (folder/'graphics-tuning.log').write_text('info: DXVK: Using 2 compiler threads\n')
   s.spawn.return_value.poll.return_value=0
@@ -60,7 +60,7 @@ class Contracts(unittest.TestCase):
    for name in ('d3d8','d3d9','2.7.1-d3d8','2.7.1-d3d9'):
     filename='dxvk-'+name+'.dll';(bundle/filename).write_bytes(name.encode());files[filename]=hashlib.sha256(name.encode()).hexdigest()
    with patch.object(module,'BUNDLE',bundle),patch.object(module,'PREFIX',prefix):
-    s=object.__new__(module.Supervisor);s.env={};s.req={'dxvk_version':'2.7.1'};s.state={'vulkan':{'device':'fixture'}};s.status=Mock();s.spawn=Mock();s.wait=Mock()
+    s=object.__new__(module.Supervisor);s.engine="box64";s.env={};s.req={'dxvk_version':'2.7.1'};s.state={'vulkan':{'device':'fixture'}};s.status=Mock();s.spawn=Mock();s.wait=Mock()
     s.select_dxvk({'files':files})
     self.assertEqual((dest/'d3d8.dll').read_bytes(),b'2.7.1-d3d8');self.assertEqual((dest/'d3d9.dll').read_bytes(),b'2.7.1-d3d9')
     self.assertEqual(s.status.call_args.kwargs['dxvk_selected'],'2.7.1')
@@ -71,7 +71,7 @@ class Contracts(unittest.TestCase):
     self.assertEqual(s.env['DXVK_STATE_CACHE_PATH'],str(prefix/'lsb-cache'))
  def test_upload_failure_preserves_gamepad_preload(self):
   with tempfile.TemporaryDirectory() as t,patch.object(module,'BUNDLE',pathlib.Path(t)):
-   s=object.__new__(module.Supervisor);s.env={'LD_PRELOAD':'/opt/lsb/liblsb-gamepad.so'};s.req={'shm_upload':True};s.state={};s.status=Mock();s.spawn=Mock()
+   s=object.__new__(module.Supervisor);s.engine="box64";s.env={'LD_PRELOAD':'/opt/lsb/liblsb-gamepad.so'};s.req={'shm_upload':True};s.state={};s.status=Mock();s.spawn=Mock()
    s.configure_upload();s.spawn.assert_not_called()
    self.assertEqual(s.env,{'LD_PRELOAD':'/opt/lsb/liblsb-gamepad.so'})
    self.assertFalse(s.status.call_args.kwargs['shm_upload_active'])
@@ -109,7 +109,7 @@ class Contracts(unittest.TestCase):
   self.assertEqual(module.validate_request(req),req)
   with self.assertRaises(ValueError):module.validate_request(dict(req,native_surface='true'))
   with tempfile.TemporaryDirectory() as t,patch.object(module,'BUNDLE',pathlib.Path(t)):
-   s=object.__new__(module.Supervisor);s.req=req;s.spawn=Mock();s.status=Mock()
+   s=object.__new__(module.Supervisor);s.engine="box64";s.req=req;s.spawn=Mock();s.status=Mock()
    s.start_native_surface();s.spawn.assert_not_called();self.assertIn('native_surface_fallback',s.status.call_args.kwargs)
    binary=pathlib.Path(t)/'x11-frame-bridge';binary.write_bytes(b'fixture')
    manifest=pathlib.Path(t)/'presentation-bundle.json';manifest.write_text(json.dumps({'format':1,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest()}))

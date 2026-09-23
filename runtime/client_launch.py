@@ -148,7 +148,7 @@ def check_dependencies(s,report,loader,dependencies):
         # here; arbitrary game-process output still uses the private filter.
         env=dict(s.env,WINEDEBUG='-all,+timestamp,+pid,err+all,warn+module,trace+loaddll',BOX64_DLSYM_ERROR='1')
         name='loader-check.log' if attempt==0 else 'loader-check-retry.log'
-        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','check',windows_path(loader),*dependencies],name,env=env)
+        p=s.spawn(s.wine_command(r'P:\client-launch.exe','check',windows_path(loader),*dependencies),name,env=env)
         try:
             s.wait(p,90,'Loader dependency check (xiloader has not started)',accepted=(0,1))
         finally:
@@ -221,7 +221,7 @@ def run(s, display):
                  BOX64_LOG='0',BOX64_NOBANNER='1',DXVK_LOG_LEVEL='info',DXVK_LOG_PATH='none')
         env['WINEDLLOVERRIDES']+=';winedbg='
         # No credentials in argv/environment. Native helper supplies the Windows CLI.
-        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'P:\client-launch.exe','launch',windows_path(loader),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile,windows_path(manifest['game'])],
+        p=s.spawn(s.wine_command(r'P:\client-launch.exe','launch',windows_path(loader),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile,windows_path(manifest['game'])),
                   'loader-events.log',env=env,pipe_input=True)
         writer=s.logs[-1]
         try:p.stdin.write(payload);p.stdin.close()

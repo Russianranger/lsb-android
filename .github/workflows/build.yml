@@ -65,12 +65,12 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.12.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.13.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.12.apk
+            out/LSB-Android-0.5.13.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/
@@ -142,6 +142,55 @@ jobs:
           for path in list(Path('out/runtime-test').rglob('*.log'))+list(Path('out/display-wire').glob('*.log')):
               print(path, path.read_text(errors='replace')[-6000:])
           PYLOG
+  fex-runtime:
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-device-build
+          path: out
+      - uses: actions/download-artifact@v4
+        with:
+          name: fex-runtime
+          path: out/fex-runtime
+          run-id: 35809818045
+          github-token: ${{ github.token }}
+      - name: Verify pinned FEX artifact identity
+        run: python3 scripts/verify-fex-artifact.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+      - name: Real FEX native Wine, migration, pixels, audio, controller and PRoot
+        run: bash scripts/check-fex.sh
+      - name: Preserve FEX evidence
+        if: always()
+        run: |
+          if [ -d out/fex-test/logs ]; then sudo chown -R "$(id -u):$(id -g)" out/fex-test/logs; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fex-runtime-evidence
+          path: out/fex-test/logs/
+      - name: Show FEX failure evidence
+        if: failure()
+        run: |
+          python3 - <<'PYLOG'
+          from pathlib import Path
+          for p in Path('out/fex-test/logs').rglob('*.log'):
+              print(p, p.read_text(errors='replace')[-5000:])
+          PYLOG
+
   server-deployment:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
@@ -152,10 +201,11 @@ jobs:
 
   runtime-release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/codex/client-baseline'
-    needs: [verify, windows-launcher, runtime, server-deployment]
+    needs: [verify, windows-launcher, runtime, fex-runtime, server-deployment]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -163,6 +213,29 @@ jobs:
           path: .tools/runtime
           key: lsb-runtime-probe-v1-08c639c2
       - run: python3 scripts/prepare-runtime.py --release
+      - uses: actions/download-artifact@v4
+        with:
+          name: fex-runtime
+          path: out/fex-runtime
+          run-id: 35809818045
+          github-token: ${{ github.token }}
+      - run: python3 scripts/verify-fex-artifact.py
+      - name: Publish qualified FEX runtime and corresponding sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view runtime-fex-v1 >/dev/null 2>&1; then
+            gh release create runtime-fex-v1 --target "$GITHUB_SHA" --prerelease --title 'LSB native ARM64 Wine / FEX runtime v1' --notes 'Pinned Wine 10 ARM64 + FEX 2510 WoW64, built on Bookworm for the existing Android rootfs. Separate runtime and prefixes; Box64 rollback retained. Synthetic CI compatibility checks pass; Thor gameplay performance still requires comparison. This is not the GameHub Proton/async-DXVK fork. Includes exact corresponding sources and build recipe. No client, loader or server files.'
+          fi
+          for file in runtime-fex-arm64.tar.gz runtime-fex-sources.tar.gz fex-bundle.json; do
+            if ! gh release view runtime-fex-v1 --json assets --jq '.assets[].name' | grep -qx "$file"; then
+              gh release upload runtime-fex-v1 "out/fex-runtime/$file"
+            else
+              mkdir -p "$RUNNER_TEMP/fex-existing"
+              gh release download runtime-fex-v1 --pattern "$file" --dir "$RUNNER_TEMP/fex-existing"
+              cmp "out/fex-runtime/$file" "$RUNNER_TEMP/fex-existing/$file"
+            fi
+          done
       - name: Publish immutable open runtime and corresponding sources
         env:
           GH_TOKEN: ${{ github.token }}

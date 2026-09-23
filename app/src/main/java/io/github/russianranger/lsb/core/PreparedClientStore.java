@@ -59,6 +59,12 @@ public final class PreparedClientStore {
             if(from.canExecute())to.setExecutable(true,true);files++;
         }
     }
+    public static void copyRuntimePrefix(File source,File destination,SafeZip.Progress progress)throws IOException {
+        if(Files.isSymbolicLink(source.toPath())||destination.exists()||destination.getCanonicalFile().toPath().startsWith(source.getCanonicalFile().toPath()))throw new IOException("Runtime copy must use a new directory");
+        long bytes=size(source,true,0);
+        if(destination.getParentFile().getUsableSpace()<bytes+SafeZip.RESERVE_BYTES)throw new IOException("Not enough space for a separate Windows environment");
+        new Copier(bytes,progress).copy(source,destination,true,0);
+    }
     public File prepare(ClientStore imported,File seedPrefix,SafeZip.Progress progress) throws Exception {
         File existing=selected("candidate");
         if(complete(existing)){progress.update("Reusing staged client; retrying initialization");return existing;}

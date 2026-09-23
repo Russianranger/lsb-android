@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "candidate": "wine10-arm64-fex2510",
+  "wine_commit": "b073859675060c9211fcbccfd90e4e87520dc2c2",
+  "fex_commit": "320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab",
+  "guest": "i386",
+  "host": "aarch64",
+  "sha256": "7afff72cb955994d33b3a668a4bd7a17f61444082c5cc2f7c59d23dd62f78fe4",
+  "bytes": 318094507,
+  "manifest_sha256": "9649333573a97a8b0f412ee583515b8a2c33d7aaee471a6150c2478ace58fe22",
+  "url": "https://github.com/Russianranger/lsb-android/releases/download/runtime-fex-v1/runtime-fex-arm64.tar.gz"
+}

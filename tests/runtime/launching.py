@@ -1,4 +1,5 @@
 """Real Wine/PRoot launch supervision with synthetic PE32 loader; no server/game."""
+import os
 import hashlib
 import json
 from pathlib import Path
@@ -28,10 +29,10 @@ STARTUP={'trace-ok':('s',0),'trace-fail':('f',0x80004005),'trace-sfalse':('n',1)
 
 def main():
     (SESSION/'stop').unlink(missing_ok=True)
-    setup=Supervisor({'format':1,'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher'})
+    setup=Supervisor({'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher'})
     try:
-        setup.wait(setup.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'Z:\fixtures\display-config.exe'],'display-config.log'),90,'Synthetic display configuration checks')
-        setup.wait(setup.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',r'Z:\fixtures\version-registry.exe',r'Z:\session\version-fixture.bin'],'version-registry.log'),90,'Synthetic version registry checks')
+        setup.wait(setup.spawn(setup.wine_command(r'Z:\fixtures\display-config.exe'),'display-config.log'),90,'Synthetic display configuration checks')
+        setup.wait(setup.spawn(setup.wine_command(r'Z:\fixtures\version-registry.exe',r'Z:\session\version-fixture.bin'),'version-registry.log'),90,'Synthetic version registry checks')
     finally:setup.stop()
     manifest=json.loads((SESSION/'client-manifest.json').read_text())
     manifest['key_files'].pop(manifest['loader'])
@@ -45,7 +46,7 @@ def main():
         shutil.copyfile('/fixtures/login-missing.exe' if case=='missing-dependency' else '/fixtures/login-stub.exe',loader)
         manifest['key_files'][manifest['loader']]=hashlib.sha256(loader.read_bytes()).hexdigest()
         (SESSION/'client-manifest.json').write_text(json.dumps(manifest))
-        request={'format':1,'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher' if case=='check-only' else 'launch'}
+        request={'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher' if case=='check-only' else 'launch'}
         if case in ('launch','windowed-existing'):request['display_profile']='windowed720'
         elif case=='restore-display':request['display_profile']='restore'
         if case in STARTUP:

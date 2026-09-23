@@ -61,7 +61,7 @@ def main():
     renderer=os.environ.get('LSB_TEST_RENDERER','software')
     for cycle in range(2):
         for n in ('stop','status.json','probe.json','display.sock'):Path('/session',n).unlink(missing_ok=True)
-        req={'format':1,'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1,'display_fps':60 if cycle==1 else 30,'dxvk_diagnostics':cycle==1 and renderer!='software','shm_upload':cycle==1,'dxvk_version':'2.7.1' if cycle==1 else '2.5.3'}
+        req={'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1,'display_fps':60 if cycle==1 else 30,'dxvk_diagnostics':cycle==1 and renderer!='software','shm_upload':cycle==1,'dxvk_version':'2.7.1' if cycle==1 else '2.5.3'}
         req.update(turnip_sysmem=cycle==1,dxvk_two_compilers=cycle==1)
         Path('/session/request.json').write_text(json.dumps(req));receiver=Receiver('/session/audio.sock')
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],env=dict(os.environ,LSB_TEST_AUTOCLOSE='1'))

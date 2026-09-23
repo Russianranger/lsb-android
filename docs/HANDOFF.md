@@ -1,3 +1,31 @@
+# Current work: FEX runtime follow-up (0.5.13)
+
+The latest 0.5.12 Thor result shows no meaningful improvement from sysmem or
+two DXVK workers. Both were actually applied; neither is an accepted FPS fix.
+The full log audit, including startup RPCSS/missing-library warnings, is in
+[fex-runtime-0513.md](fex-runtime-0513.md). Hardware Turnip, DXVK 2.7.1,
+shared-memory presentation, 60 Hz and the startup-only observer were active.
+Both game sessions exited cleanly. Preserve the accepted DXVK 2.7.1 improvement,
+60 Hz and the 0.5.8 periodic-stutter fix.
+
+The user explicitly requested FEXCore implementation. Work continues from the
+existing branch; native ARM64 Wine 10 + FEX 2510 is being qualified as a separate
+runtime with isolated copied prefixes and an explicit Box64 rollback selector.
+No client, server or xiloader source update, re-import, re-preparation or managed
+server migration is authorized for this comparison. Keep the working Termux
+server and client `30251204_1`.
+
+The native Wine/FEX source build and packaging passed in run `35809818045`.
+Artifact `10729438430` contains the pinned 318,094,507-byte runtime archive,
+SHA-256 `7afff72cb955994d33b3a668a4bd7a17f61444082c5cc2f7c59d23dd62f78fe4`.
+Native Wine ELF and FEX PE architecture checks pass; FEX imports only Wine
+`ntdll.dll` and `wow64.dll`. FEX compatibility gates and the new signed APK
+are not yet complete. The completed 0.5.12 CI/APK records below describe the earlier build,
+not evidence for 0.5.13. Update this section with actual qualification results
+before delivering the new APK; do not claim a Thor performance gain from CI.
+
+---
+
 # Completed milestone: Turnip rendering and DXVK compiler scheduling (0.5.12)
 
 The user reports that DXVK 2.7.1 improved the experience, but FPS slowdowns remain.

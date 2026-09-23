@@ -3,6 +3,7 @@
 Run after initialization.py, using its prepared test prefix and drive mappings.
 The real xiloader is not included or executed by these tests.
 """
+import os
 import json
 from pathlib import Path
 import shutil
@@ -24,7 +25,7 @@ def main():
     root=Path('/client/FINAL FANTASY XI/dependency test');root.mkdir(exist_ok=True)
     for name in ['dependency-detach.dll','dependency-attach.dll']:
         shutil.copyfile('/fixtures/'+name,root/name)
-    s=Supervisor({'format':1,'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher'})
+    s=Supervisor({'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher'})
     # 0.5.1 Thor: WS2_32.dll initialization failed with the controller preload
     # enabled. Exercise the exact import list in that environment as well.
     (session/'gamepad.bin').write_bytes(bytes(64))
@@ -32,7 +33,7 @@ def main():
     def run(label,args,gamepad=False):
         env=dict(s.env,WINEDEBUG='-all,+timestamp,+pid,err+all,warn+module,trace+loaddll',BOX64_DLSYM_ERROR='1')
         if gamepad:env.update(LD_PRELOAD='/opt/lsb/liblsb-gamepad.so',LSB_GAMEPAD_STATE='/session/gamepad.bin')
-        p=s.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine',*args],'dependency-'+label+'.log',env=env)
+        p=s.spawn(s.wine_command(*args),'dependency-'+label+'.log',env=env)
         p.wait(timeout=90)
         return p.returncode
     try:

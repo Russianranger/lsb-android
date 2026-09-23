@@ -105,7 +105,7 @@ public final class MainActivity extends Activity {
         try(InputStream in=getAssets().open("art/"+(tab.equals("Server")?"server-background.png":"client-background.png"))){ImageView art=new ImageView(this);art.setImageDrawable(android.graphics.drawable.Drawable.createFromStream(in,null));art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));}catch(IOException ignored){}
         View shade=new View(this);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xe5091526,0x66091526,0x11091526}));hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout title=column();title.setPadding(dp(20),dp(12),dp(16),dp(8));TextView heading=label("LSB",30,TEXT);heading.setTypeface(android.graphics.Typeface.create("serif",Typeface.BOLD));title.addView(heading);title.addView(label("A world of adventure, on your device",13,Color.rgb(175,219,255)));hero.addView(title);page.addView(hero,new LinearLayout.LayoutParams(-1,dp(106)));
-        page.addView(label("Client & server launcher · 0.5.12",11,MUTED));
+        page.addView(label("Client & server launcher · 0.5.13",11,MUTED));
         LinearLayout nav = new LinearLayout(this);
         for (String name : new String[]{"Client", "Controller", "Server", "Runtime", "Profile", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(44));b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(name.equals(tab)?Color.rgb(38,80,111):Color.rgb(23,41,60)));
@@ -121,13 +121,21 @@ public final class MainActivity extends Activity {
         try { switch (tab) { case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Controller": controllerPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
         catch (Exception e) { content.addView(label("Cannot read app state: " + e.getMessage(), 16, TEXT)); }
     }
+    private void runtimeSelector(LinearLayout panel,ClientRuntime rt) {
+        CheckBox fex=new CheckBox(this);fex.setText("FEX / native ARM64 Wine · experimental");fex.setTextColor(TEXT);
+        fex.setChecked(getSharedPreferences("runtime",0).getBoolean("fex",false));fex.setEnabled(!rt.alive()&&(fex.isChecked()||rt.fexInstalled()));
+        fex.setOnCheckedChangeListener((b,v)->getSharedPreferences("runtime",0).edit().putBoolean("fex",v).apply());panel.addView(fex);
+        panel.addView(label("Uses a separate Windows environment copied from your working setup. Off returns to Box64. Install FEX on the Runtime tab first; stop and relaunch to switch.",13,MUTED));
+    }
     private void runtimePage() throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);
         LinearLayout panel=card("Windows runtime · verified foundation");
         panel.addView(label("A separate environment for testing Windows, Direct3D 8, sound and input. Your imported FFXI files are not mounted or modified by these checks.",16,TEXT));
         runtimeStatus=label(rt.status,15,ACCENT);panel.addView(runtimeStatus);
-        panel.addView(label("Wine 10 / Box64 0.4.4. Use the Client tab to launch your prepared FFXI installation.",14,MUTED));
+        panel.addView(label("Default: Wine 10 / Box64 0.4.4. FEX uses native ARM64 Wine in a separate environment. Use the Client tab to launch your prepared FFXI installation.",14,MUTED));
         button(panel,"Install runtime (338 MiB download)",()->run("Installing Windows runtime",(ctx,p)->ClientRuntime.get(ctx).install(p))).setEnabled(!rt.alive()&&!rt.installed());
+        button(panel,rt.fexInstalled()?"FEX runtime installed":"Install FEX runtime",()->run("Installing FEX runtime",(ctx,p)->ClientRuntime.get(ctx).installFex(p))).setEnabled(rt.installed()&&!rt.alive()&&!rt.fexInstalled());
+        runtimeSelector(panel,rt);
         panel.addView(label("Graphics for this test",14,MUTED));
         Spinner graphics=new Spinner(this);graphics.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Turnip 26 / DXVK (Thor)","Turnip 24 / DXVK","Software diagnostic"}));
         String[] modes={"turnip26","turnip24","software"};
@@ -141,7 +149,7 @@ public final class MainActivity extends Activity {
         button(panel,"Stop runtime",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());
         panel.addView(label("Look for the colored triangle and Registry/COM PASS labels. Tap outside the triangle, send keys using Keyboard, and try Play tone. Exit the probe, then start it again. Export Diagnostics after the test.",15,TEXT));
         button(panel,"View runtime details",()->{try{showText("Runtime details",rt.state().toString(2));}catch(Exception e){error(e);}});
-        button(panel,"Create fresh Windows prefix",()->confirm("Fresh Windows environment","The current prefix will be preserved in a separate backup. Your imported client and session backups stay in place.",()->run("Preserving Windows prefix",(ctx,p)->ClientRuntime.get(ctx).freshPrefix()))).setEnabled(rt.installed()&&!rt.alive());
+        button(panel,"Create fresh Box64 test prefix",()->confirm("Fresh Box64 test environment","The current Box64 test prefix will be preserved in a separate backup. Your prepared client stays in place.",()->run("Preserving Windows prefix",(ctx,p)->ClientRuntime.get(ctx).freshPrefix()))).setEnabled(rt.installed()&&!rt.alive()&&!getSharedPreferences("runtime",0).getBoolean("fex",false));
         panel.addView(label("Current session backups contain your imported client, not this experimental runtime. A fresh-prefix action preserves its previous folder. Keep at least 3 GiB free for first setup.",14,MUTED));
     }
     private void clientPage() throws Exception {
@@ -219,6 +227,7 @@ public final class MainActivity extends Activity {
         startupTrace.setChecked(getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("startup_trace",false));card.addView(startupTrace);
         card.addView(label("Runs a temporary diagnostic copy to identify where startup stops. Your original loader stays unchanged. Turn off to launch the original directly.",13,MUTED));
         LinearLayout performance=column();card.addView(performance);
+        runtimeSelector(performance,rt);
         CheckBox refresh60=new CheckBox(this);refresh60.setText("60 Hz display refresh");refresh60.setTextColor(TEXT);refresh60.setChecked(getSharedPreferences("runtime",0).getInt("display_fps",30)==60);refresh60.setOnCheckedChangeListener((b,v)->getSharedPreferences("runtime",0).edit().putInt("display_fps",v?60:30).apply());performance.addView(refresh60);
         performance.addView(label("Off: 30 Hz. On: up to 60 display updates per second, matching Thor's screen. Applies on the next launch. Uses more processing and power; the game's own FPS limit stays unchanged.",13,MUTED));
         CheckBox shmUpload=new CheckBox(this);shmUpload.setText("Shared-memory Vulkan presentation · experimental");shmUpload.setTextColor(TEXT);shmUpload.setChecked(getSharedPreferences("runtime",0).getBoolean("shm_upload",true));shmUpload.setOnCheckedChangeListener((b,v)->getSharedPreferences("runtime",0).edit().putBoolean("shm_upload",v).apply());performance.addView(shmUpload);
@@ -410,7 +419,7 @@ public final class MainActivity extends Activity {
         button(d, "View repair script", () -> { try { File f = new File(getFilesDir(), "repair-preview.txt"); showText("Repair recipe · not yet executed", f.exists() ? FilesEx.read(f, 32768) : "Use Client → Validate client and preview repair script first."); } catch (Exception e) { error(e); } });
         button(d, "View operation log", () -> { try { File f = new File(getFilesDir(), "operations.log"); showText("Operation log", f.exists() ? FilesEx.read(f, 262144) : "No operations yet"); } catch (Exception e) { error(e); } });
         LinearLayout next = card("Runtime status");
-        next.addView(label("Client files: managed import available\nRegistry/COM repair: in-app staged initialization\nWindows runtime: experimental Wine 10 / Box64 candidate\nDisplay, D3D8 and audio: open-probe checks in Runtime tab\nFFXI registration/COM: staged preparation on Client tab\nLogin: prepared-client launch on Client tab\nController: native joystick mapping\nServer: isolated source/database deployment\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
+        next.addView(label("Client files: managed import available\nRegistry/COM repair: in-app staged initialization\nWindows runtime: Box64 baseline and native ARM64 Wine / FEX candidate\nDisplay, D3D8 and audio: open-probe checks in Runtime tab\nFFXI registration/COM: staged preparation on Client tab\nLogin: prepared-client launch on Client tab\nController: native joystick mapping\nServer: isolated source/database deployment\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
     }
     private void pick(String kind) { pending = kind; Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"); startActivityForResult(i, PICK); }
     private void create(String kind, String name) { pending = kind; Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind.equals("profile") ? "application/json" : kind.equals("server-helper")?"text/x-python":kind.equals("server-db")?"application/gzip":"application/zip").putExtra(Intent.EXTRA_TITLE, name); startActivityForResult(i, CREATE); }
@@ -467,7 +476,7 @@ public final class MainActivity extends Activity {
             SafeZip.entry(zip, "runtime-profile.json", profile(ctx)); SafeZip.entry(zip, "inventory.json", s.inventory()); SafeZip.entry(zip, "summary.txt", s.summary()); SafeZip.entry(zip, "session.properties", s.config().properties());
             SafeZip.entry(zip, "playonline-candidates.txt", String.join("\n", s.playOnlineChoices()) + "\n");
             if (s.hasPendingImport()) SafeZip.entry(zip, "pending-playonline.txt", "Waiting for PlayOnline selection\n" + String.join("\n", s.pendingChoices()) + "\n");
-            SafeZip.entry(zip, "device.txt", "app=0.5.12\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=prepared_client_launch\n");
+            SafeZip.entry(zip, "device.txt", "app=0.5.13\nandroid=" + Build.VERSION.RELEASE + "\nsdk=" + Build.VERSION.SDK_INT + "\nmodel=" + Build.MODEL + "\nabis=" + Arrays.toString(Build.SUPPORTED_ABIS) + "\nfreeBytes=" + storage(ctx).getUsableSpace() + "\ninAppRuntime=prepared_client_launch\n");
             for (String name : new String[]{"operations.log", "server-probe.txt", "repair-preview.txt"}) { File f = new File(ctx.getFilesDir(), name); if (f.exists()) SafeZip.entry(zip, name, FilesEx.read(f, 262144)); }
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }

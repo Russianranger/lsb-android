@@ -133,7 +133,7 @@ def initialize(supervisor):
             step = {'name': 'user_prerequisite_installer', 'sha256': digest, 'status': 'running'}
             report['steps'].append(step); record(); supervisor.status('running_prerequisite_installer')
             result = session/'client-step.json'; result.unlink(missing_ok=True)
-            proc = supervisor.spawn(['/usr/local/bin/box64', '/opt/wine/bin/wine', r'P:\client-init.exe', 'installer'], 'prerequisite.log')
+            proc = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', 'installer'), 'prerequisite.log')
             # The native worker retains full Windows exit 3010, which Unix otherwise truncates.
             # Interactive official redistributable; no implicit EULA acceptance or silent switches.
             try:
@@ -159,7 +159,7 @@ def initialize(supervisor):
             step = {'name': name, 'status': 'running'}; report['steps'].append(step); record()
             supervisor.status('client_'+name)
             result = session/'client-step.json'; result.unlink(missing_ok=True)
-            proc = supervisor.spawn(['/usr/local/bin/box64', '/opt/wine/bin/wine', r'P:\client-init.exe', *args], name+'.log')
+            proc = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', *args), name+'.log')
             try:
                 supervisor.wait(proc, 90, 'Client step '+name)
             finally:
