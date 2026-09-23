@@ -1,3 +1,59 @@
+# Vulkan presentation and DXVK comparison: 0.5.11 (2026-09-23)
+
+**All six CI gates pass** for `cf5bd4675a05d8133e51b019ab7a9094dd78119d`
+in [push run 35798263910](https://github.com/Russianranger/lsb-android/actions/runs/35798263910):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. [PR run 35798267691](https://github.com/Russianranger/lsb-android/actions/runs/35798267691)
+passes all five applicable gates and correctly skips release. No CI tests or
+failures remain pending.
+
+The actual Wine/DXVK process performs 300 SHM uploads with both DXVK 2.5.3 and
+2.7.1. The modern Mesa 25.0.7 fixture selects 2.7.1 and passes all eight preflight
+frames plus the main triangle/pixels/input/PCM/exit tests. The baseline Mesa
+22.3.6 fixture rejects incompatible 2.7.1, restores both 2.5.3 DLLs and completes
+the same gameplay-independent checks. CI never claims Adreno hardware.
+
+Native upload tests pass in Linux and PRoot: 58 calls, 40 SHM uploads, 18 row
+fallbacks, zero attach failures and two connections. Forced socket mode passes
+all exact pixels with zero SHM uploads. Ring reuse, caller-buffer ownership,
+resize, checked errors and reconnect pass. PRoot exercises Android-compatible
+memfd emulation. The existing ten native-display cases also pass.
+
+Controller axes/buttons/hat/release/stale-input tests pass with both host
+preloads enabled. All 62 launch cases and six startup-observer idle/Stop/crash
+checks pass, retaining the accepted stutter fix. Also passed: 116 core checks,
+RGB565 and 90 ZRLE checks, native frame bounds, 44 runtime contracts, five server
+contracts, 15 Android tests and 36 native Windows checks. Real MariaDB
+deployment, failed-update preservation, update/rollback and process lifecycle
+pass. Runtime evidence artifact `10725910618`, ZIP SHA-256
+`e04f025f4995d437f18cba87bf1284609477f696a39489f845ae2ca38ac90173`.
+
+CI harness corrections restored executable permissions on the downloaded test
+helper, selected Trixie's actual `lvp_icd.json` filename, and made container-owned
+binary evidence readable by the artifact uploader. The modern Mesa environment
+is CI-only; the distributed Wine/Box64 rootfs remains unchanged.
+
+**Signed install-in-place APK:** `LSB-Android-0.5.11.apk`, versionCode 27,
+18,214,515 bytes, SHA-256
+`7f2c0d63b4a41251af8dc38ead280084720749dc842a5fa6e3f1a0019064ef84`.
+Original signer SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`;
+v2/v3 signatures, alignment, ZIP integrity, package/version and payload identity
+against CI artifact `10724269877` verify. CI APK SHA-256
+`a79a2e86364a54c02529b0593d5d67f63099fe28912cf6a454cc72a94820b0dc`.
+The driver, baseline DXVK pair, launcher/startup observer, audio, controller,
+PRoot, native capture/Android Surface and purple icon remain byte-identical to
+0.5.10. Added/changed payload is limited to version/DEX, supervisor, component
+manifests, the new upload library/checker, finite graphics checker, candidate
+DXVK pair and upstream license. Both graphics options off retain the previous
+binaries, renderer environment and transfer path.
+
+[Mechanism, limits and focused Thor test](gpu-presentation-0511.md).
+Device FPS improvement remains to be measured. Preserve the existing Termux
+server/client `30251204_1`, original xiloader and accepted preparation.
+
+---
+
 # X11 metadata caching: 0.5.10 (2026-09-22)
 
 **Subsequent 0.5.10 device result:** no noticeable gameplay improvement. Cache

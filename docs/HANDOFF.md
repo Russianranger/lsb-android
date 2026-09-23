@@ -1,18 +1,77 @@
-# Active implementation: Vulkan presentation and DXVK (0.5.11)
+# Completed milestone: Vulkan presentation and DXVK comparison (0.5.11)
 
-The user authorized GPU presentation and DXVK work. GameHub's reported 60 FPS
-came from its overlay; the user confirms smoother gameplay. This clarification
-is settled. See [0.5.11 mechanism and focused test](gpu-presentation-0511.md).
+The user authorized GPU presentation and DXVK work after reporting no noticeable
+improvement from 0.5.10. GameHub's reported 60 FPS came from its overlay; the user
+confirms smoother gameplay. This clarification is settled. Do not ask it again.
 
-New shared-memory Vulkan upload transport and an independent, reversible DXVK
-2.7.1 comparison are implemented. This removes eligible full-frame socket
-uploads, not GPU readback. Keep the baseline driver/Wine/Box64 and both graphics
-options available. CI qualification and original-key APK signing are underway;
-this section must be replaced with actual results before delivery.
+0.5.11 adds an independently reversible shared-memory Vulkan upload path and
+upstream DXVK 2.7.1 comparison. The upload path bypasses eligible full-frame X11
+socket payloads, but still performs GPU readback; it is not direct GPU-to-Android
+presentation. Both features have startup checks and baseline fallback. DXVK
+2.7.1 defaults off, while the new upload path defaults on. Actual selected
+versions, checksums, fallback reasons and numeric upload counters are exported.
+No recurring process/module scans or timer-driven telemetry flushes are added.
 
-Preserve accepted 0.5.8 observer behavior, 60 Hz, audio/controllers, original
-xiloader and working Termux server/client `30251204_1`. No source update,
-re-import, re-preparation or managed migration. Do not redesign the 0.5.0 work.
+**All six CI gates pass** for `cf5bd4675a05d8133e51b019ab7a9094dd78119d`
+in [push run 35798263910](https://github.com/Russianranger/lsb-android/actions/runs/35798263910):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. [PR run 35798267691](https://github.com/Russianranger/lsb-android/actions/runs/35798267691)
+passes all five applicable gates and correctly skips release. No CI tests or
+failures remain pending.
+
+The actual Wine/DXVK process performs 300 SHM uploads with both DXVK 2.5.3 and
+2.7.1. The modern Mesa 25.0.7 fixture selects 2.7.1 and passes all eight preflight
+frames plus the main triangle/pixels/input/PCM/exit tests. The baseline Mesa
+22.3.6 fixture rejects incompatible 2.7.1, restores both 2.5.3 DLLs and completes
+the same gameplay-independent checks. CI never claims Adreno hardware.
+
+Native upload tests pass in Linux and PRoot: 58 calls, 40 SHM uploads, 18 row
+fallbacks, zero attach failures and two connections. Forced socket mode passes
+all exact pixels with zero SHM uploads. Ring reuse, caller-buffer ownership,
+resize, checked errors and reconnect pass. PRoot exercises Android-compatible
+memfd emulation. The existing ten native-display cases also pass.
+
+Controller axes/buttons/hat/release/stale-input tests pass with both host
+preloads enabled. All 62 launch cases and six startup-observer idle/Stop/crash
+checks pass, retaining the accepted stutter fix. Also passed: 116 core checks,
+RGB565 and 90 ZRLE checks, native frame bounds, 44 runtime contracts, five server
+contracts, 15 Android tests and 36 native Windows checks. Real MariaDB
+deployment, failed-update preservation, update/rollback and process lifecycle
+pass. Runtime evidence artifact `10725910618`, ZIP SHA-256
+`e04f025f4995d437f18cba87bf1284609477f696a39489f845ae2ca38ac90173`.
+
+CI harness corrections restored executable permissions on the downloaded test
+helper, selected Trixie's actual `lvp_icd.json` filename, and made container-owned
+binary evidence readable by the artifact uploader. The modern Mesa environment
+is CI-only; the distributed Wine/Box64 rootfs remains unchanged.
+
+**Signed install-in-place APK:** `LSB-Android-0.5.11.apk`, versionCode 27,
+18,214,515 bytes, SHA-256
+`7f2c0d63b4a41251af8dc38ead280084720749dc842a5fa6e3f1a0019064ef84`.
+Original signer SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`;
+v2/v3 signatures, alignment, ZIP integrity, package/version and payload identity
+against CI artifact `10724269877` verify. CI APK SHA-256
+`a79a2e86364a54c02529b0593d5d67f63099fe28912cf6a454cc72a94820b0dc`.
+The driver, baseline DXVK pair, launcher/startup observer, audio, controller,
+PRoot, native capture/Android Surface and purple icon remain byte-identical to
+0.5.10. Added/changed payload is limited to version/DEX, supervisor, component
+manifests, the new upload library/checker, finite graphics checker, candidate
+DXVK pair and upstream license. Both graphics options off retain the previous
+binaries, renderer environment and transfer path.
+
+**Next Thor test:** install over the existing app. Use the working Termux server,
+FFXI client `30251204_1`, original xiloader and accepted preparation. No source
+update, import, re-preparation or managed-server migration. Keep 60 Hz, Native
+Surface, the same resolution, normal FPS HUD, startup capture off and other
+settings unchanged. First test shared-memory Vulkan presentation on / DXVK
+2.7.1 off; then enable only DXVK 2.7.1 and repeat the warmed-up route. Stop and
+export Diagnostics after each run. Check audio, right-stick camera and relaunch.
+Both options off provide graphics rollback. See [full mechanism and test](gpu-presentation-0511.md).
+
+Thor performance improvement is **not yet measured**. Retain the user's accepted
+0.5.8 periodic-stutter fix and 60 Hz preference; do not treat CI pixel checks as
+a game FPS benchmark or repeat 30 Hz/compression tests as the main experiment.
 
 ---
 
@@ -34,8 +93,8 @@ separately from the working runtime. Do not repeat display-only tuning as though
 the main bottleneck were established, blindly remove the WSI software flag, or
 claim generic Proton/FEX packages reproduce the recorded GameHub setup.
 
-This follow-up is investigation/documentation only; no new APK or runtime
-replacement. Preserve the matching Termux server/client `30251204_1`, original
+That earlier 0.5.10 follow-up changed documentation only; it is superseded by
+the completed 0.5.11 milestone above. Preserve the matching Termux server/client `30251204_1`, original
 xiloader, preparation, login/audio/controller behavior and rollback baseline.
 
 ---
