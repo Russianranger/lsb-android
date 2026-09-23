@@ -8,9 +8,12 @@ wine=Path('/stage/opt/wine');dll=wine/'lib/wine/aarch64-windows/libwow64fex.dll'
 fixed=dll.read_bytes();baseline=Path('/pre-flags-wow64fex.dll').read_bytes()
 out=Path('/flags-evidence');out.mkdir(exist_ok=True);receipts=[]
 try:
-    for variant,data,expected,failures in [('before',baseline,21,8),('after',fixed,0,0)]:
+    for variant,data,expected in [('before',baseline,21),('after',fixed,0)]:
         dll.write_bytes(data)
         for mode in ('0','1'):
+            # Strict64 can reuse the original 64-bit load/store value; its
+            # single-precision conversions still expose the clobbered flags.
+            failures=(8 if mode=='0' else 4) if variant=='before' else 0
             with tempfile.TemporaryDirectory(prefix='lsb-flags-') as prefix:
                 env=dict(os.environ,WINEPREFIX=prefix,WINEARCH='win64',WINEDEBUG='-all',
                     WINEDLLOVERRIDES='winemenubuilder.exe=d',
