@@ -65,12 +65,12 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.17.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.18.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.17.apk
+            out/LSB-Android-0.5.18.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/
@@ -84,6 +84,7 @@ jobs:
             out/windows-tests/fex-crash.exe
             out/windows-tests/texture-submission.exe
             out/windows-tests/cpu-dispatch.exe
+            out/windows-tests/game-math.exe
             out/windows-tests/login-missing.exe
             out/windows-tests/dependency-detach.dll
             out/windows-tests/dependency-attach.dll

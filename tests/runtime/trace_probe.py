@@ -16,6 +16,12 @@ def checked(self):
     cpu=Path('/logs/cpu-dispatch.log').read_text(errors='replace')
     assert 'LSB_CPU_MATH samples=72 failures=0 PASS' in cpu and 'MISMATCH' not in cpu and ' FAIL' not in cpu,cpu[-2000:]
     print('PASS: real Windows/CPUID feature agreement and 72 full-stack x87/SSE affine samples',flush=True)
+    proc=self.spawn(self.wine_command(r'Z:\fixtures\game-math.exe'),'game-math.log',fixed_output=True)
+    self.wait(proc,45,'Game math diagnostic isolation fixture')
+    self.logs[-1].thread.join(3)
+    math=Path('/logs/game-math.log').read_text(errors='replace')
+    assert 'LSB_GAME_MATH samples=192 guards=4 fp_preserved=1 corruptions_detected=16 PASS' in math and ' FAIL' not in math,math[-2000:]
+    print('PASS: game math oracle, invalid-image rejection, injected error detection and floating-state preservation',flush=True)
     original(self)
     proc=self.spawn(self.wine_command(r'P:\graphics-check.exe','--trace-pixels'),'graphics-trace-fixture.log',fixed_output=True)
     self.wait(proc,60,'Observed D3D8 pixel fixture')

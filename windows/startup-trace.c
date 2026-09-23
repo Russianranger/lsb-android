@@ -30,6 +30,7 @@ static void event(const char *name,DWORD code,DWORD detail){
     if(n>0&&n<(int)sizeof(row))WriteFile(GetStdHandle(STD_ERROR_HANDLE),row,(DWORD)n,&written,NULL);
     SetLastError(saved);
 }
+#include "game-math.h"
 #include "graphics-trace.h"
 #include "startup-files.h"
 static HRESULT WINAPI start(void *self,IUnknown *pol,void *message){
@@ -39,7 +40,7 @@ static HRESULT WINAPI start(void *self,IUnknown *pol,void *message){
     ReleaseSRWLockShared(&slot_lock);
     if(!slot){event("observer_failed",ERROR_INVALID_DATA,0);return E_UNEXPECTED;}
     event(slot->main?"game_main_enter":"game_start_enter",0,0);
-    if(slot->main)observe_directory();
+    if(slot->main){observe_directory();gm_prepare();}
     ULONGLONG before=GetTickCount64();
     SetLastError(incoming);
     HRESULT hr=slot->original(self,pol,message);

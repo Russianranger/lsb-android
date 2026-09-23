@@ -1,3 +1,26 @@
+# 0.5.17 Thor result: corrected runtime confirmed, graphics still broken
+
+The latest export confirms app 0.5.17, corrected runtime v2 and matching
+Windows/CPUID reports in both preflight and launch parent/child processes.
+The same missing menu elements and severe character-selection corruption remain
+at about 13 FPS. The CPU-reporting correction is real but insufficient.
+The retained graphics capture also completed with the same bounded observations.
+[Current audit and diagnostic design](game-math-0518.md).
+
+0.5.18 adds a bounded, exact-client-guarded observation of the game's actual
+lazy math dispatch and 192 synthetic arithmetic checks through its selected
+pure routines. It is a diagnostic, not a claimed graphics fix. Local compilation,
+private reference replay and host oracle checks pass; CI qualification and APK
+delivery are pending. Do not distribute until those checks complete.
+
+Next device check after qualification: one FEX launch with startup/graphics
+capture enabled, Stop/export. No new runtime installation or standalone checks.
+Do not repeat the completed precision/DXVK/Box64 matrices or request client DLLs.
+Preserve client `30251204_1`, original xiloader, working Box64 and Termux server.
+Repo changes/pushes remain authorized. Earlier entries below are historical.
+
+---
+
 # 0.5.17 delivered: FEX CPU-feature correction qualified; Thor rendering check next
 
 The exact uploaded client DLLs match the working Box64 and broken FEX exports.

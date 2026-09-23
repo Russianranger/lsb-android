@@ -15,6 +15,13 @@ class GraphicsContracts(unittest.TestCase):
                           b'lsb-d3d8-v1 private 00000001\n')
         self.assertEqual(report['graphics']['records'],[dict(event='device',behavior_flags=32,width=1280,height=720)])
         self.assertNotIn('secret',json.dumps(report));self.assertNotIn('private',json.dumps(report))
+    def test_game_math_receipts_survive_chunking_without_free_text(self):
+        report=self.parse(b'lsb-startup-v1 main_math_dispatch 00000001 00000002 00000002 00000222\n'
+                          b'lsb-startup-v1 main_math_result 00000001 00000002 00000000 000000c0\n'
+                          b'lsb-startup-v1 main_math_actual 00000001 00000002 00000000 00000000 secret\n')
+        self.assertEqual([(r['event'],r['code'],r['detail']) for r in report['records']],
+                         [('main_math_dispatch',2,0x222),('main_math_result',0,192)])
+        self.assertNotIn('secret',json.dumps(report))
     def test_trace_absent_when_off_and_bounded_separately_from_startup(self):
         self.assertNotIn('graphics',self.parse(b'info: DXVK: v2.7.1\n'))
         raw=b'lsb-startup-v1 game_main_enter 00000001 00000002 00000000 00000000\n'

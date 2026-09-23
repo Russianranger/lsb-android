@@ -81,7 +81,10 @@ class StartupDiagnostics:
                      'ffxi_com_enter','ffxi_com_return','game_start_hook_ready','game_start_enter','game_start_return',
                      'game_main_com_enter','game_main_com_return','game_main_hook_ready','game_main_enter','game_main_return',
                      'main_import_hooks','main_directory','main_file_open','main_file_read','main_file_size',
-                     'main_directplay_load','main_windows_version','main_window_class','main_window_create','main_d3d8_create'}
+                     'main_directplay_load','main_windows_version','main_window_class','main_window_create','main_d3d8_create',
+                     'main_math_profile','main_math_dispatch','main_math_final','main_math_cpu','main_math_unavailable',
+                     'main_math_skipped','main_math_begin','main_math_result','main_math_returns','main_math_case',
+                     'main_math_expected','main_math_actual'}
             if name.decode() in allowed:
                 self.add('startup',name.decode(),process_id=int(pid,16),thread_id=int(tid,16),code=int(code,16),detail=int(detail,16))
             return

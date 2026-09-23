@@ -209,6 +209,7 @@ static HRESULT WINAPI gt_present(IDirect3DDevice8 *s,const RECT *a,const RECT *b
     if(s==gt.device&&gt.active){
         if(!gt_owner()){if(GetTickCount64()-gt.started>=60000)gt_finish(2);SetLastError(e);return hr;}
         gt.frame++;gt.samples=0;
+        if(gt.frame==1||gt.frame==32)gm_observe(FALSE);
         if(gt.frame==1||gt.frame%32==0)gt_report();
         if(gt.frame>=GT_FRAMES)gt_finish(1);else if(GetTickCount64()-gt.started>=60000)gt_finish(2);
     }
@@ -221,7 +222,7 @@ static ULONG WINAPI gt_device_release(IDirect3DDevice8 *s){
 }
 #define GT_DEVICE_SLOTS(X) X(Release,gt_device_release) X(CreateVertexBuffer,gt_create_vb) X(DrawPrimitive,gt_dp) X(DrawIndexedPrimitive,gt_dip) X(DrawPrimitiveUP,gt_up) X(DrawIndexedPrimitiveUP,gt_iup) X(Present,gt_present)
 static void gt_finish(DWORD reason){
-    if(!InterlockedExchange((volatile LONG*)&gt.active,FALSE))return;gt_report();BOOL restored=TRUE;
+    if(!InterlockedExchange((volatile LONG*)&gt.active,FALSE))return;gt_report();gm_observe(TRUE);BOOL restored=TRUE;
 #define RESTORE(name,fn) restored=gt_slot((void**)&gt.dev_table->name,(void*)fn,(void*)gt.dev.name)&&restored;
     GT_DEVICE_SLOTS(RESTORE)
 #undef RESTORE
