@@ -1,3 +1,37 @@
+# Thor 0.5.16 game capture received: rendering fault still unresolved
+
+The requested FEX game capture is verified against the delivered APK.
+It observed 65,536 UP draws, no failed draws, and 224 sampled vertices with
+no non-finite/extreme-position/invalid-RHW flags. It reached its draw cap at
+frame 216 and restored its hooks. This covers part of play; it does not
+establish that all submitted geometry or the later character-selection scene
+is correct. Screenshots still show missing menu elements and severe corruption.
+
+[Current capture audit, limits and next device comparison](thor-game-capture-0516.md).
+
+The game has 569 SHM uploads with zero fallback/attachment failures. Runtime,
+DXVK 2.7.1, Turnip 26, strict64, prepared-client and original-loader identities
+are correct. Captured states include DXT1/DXT3 textures and pretransformed UP
+geometry; no specific CPU, texture or render-state fix is established.
+Do not repeat the completed on/off pixel checks, DXVK-version game comparison,
+or this exact FEX capture.
+
+**Next uses the existing 0.5.16 APK: one Box64 game capture.** Stop, uncheck
+**FEX / native ARM64 Wine · experimental**, retain DXVK 2.7.1 and the other
+graphics settings, and enable **Capture FFXI startup and graphics**. Launch
+to the same agreement/character-selection screens, screenshot, Stop/export
+Diagnostics, then disable capture. This supplies the missing matching capture
+from the previously working runtime stack. Its separate Wine environment means
+it is not a pure CPU-only comparison.
+
+No binary workaround is justified by this capture alone. Preserve the prepared
+client `30251204_1`, original xiloader and working Termux server. No runtime
+installation, client preparation, re-import or prefix reset is needed.
+Authorization to change and push the repo persists. This checkpoint changes
+documentation only. Earlier entries below are historical.
+
+---
+
 # Ready for Thor: bounded D3D8 game capture (0.5.16)
 
 The actual-game DXVK 2.5.3 comparison is complete. Selected DLL hashes confirm
