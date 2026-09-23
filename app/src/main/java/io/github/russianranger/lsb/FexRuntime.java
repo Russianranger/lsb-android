@@ -78,7 +78,7 @@ final class FexRuntime {
         File stage=new File(destination.getParentFile(),generation+".new");
         TarExtractor.remove(stage);stage.getParentFile().mkdirs();
         try{
-            if(source.isDirectory())PreparedClientStore.copyRuntimePrefix(source,stage,progress);else stage.mkdirs();
+            if(source.isDirectory())PreparedClientStore.copyRuntimePrefix(source,stage,text->progress.update(text.replace("Copying working installation","Copying Windows environment for FEX")));else stage.mkdirs();
             ClientRuntime.write(new File(stage,"lsb-runtime-engine.json"),identity);
             new File(stage,"lsb-prefix-ready.json").delete();ClientRuntime.interrupted();
             // Only a prior incomplete FEX copy can occupy this exact destination.
