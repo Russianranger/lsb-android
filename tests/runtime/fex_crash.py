@@ -1,7 +1,9 @@
 """Credential-free FEX crash check; retain raw diagnostics from this owned PE only."""
 import os,sys,uuid
+from pathlib import Path
 sys.path.insert(0,'/opt/lsb')
 from supervisor import Supervisor
+Path('/session/stop').unlink(missing_ok=True)
 s=Supervisor(dict(format=1,engine='fex',session_id=str(uuid.uuid4()),renderer='software',audio=False,action='check-launcher'))
 try:
     # integration.py has initialized and verified this native prefix. This
