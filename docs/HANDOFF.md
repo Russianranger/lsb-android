@@ -1,3 +1,30 @@
+# Thor 0.5.15 results received: game rendering still unresolved
+
+**All three requested exports have been audited.** Both strict64 and full80
+Windows checks pass all 128 pixel samples on Adreno 740 with DXVK 2.7.1 fixed.
+Both interactive checks complete. The actual FEX game still has the broken
+menu: 186 game SHM uploads, zero fallback/failure, and about 13 Surface posts/s.
+Its newly classified DXVK warning is `line_pattern_unsupported`; the exact
+DXVK implementation does not establish that warning as the rendering cause.
+
+[Current evidence, source findings and next comparison](thor-pixel-results-0515.md).
+Do not repeat the completed on/off Windows checks. On the existing APK, the
+next useful test is one launch to the same menu with **DXVK 2.7.1 · experimental**
+unchecked (bundled 2.5.3), keeping FEX faster x87 and the other settings fixed.
+Capture a screenshot, Stop/export, then restore 2.7.1. This isolates the DXVK
+version in the actual failing game; no new build is needed for that comparison.
+
+No rendering fix is claimed. Preserve the prepared client `30251204_1`, original
+xiloader and working Termux server. User authorization for repo changes and
+pushes remains active. Box64 is the previously working rendering baseline.
+The hardcoded `app=0.5.14` export label is stale in 0.5.15; the new pixel and
+warning receipts confirm the new diagnostics ran. Correct the version reporting
+in the next APK; do not ask the user to reinstall for this label alone.
+
+Earlier qualification and device-test instructions below are historical.
+
+---
+
 # Ready for Thor: graphics diagnostics (0.5.15)
 
 **0.5.14 FEX is not accepted for real FFXI.** Faster x87 improved the user's
