@@ -42,7 +42,11 @@ Proton 10 ARM64X or async-DXVK fork.
   `175f344e3db2e11b3d53f4f828ae7b5f0073a4d239b9600fa023ef4b90eb5a7e`.
 
 Built on Bookworm to match the existing glibc runtime. Wine's bounded eight
-second Unix process-exit grace is retained. No weaker FEX memory-ordering
+second Unix process-exit grace is retained. Wine upstream commit
+`d53a9ba0cd5ee46852b00e4a106e2eb679b5aa3d` is backported to provide
+`RtlWow64SuspendThread`, an import required by FEX but absent in stock Wine
+10.0. It uses upstream's `NtSuspendThread` implementation. The build checks
+every FEX import against the actual packaged Wine exports. No weaker FEX memory-ordering
 settings, recurring observer scans, CPU affinity or speculative driver flags
 are introduced.
 

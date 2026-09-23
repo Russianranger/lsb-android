@@ -28,7 +28,9 @@ def verify(wine,bundle,prefix):
                 if f.read(6)!=b'PE\0\0\x64\xaa':raise ValueError('FEX DLL must be ARM64')
             elif h[:5]!=b'\x7fELF\x02' or struct.unpack_from('<H',h,18)[0]!=183:
                 raise ValueError('FEX Wine host must be native ARM64')
-    return {k:expected[k] for k in ('candidate','sha256','wine_commit','fex_commit','guest','host')}
+    result={k:expected[k] for k in ('candidate','sha256','wine_commit','fex_commit','guest','host')}
+    result['wine_backports']=expected.get('wine_backports',[])
+    return result
 
 def select_translator(prefix):
     # Wine 10 uses the default value of the x86 subkey, not a value named x86.

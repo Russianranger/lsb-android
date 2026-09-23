@@ -11,7 +11,10 @@ cp out/runtime-probes/liblsb-gamepad.so out/fex-test/backend/
 chmod +x out/fex-test/backend/{vulkan-probe,wineserver,x11-frame-bridge,x11-upload-check}
 docker import .tools/runtime/runtime-arm64.tar.gz lsb-fex:base
 # Audit dynamic dependencies in the actual unchanged Bookworm device rootfs.
+# Wine loads its own ntdll/win32u by absolute path; standalone ldd needs their
+# packaged directory to resolve those same internal modules.
 docker run --rm -v "$PWD/out/fex-test/wine:/opt/fex:ro" lsb-fex:base sh -ec '
+ export LD_LIBRARY_PATH=/opt/fex/lib/wine/aarch64-unix
  for f in /opt/fex/bin/wine /opt/fex/bin/wineserver /opt/fex/lib/wine/aarch64-unix/*.so; do
    ldd "$f"; done' > out/fex-test/logs/dependencies.log
 if grep -q 'not found' out/fex-test/logs/dependencies.log; then cat out/fex-test/logs/dependencies.log; exit 1; fi

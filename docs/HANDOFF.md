@@ -15,12 +15,14 @@ No client, server or xiloader source update, re-import, re-preparation or manage
 server migration is authorized for this comparison. Keep the working Termux
 server and client `30251204_1`.
 
-The native Wine/FEX source build and packaging passed in run `35809818045`.
-Artifact `10729438430` contains the pinned 318,094,507-byte runtime archive,
-SHA-256 `7afff72cb955994d33b3a668a4bd7a17f61444082c5cc2f7c59d23dd62f78fe4`.
-Native Wine ELF and FEX PE architecture checks pass; FEX imports only Wine
-`ntdll.dll` and `wow64.dll`. FEX compatibility gates and the new signed APK
-are not yet complete. The completed 0.5.12 CI/APK records below describe the earlier build,
+The corrected native source build passed in run `35811359812`, artifact
+`10729768931`. Its complete PE import/export audit includes the necessary
+upstream Wine thread API backport `d53a9ba0cd5ee46852b00e4a106e2eb679b5aa3d`.
+Pinned runtime SHA-256 `99c270eefe20e32d942ba6a77ad1ea0d69097ed31b9830879fa749630ce15c89`, 318,095,255 bytes.
+The first artifact was rejected for that missing export; the dependency audit
+was also corrected to resolve Wine's own ntdll.so/win32u.so modules. Native
+execution compatibility gates and the new signed APK are not yet complete.
+The completed 0.5.12 CI/APK records below describe the earlier build,
 not evidence for 0.5.13. Update this section with actual qualification results
 before delivering the new APK; do not claim a Thor performance gain from CI.
 

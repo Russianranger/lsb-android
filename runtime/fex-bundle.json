@@ -5,8 +5,11 @@
   "fex_commit": "320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab",
   "guest": "i386",
   "host": "aarch64",
-  "sha256": "7afff72cb955994d33b3a668a4bd7a17f61444082c5cc2f7c59d23dd62f78fe4",
-  "bytes": 318094507,
-  "manifest_sha256": "9649333573a97a8b0f412ee583515b8a2c33d7aaee471a6150c2478ace58fe22",
+  "wine_backports": [
+    "d53a9ba0cd5ee46852b00e4a106e2eb679b5aa3d"
+  ],
+  "sha256": "99c270eefe20e32d942ba6a77ad1ea0d69097ed31b9830879fa749630ce15c89",
+  "bytes": 318095255,
+  "manifest_sha256": "ecdd600ed8d431525792dbf8c15b671d30972c52a3c79a71ffdd82ad8f123e2f",
   "url": "https://github.com/Russianranger/lsb-android/releases/download/runtime-fex-v1/runtime-fex-arm64.tar.gz"
 }
