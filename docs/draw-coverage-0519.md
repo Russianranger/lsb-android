@@ -1,5 +1,10 @@
 # Thor 0.5.18 result and broader draw coverage
 
+**Updated plan:** the APK-only candidate below was withheld after its qualification
+exposed a FEX condition-flag defect. Final 0.5.19 includes a corrected FEX runtime
+v3 as well as this observer. Follow [the fix and installation audit](x87-flags-0519.md);
+the earlier APK-only instructions and build identity below are historical.
+
 ## Received device evidence
 
 `lsb-support(9).zip` (Library ID `libfile_603b5a6d876c81918c0ec9a59478e6a8`)

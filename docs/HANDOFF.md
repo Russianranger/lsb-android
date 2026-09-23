@@ -1,21 +1,47 @@
-# 0.5.19: FEX x87 condition-flag correction in qualification
+# 0.5.19 delivered: reproduced FEX x87 branch defect corrected
 
-Broader draw qualification exposed a concrete pinned FEX bug: its x87-store
-NaN helper overwrites the integer condition flags used by a following branch.
-The texture test took ordinary UP paths where its source requested indexed UP.
-A focused translator patch saves/restores NZCV; an independent 12-case fixture
-reproduces 8 full80 / 4 strict64 failures before the patch and requires zero
-after it.
-Runtime build `35932750549` passes at `3519328` (0/12 after fix in both modes).
-Final qualification,
-manifest pin, original-signature APK and immutable runtime v3 delivery follow.
-[Source diagnosis, regression and receipts](x87-flags-0519.md).
+The broader draw test exposed FEX 2510's x87-store NaN helper overwriting
+condition flags from a preceding integer comparison. The targeted patch saves
+and restores NZCV. Independent synthetic regression: before fix, 8/12 full80
+and 4/12 strict64 cases fail; after fix, both modes pass all 12. This is a
+confirmed translator defect/fix; actual Thor FFXI rendering remains unverified.
+[Diagnosis, qualification and failed-run audit](x87-flags-0519.md).
 
-The previously planned diagnostic-only 0.5.19 APK is withheld. The next candidate
-needs the corrected FEX runtime download as well as the APK. This supersedes
-older APK-only instructions below. No client/loader/server changes or resets.
-Actual Thor rendering remains unverified; do not claim a confirmed game fix.
-User authorized changes/pushes. No additional permission needed.
+Implementation `ba052de14f3e10bffe114d209095ade70d56f529` passes all seven jobs
+in [run 35933191991](https://github.com/Russianranger/lsb-android/actions/runs/35933191991).
+FEX: 138 PASS records; Box64: 163. New branch checks pass in both FEX modes, four Box64 cycles and native Windows;
+expanded texture/draw summaries pass on both ARM64 engines.
+A parallel PR run hit an existing pixel-fixture timeout without any observer
+device or batch records; full evidence and the independent passing push run are documented.
+No assertions/timeouts were relaxed or failed jobs retried unchanged.
+
+Signed **LSB-Android-0.5.19.apk**, versionCode 35, 18,301,076 bytes.
+SHA-256 `9c04e6dd6e9b4fc694193b51d3ad1b35671427062c5cc694ec0ec58370143d7c`.
+Original signer `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Library ID `libfile_f15889612ae08191b5142064fe1b49d4`;
+file ID `file_00000000a13481f9895be0cb9a579947`. Payload matches passing CI.
+The diagnostic-only candidate of the same version was never delivered.
+
+**Next phone action: APK update AND Install FEX runtime on Runtime.**
+The new immutable [runtime v3](https://github.com/Russianranger/lsb-android/releases/tag/runtime-fex-v3)
+is published, 318,095,727 bytes (~304 MiB), archive SHA-256
+`030f38066af7b786c142e199cb84adec037840b0f029338849e43f99203a93e1`.
+Its translator is `6cbf54493c8f9a4ef4ddda6e5e5ebb840988c0094880cb4a038c4e75347bbd8e`;
+manifest lists both CPU-feature and x87-flags patches. APK alone cannot apply
+this translator correction. It preserves the prepared client and Box64 baseline.
+
+Keep FEX/faster x87/DXVK 2.7.1 and current display settings. Enable **Capture
+FFXI startup and graphics**, launch through agreement to character selection,
+wait there about 60 seconds, Stop/export Diagnostics, disable capture. One
+launch/export; no repeated standalone runtime, precision/DXVK or Box64 matrix.
+Preserve prepared client `30251204_1`, original xiloader and Termux server;
+no reset/reimport/reprepare/client update. Repo changes/pushes remain authorized.
+
+0.5.18's actual-game SSE2 dispatcher and isolated math worker passed 192 results
+while graphics still failed. Do not repeat that diagnostic. 0.5.19 retains it
+and adds bounded position/UV/alpha summaries over 180 seconds, up to 1,024 UP
+draws per sampled frame. No proprietary code/assets or raw geometry is exported.
+World entry remains unverified. Earlier entries below are historical.
 
 ---
 
