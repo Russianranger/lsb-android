@@ -88,12 +88,61 @@ It checks exit status and the exact completion receipt and preserves a
 version-specific JSON report. The fixture is distributed only with CI assets;
 it is not added to the APK or production preflight.
 
-Local MinGW compilation and Python syntax checks pass. ARM64 CI execution is
-pending at this implementation checkpoint. A passing fixture would narrow
-the untested cases; it would not reproduce FFXI or qualify FEX on Adreno.
-Do not manufacture a CPU or texture fix if no reproducer is found.
+Local MinGW compilation and Python syntax checks pass. The PR's real ARM64
+FEX job `107270094967` passes with 130 PASS receipts. Both new fixture runs
+pass: DXVK 2.5.3/full80 and DXVK 2.7.1/strict64, each with 1,512 draws,
+144 expected pixel samples and x87 control `0x003f`. The full FEX migration,
+launch, controller, audio and PRoot checks also pass. CI uses lavapipe;
+this does not reproduce FFXI or qualify FEX on Adreno.
+
+The downloaded `fex-runtime-evidence` artifact `10763253880` is verified at
+SHA-256 `cf4f973bd8386ab8ecede4ea48ef8016198a72f82214ff9f43ce66578cf54140`.
+Its two texture JSON reports agree with their exact completion receipts.
+Box64 job `107270095091` passes with 147 PASS receipts, including all four
+new fixture runs. The modern-Mesa cycles select DXVK 2.5.3 and 2.7.1; both
+older-Mesa cycles select 2.5.3 (including the requested-2.7.1 fallback).
+Each verifies 1,512 draws, 144 expected pixels and x87 control `0x003f`.
+The `runtime-evidence` artifact `10764323108` is verified at SHA-256
+`a4b11799536d195d9fbd6470222abe2baf79495a66b3f38608a45ef734057646`.
+All four JSON reports match their completion receipts. The synthetic
+operations pass under both stacks; no game-specific CPU or texture fix has
+been identified.
+
+Implementation is `eda376514a403c6bf0957fb02f337d7aab078b3d`.
+The independent [push run 35886842062](https://github.com/Russianranger/lsb-android/actions/runs/35886842062)
+passes verify, Windows launcher, server and presentation jobs, but both ARM64
+jobs stop before the new fixture: Box64 job `107270112859` times out in the
+existing observed pixel fixture; FEX job `107270112869` times out in the
+ordinary unobserved pixel check when entering the modern-DXVK cycle. These
+are retained failures of unknown cause, not texture-test passes or failures.
+No retry or timeout relaxation was used. Matching
+[PR run 35886847711](https://github.com/Russianranger/lsb-android/actions/runs/35886847711)
+passes all six applicable jobs; runtime publication correctly skips.
 
 The arithmetic, DXVK-version, FEX game and matching Box64 comparisons are now
 complete. Do not ask the user to repeat them. Preserve Box64 as the working
 baseline, the prepared `30251204_1` client, original loader and Termux server.
 Changes and pushes remain authorized.
+
+## Next source evidence
+
+The exports include the hash of `FINAL FANTASY XI/FFXiMain.dll`, but not that
+binary. It is also absent from the available workspace. Obtain that one file
+from the same client import for static inspection of CPU-feature dispatch,
+math routines and rendering call sites. The expected SHA-256 is
+`d528142a9bfb7767b4d4574dde531ea87a673670c81892f1eab37563b82c0235`.
+Do not publish the client binary in this repository. Static inspection can
+guide an independent reproducer; it cannot establish which path executed
+during the captured game session by itself.
+
+Upstream FEX fixes are leads, not an established FFXI fix. For example,
+[FEX #5806](https://github.com/FEX-Emu/FEX/pull/5806) repairs non-SVE packed
+double-to-integer precision loss. The pinned
+[Windows CPU-feature report](https://github.com/FEX-Emu/FEX/blob/320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab/Source/Windows/Common/CPUFeatures.cpp)
+advertises 3DNow through `IsProcessorFeaturePresent`, while
+[host-feature selection](https://github.com/FEX-Emu/FEX/blob/320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab/Source/Common/HostFeatures.cpp)
+disables its CPUID exposure on Windows. Neither capture identifies the
+relevant instruction or query in FFXI. Do not backport a guess or replace the
+qualified Wine/FEX bundle merely
+because a newer upstream release exists. First tie the affected operation to
+this client's code and make a standalone correctness test.

@@ -13,7 +13,21 @@ These shared receipts do not identify a cause of the FEX corruption.
 [Comparison and automated investigation](box64-fex-comparison-0516.md).
 A CI-only synthetic fixture now exercises the captured DXT1/DXT3 formats,
 MODULATE2X/alpha/additive combinations, and 378 small UP draws per frame.
-It is under ARM64 qualification. No production APK/runtime change is made.
+Implementation `eda376514a403c6bf0957fb02f337d7aab078b3d` is qualified by
+PR run `35886847711`: all six applicable jobs pass; publication skips.
+FEX has 130 PASS receipts and Box64 147, including two FEX and four Box64
+runs of the new fixture. Each verifies 1,512 draws and 144 expected pixels.
+The artifacts and completion receipts are verified. This is a synthetic
+lavapipe result, not an FFXI/Adreno fix. Independent push run `35886842062`
+times out in existing pixel fixtures before the new test; those failures
+remain recorded. No retry or timeout change was used. No production APK or
+runtime change is made.
+
+Next source evidence: obtain `FINAL FANTASY XI/FFXiMain.dll` from this same
+client import. The support export contains its hash, not the binary, and it
+is absent locally. Inspect CPU dispatch/math/rendering call sites to guide
+an independent reproducer. Expected SHA-256 is in the comparison audit.
+Keep client binaries out of the repository; do not guess a runtime patch.
 
 The requested device comparisons are complete; do not repeat them.
 Box64 remains the usable baseline. Keep the prepared client `30251204_1`,
