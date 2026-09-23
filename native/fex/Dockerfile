@@ -39,9 +39,19 @@ RUN mkdir wine-build && cd wine-build && ../wine/configure --prefix=/opt/wine \
     --without-cups --without-sane --without-gphoto --without-pcap --without-kerberos \
     --without-wayland CFLAGS='-O2' \
  && make -j4 && make install DESTDIR=/stage
-RUN cp fex-build/Source/Windows/WOW64/libwow64fex.dll /stage/opt/wine/lib/wine/aarch64-windows/ \
+RUN cp fex-build/Bin/libwow64fex.dll /stage/opt/wine/lib/wine/aarch64-windows/ \
  && mkdir -p /stage/opt/wine/share/lsb-sources \
  && cp wine/COPYING.LIB /stage/opt/wine/share/lsb-sources/Wine-LICENSE \
  && cp fex/LICENSE /stage/opt/wine/share/lsb-sources/FEX-LICENSE
+RUN python3 - <<'PYNOTICE'
+from pathlib import Path
+import shutil
+root=Path('/src/fex')
+for p in root.rglob('*'):
+    if '.git' not in p.parts and p.is_file() and p.name.lower().startswith(('license','copying')):
+        dest=Path('/stage/opt/wine/share/lsb-sources/FEX-notices')/p.relative_to(root)
+        dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,dest)
+PYNOTICE
+RUN llvm-readobj --coff-imports /stage/opt/wine/lib/wine/aarch64-windows/libwow64fex.dll > /stage/opt/wine/share/lsb-sources/fex-imports.txt
 COPY native/fex/pack.py /pack.py
 CMD ["python3", "/pack.py"]
