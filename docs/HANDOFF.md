@@ -1,4 +1,4 @@
-# Current work: Thor FEX regression audit (0.5.14)
+# Ready for Thor: FEX arithmetic comparison (0.5.14)
 
 Thor 0.5.13 is **not accepted for real FFXI**: character selection was mostly
 black and about 5 FPS. The graphics test passed, but that is not proof of game
@@ -35,10 +35,67 @@ relaxation, runtime binary/source update or claimed equivalence to GameHub.
 This x87 mode is a hypothesis for translation cost, not a confirmed black-menu
 fix. Runtime checking and device acceptance must remain distinct.
 
-Current local runtime contracts: 56 pass. CI qualification and signed device
-artifact for 0.5.14 have not yet completed; replace this sentence with actual
-results before delivery. Preserve the working Termux server, client
-`30251204_1`, original xiloader, prepared generation and Box64 rollback.
+## Continuation and release qualification
+
+The user explicitly authorized repository pushes and changes for this
+continuation. Correction `c861f78836fff89e2bcda80329db1c5fe07a6d86` is pushed to
+`codex/client-baseline`. No further publication confirmation is needed within
+this authorized continuation.
+
+The first 0.5.14 CI attempt (`5761a20`, run `35848491912`) exposed a missing
+`<wchar.h>` declaration in the new helper. Its expected 64-bit hash was
+truncated to a signed 32-bit value, falsely reporting an environment mismatch.
+The correction adds the header, makes implicit function declarations fatal
+in Windows helper compilation, and exercises full80/strict64 launch receipts
+on the synthetic launch/relaunch paths. The failed APK was not delivered.
+
+**All seven CI gates pass** for `c861f78836fff89e2bcda80329db1c5fe07a6d86`
+in [push run 35850446810](https://github.com/Russianranger/lsb-android/actions/runs/35850446810):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `fex-runtime`,
+`server-deployment` and `runtime-release`.
+[PR run 35850452933](https://github.com/Russianranger/lsb-android/actions/runs/35850452933)
+passes all six applicable gates; its publication job correctly skips.
+No build, runtime qualification or release gate is pending.
+
+The FEX suites verify actual full80/strict64 precision and Windows-child
+inheritance, including final launch/relaunch environments. Native Wine and
+PRoot graphics, PCM, controller, crash/Stop behavior and preservation of every
+original Box64 prefix file/link pass. Both full Box64 suites preserve the
+accepted display, DXVK 2.7.1 and 2.5.3 fallback, shared-memory upload, audio,
+controller and startup-only observer behavior. The 56 runtime contracts,
+16 Android tests and existing core, native Windows, display and real MariaDB
+deployment/recovery checks pass. CI uses synthetic clients and lavapipe;
+Thor game performance and menu correctness remain device acceptance work.
+
+Push evidence artifacts: Box64 `10746177125`, SHA-256
+`6df43fd2aaa0d0c7332506221b527c25a095f086ad3cf185ba1c56dbe71fd5a6`;
+FEX `10745244740`, SHA-256
+`5be4789bd082004c74a2b259a3b87a47216a59e773ede5637305efe68ede4332`.
+The PR FEX artifact and observed arithmetic timings are recorded in the
+[0.5.14 test document](fex-regression-0514.md).
+
+**Signed device build:** `LSB-Android-0.5.14.apk`, versionCode 30, 18,264,128 bytes,
+SHA-256 `6ee3417227f4b98240bd1f775234f32e27632e30da2cf5635d942c53503bb121`.
+Original signer SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+V2/v3 signatures, alignment, ZIP integrity, package/version, runtime-source
+identity and complete non-signature payload identity against CI artifact
+`10745144523` verify. CI APK SHA-256
+`26312229e8b47184f8759e947a6cc0f53fec207a842f2620e9b720ff2cc0cec7`.
+
+Only the manifest/version, DEX, three runtime Python files and `fex-check.exe`
+change from 0.5.13; `bundle.json` has only reordered keys with identical
+values. All existing native display, upload, graphics, audio, controller,
+launcher, Wine/Box64/PRoot components, FEX runtime and artwork remain
+byte-identical. Existing FEX users need no runtime download.
+
+[Evidence, mechanism and focused Thor test](fex-regression-0514.md).
+The next device checkpoint is faster x87 on/off at the same scene with FEX,
+Turnip 26, DXVK 2.7.1, 60 Hz, Native Surface and shared-memory upload. Keep
+sysmem, two-worker tuning and startup capture off. Preserve the working
+Termux server, client `30251204_1`, original xiloader, preparation and Box64
+rollback. The black-menu/FPS result remains unverified until the Thor test.
+
 
 ---
 
