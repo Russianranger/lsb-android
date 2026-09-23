@@ -62,5 +62,19 @@ PYNOTICE
 RUN llvm-readobj --coff-imports /stage/opt/wine/lib/wine/aarch64-windows/libwow64fex.dll > /stage/opt/wine/share/lsb-sources/fex-imports.txt
 COPY native/fex/verify-imports.py /verify-imports.py
 RUN python3 /verify-imports.py
+# Rebuild only the translator after cached Wine and baseline FEX are complete.
+# Keep the original solely for the independent before/after regression check.
+RUN cp /stage/opt/wine/lib/wine/aarch64-windows/libwow64fex.dll /baseline-wow64fex.dll
+COPY native/fex/cpu-features.patch /cpu-features.patch
+RUN git -C fex apply /cpu-features.patch \
+ && cmake --build fex-build --target wow64fex --parallel 4 \
+ && cp fex-build/Bin/libwow64fex.dll /stage/opt/wine/lib/wine/aarch64-windows/ \
+ && cp /cpu-features.patch /stage/opt/wine/share/lsb-sources/ \
+ && python3 /verify-imports.py
+COPY tests/windows/cpu-dispatch.c /cpu-dispatch.c
+RUN i686-w64-mingw32-clang -std=c11 -O2 -Wall -Wextra -Werror -msse2 -static \
+    -Wl,--no-insert-timestamp /cpu-dispatch.c -o /cpu-dispatch.exe
+COPY native/fex/check-cpu-dispatch.py /check-cpu-dispatch.py
+RUN python3 /check-cpu-dispatch.py
 COPY native/fex/pack.py /pack.py
 CMD ["python3", "/pack.py"]

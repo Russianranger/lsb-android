@@ -1,3 +1,22 @@
+# Exact client received: CPU-feature correction in progress
+
+Both uploaded client DLLs match the Box64/FEX capture hashes. Private code
+inspection identifies a concrete FEX feature-reporting mismatch: Windows
+reports 3DNow while CPUID disables it. The game's D3DX dispatcher consequently
+retains x87 math and never reaches its SSE2 choice. Local replay confirms
+that behavior; live ARM64 regression and device confirmation remain pending.
+
+[Evidence, limits and candidate correction](ffxi-cpu-dispatch-0517.md).
+A narrow FEX patch makes the Windows report follow CPUID. The isolated runtime
+build checks the same independent fixture against original/corrected FEX in
+both precision modes, requiring the original mismatch and correct numeric
+results. Runtime/APK integration follows qualification, not a guessed upgrade.
+Do not request the DLLs or completed device comparisons again. Preserve the
+prepared client, original loader, Box64 fallback and Termux server. Repo
+changes and pushes remain authorized. Earlier entries below are historical.
+
+---
+
 # Box64 comparison complete: both screens render correctly
 
 On 0.5.16, the same agreement/character-selection screens render correctly
