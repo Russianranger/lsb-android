@@ -1,4 +1,4 @@
-# Current work: FEX runtime follow-up (0.5.13)
+# Completed milestone: selectable FEX runtime (0.5.13)
 
 The latest 0.5.12 Thor result shows no meaningful improvement from sysmem or
 two DXVK workers. Both were actually applied; neither is an accepted FPS fix.
@@ -9,22 +9,84 @@ Both game sessions exited cleanly. Preserve the accepted DXVK 2.7.1 improvement,
 60 Hz and the 0.5.8 periodic-stutter fix.
 
 The user explicitly requested FEXCore implementation. Work continues from the
-existing branch; native ARM64 Wine 10 + FEX 2510 is being qualified as a separate
+existing branch; native ARM64 Wine 10 + FEX 2510 is implemented as a separate
 runtime with isolated copied prefixes and an explicit Box64 rollback selector.
 No client, server or xiloader source update, re-import, re-preparation or managed
 server migration is authorized for this comparison. Keep the working Termux
 server and client `30251204_1`.
 
-The corrected native source build passed in run `35811359812`, artifact
-`10729768931`. Its complete PE import/export audit includes the necessary
-upstream Wine thread API backport `d53a9ba0cd5ee46852b00e4a106e2eb679b5aa3d`.
+The native source build passed in run `35811359812`, artifact `10729768931`.
+Its complete PE import/export audit includes the upstream Wine thread API
+backport `d53a9ba0cd5ee46852b00e4a106e2eb679b5aa3d` (upstream's semi-stub).
 Pinned runtime SHA-256 `99c270eefe20e32d942ba6a77ad1ea0d69097ed31b9830879fa749630ce15c89`, 318,095,255 bytes.
-The first artifact was rejected for that missing export; the dependency audit
-was also corrected to resolve Wine's own ntdll.so/win32u.so modules. Native
-execution compatibility gates and the new signed APK are not yet complete.
-The completed 0.5.12 CI/APK records below describe the earlier build,
-not evidence for 0.5.13. Update this section with actual qualification results
-before delivering the new APK; do not claim a Thor performance gain from CI.
+
+The **complete FEX runtime gate passes** for `e60b1b64e5567f7fe4cca2d70cca418cd4fa9edd`
+in run `35814095537`, job `107032319489`: actual PE32 FEX execution, copied-prefix
+migration, software and DXVK 2.5.3/2.7.1 pixels, actual shared-memory uploads,
+60 Hz Native Surface, PCM, input, controller axes/buttons/disconnect, launch,
+relaunch, startup-only observer idle/Stop/crash, and patched PRoot all pass.
+Every baseline prefix file/link remains unchanged after both container and
+PRoot runs. CI Vulkan is lavapipe; Thor FPS and real-client compatibility still
+require device testing.
+
+Qualification fixed a missing Wine export, the isolated CI prefix's ownership,
+Wine-internal dependency-audit paths, and the FEX debugger hang. Wine matches
+`winedbg.exe=` exactly; `winedbg=` does not disable the executable. Correcting
+that override **only for FEX** makes the real-window crash and both owned
+exception fixtures return `0xc0000094` without hanging. No crash assertion,
+privacy filter or startup-only observer policy was weakened.
+
+**Signed device build:** `LSB-Android-0.5.13.apk`, versionCode 29,
+18,260,032 bytes, SHA-256
+`2c22d4d0e86c64a3b92ec7a7719332901df192532182860630e9ac38ee7668e1`.
+Original signer SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`;
+v2/v3 signatures, alignment, ZIP integrity, package/version and CI payload
+identity verify. Device artifact `10730898789`, CI APK SHA-256
+`7e2be16ff4cd28d62cf29bc27848b97d16dda81590f04a2cd84130d388435926`.
+Every pre-existing native display, upload, graphics, audio, controller,
+launcher, PRoot and Wine/Box64 asset and the purple icon remains byte-identical
+to 0.5.12. The FEX-only debugger environment is the final runtime correction.
+
+**All seven CI gates pass** for the final implementation commit
+`e60b1b64e5567f7fe4cca2d70cca418cd4fa9edd` in
+[push run 35814095537](https://github.com/Russianranger/lsb-android/actions/runs/35814095537):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `fex-runtime`,
+`server-deployment` and `runtime-release`.
+[PR run 35814098449](https://github.com/Russianranger/lsb-android/actions/runs/35814098449)
+passes all six applicable gates; its publication job correctly skips.
+No implementation test or release gate is pending.
+
+Both complete Box64 suites retain the accepted DXVK 2.7.1 behavior and 2.5.3
+fallback, real shared-memory uploads, audio, controller and startup-only observer
+idle/Stop/crash checks. The 54 runtime contracts, five server contracts,
+15 Android tests and existing core/native Windows checks also pass. The real
+MariaDB deployment, failed-update preservation, database export, update,
+rollback and four-process lifecycle gate passes. These server fixtures do not
+update the user's Termux installation.
+
+Box64 evidence artifact `10731606754`, SHA-256
+`ddc513c11c51608dca59f6370c7fd5def507e652d281a6f80cd994ef9c5f16a9`.
+FEX evidence artifact `10731625312`, SHA-256
+`a9125d7cde5da7465637a2f414fc6611b753504d3c0f1bcbbeddd7bcee75b5ed`.
+
+The immutable [FEX runtime release](https://github.com/Russianranger/lsb-android/releases/tag/runtime-fex-v1)
+is published. The runtime asset's size and SHA-256 match the APK pin. Its exact
+corresponding source archive is 83,387,434 bytes, SHA-256
+`3e98ee0068ef45fad5bc1db8897854f2de2076f36e248230e1cfc9363de8c950`.
+The prior source artifact lacking `RtlWow64SuspendThread` was rejected and
+never published. During qualification, an earlier Box64 attempt had one
+modern-Mesa wineboot exit `-9`; unchanged later complete suites, including
+both final runs, pass. No new Box64 fix or cause is claimed for that transient.
+
+**First Thor test:** install the signed update in place, keep the working
+Termux server, `30251204_1`, original xiloader and current preparation. Runtime:
+install FEX (about 303 MiB; keep 3 GiB free), select it, then run Windows checks.
+Use 60 Hz, Native Surface, shared-memory upload and DXVK 2.7.1; keep sysmem and
+two-worker experiments off. Repeat a warmed-up route, check audio/right-stick
+axes, exit and relaunch, then export Diagnostics. Switch FEX off for the Box64
+comparison. Full steps and the log audit are in [fex-runtime-0513.md](fex-runtime-0513.md).
+FEX is an opt-in hardware experiment; no Thor FPS improvement is claimed yet.
 
 ---
 

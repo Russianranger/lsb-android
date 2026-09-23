@@ -50,7 +50,14 @@ every FEX import against the actual packaged Wine exports. No weaker FEX memory-
 settings, recurring observer scans, CPU affinity or speculative driver flags
 are introduced.
 
-The runtime is a separately downloaded, size/hash-verified overlay. The APK
+Only FEX disables the exact `winedbg.exe` module name. Wine removes `.dll`,
+but not `.exe`, when matching `WINEDLLOVERRIDES`; the existing `winedbg=`
+setting does not disable that executable. The candidate must propagate a
+crashed child's Windows exit code without waiting in the automatic debugger.
+The credential-free exception fixture exercises both normal error mode and
+explicitly suppressed crash dialogs, alongside the full real-window crash test.
+
+The published runtime is a separately downloaded, size/hash-verified overlay (about 303 MiB; keep 3 GiB free for installation and the copied prefix). The APK
 pins its component manifest. First use copies only the stopped prepared
 Windows prefix into a separate per-client, per-runtime directory; client files
 are mounted from the same accepted preparation. Regular files are copied,
@@ -70,9 +77,28 @@ are exported for the comparison. Existing finite
 graphics, dependency and launch checks remain in effect. Diagnostics records
 the requested engine, source identities, runtime hash and execution proof.
 
+## Qualification evidence
+
+The complete FEX gate passes for `e60b1b64e5567f7fe4cca2d70cca418cd4fa9edd`
+in push run `35814095537` and PR run `35814098449`. The ARM64 container exercises
+actual FEX PE32 execution, copied-prefix conversion, software drawing and both
+DXVK 2.5.3 / 2.7.1. DXVK 2.7.1 uses the shared-memory upload path with real
+pixels, PCM and input. The existing patched PRoot separately exercises software
+D3D8, 60 Hz Native Surface, PCM, input, controller stages and all launch lifecycle
+cases. Both routes compare every original prefix file/link against its stopped
+snapshot. No original prefix changes occurred.
+
+The owned default-error-mode crash log confirms an attempted `winedbg.exe`
+launch is rejected with error 126 after the exact-name override. Both owned
+crash fixtures and the full-window crash case then return the expected
+`0xc0000094`; no timeout or recurring gameplay observer is used to hide a hang.
+The FEX evidence artifact is `10731625312`, SHA-256
+`a9125d7cde5da7465637a2f414fc6611b753504d3c0f1bcbbeddd7bcee75b5ed`.
+This qualifies the backend for a Thor comparison, not an FPS result.
+
 ## Focused Thor comparison
 
-Install the next signed update in place. Preserve the working Termux server,
+Install the signed 0.5.13 update in place. Preserve the working Termux server,
 client `30251204_1`, original xiloader and accepted client preparation. Do not
 update, import or re-prepare the client/server for this test.
 
@@ -96,3 +122,6 @@ checks; CI uses synthetic fixtures and lavapipe, never claims Adreno FPS.
 - [FEX 2510 WoW64 implementation](https://github.com/FEX-Emu/FEX/blob/320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab/Source/Windows/WOW64/Module.cpp)
 - [FEX Windows build workflow](https://github.com/FEX-Emu/FEX/blob/320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab/.github/workflows/wine_dll_artifacts.yml)
 - [Wine 10 CPU-module registration](https://github.com/wine-mirror/wine/blob/b073859675060c9211fcbccfd90e4e87520dc2c2/loader/wine.inf.in)
+
+- [Wine 10 executable override matching](https://github.com/wine-mirror/wine/blob/b073859675060c9211fcbccfd90e4e87520dc2c2/dlls/ntdll/unix/loadorder.c)
+- [Wine thread API backport](https://github.com/wine-mirror/wine/commit/d53a9ba0cd5ee46852b00e4a106e2eb679b5aa3d)
