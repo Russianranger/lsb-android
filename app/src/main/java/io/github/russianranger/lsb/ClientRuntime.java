@@ -196,7 +196,7 @@ final class ClientRuntime {
         java.net.URL address=new java.net.URL(URL);
         for(int redirects=0;redirects<8;redirects++){
             if(!address.getProtocol().equals("https"))throw new IOException("Runtime download requires HTTPS");
-            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.11");
+            HttpURLConnection c=(HttpURLConnection)address.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","LSB-Android/0.5.12");
             try{
                 int code=c.getResponseCode();
                 if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new IOException("Invalid download redirect");address=new java.net.URL(address,location);continue;}
@@ -250,6 +250,8 @@ final class ClientRuntime {
                 request.put("native_surface",context.getSharedPreferences("runtime",0).getBoolean("native_surface",true));
                 request.put("shm_upload",context.getSharedPreferences("runtime",0).getBoolean("shm_upload",true));
                 request.put("dxvk_version",context.getSharedPreferences("runtime",0).getBoolean("dxvk_271",false)?"2.7.1":"2.5.3");
+                request.put("turnip_sysmem",context.getSharedPreferences("runtime",0).getBoolean("turnip_sysmem",false));
+                request.put("dxvk_two_compilers",context.getSharedPreferences("runtime",0).getBoolean("dxvk_two_compilers",false));
                 request.put("dxvk_hud",context.getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));
                 request.put("dxvk_diagnostics",context.getSharedPreferences("runtime",0).getBoolean("dxvk_diagnostics",false));
                 try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}

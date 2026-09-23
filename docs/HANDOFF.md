@@ -1,3 +1,31 @@
+# Current work: Turnip rendering and DXVK compiler scheduling (0.5.12)
+
+The user reports that DXVK 2.7.1 improved the experience, but FPS slowdowns remain.
+`lsb-support (8).zip` confirms hardware Turnip 26 / Adreno 740, DXVK 2.7.1,
+60 Hz and actual game shared-memory uploads (5,439, no fallback/attach failure).
+The ring wait averages 0.0049 ms, so another upload-ring optimization is not
+supported by this evidence. The prior 2.5.3 run used the same upload path.
+
+0.5.12 adds **two separate opt-in experiments**, both default off: Turnip 26
+system-memory rendering (`TU_DEBUG=sysmem`) and two DXVK compiler workers
+(`dxvk.numCompilerThreads=2`). Each applies to the next launch. Their combined
+requested environment must pass eight app-owned D3D8 draw/present frames before
+login; the worker option also requires DXVK's actual two-worker confirmation.
+A failure restores both environment values and retains the already selected
+DXVK pair. Requested/active settings and fallback reason appear in Diagnostics.
+No client/config/source files are changed. This is a qualified experiment, not
+an established fix for the remaining FPS loss. See [evidence and test](graphics-tuning-0512.md).
+
+Implementation and validation are in progress. Replace this paragraph with the
+actual CI results and signed artifact before delivery.
+
+Preserve the existing Termux server, client `30251204_1`, xiloader, preparation,
+accepted startup-only observer, 60 Hz, audio, controller and relaunch behavior.
+Keep DXVK 2.7.1 and shared-memory upload enabled for the focused Thor comparisons;
+there is no need to retest 30 Hz or update/migrate any source.
+
+---
+
 # Completed milestone: Vulkan presentation and DXVK comparison (0.5.11)
 
 The user authorized GPU presentation and DXVK work after reporting no noticeable
@@ -69,7 +97,8 @@ settings unchanged. First test shared-memory Vulkan presentation on / DXVK
 export Diagnostics after each run. Check audio, right-stick camera and relaunch.
 Both options off provide graphics rollback. See [full mechanism and test](gpu-presentation-0511.md).
 
-Thor performance improvement is **not yet measured**. Retain the user's accepted
+Superseded by the 0.5.12 follow-up above: the user reports improved performance
+with DXVK 2.7.1, but remaining slowdowns. The new log confirms it was active. Retain the user's accepted
 0.5.8 periodic-stutter fix and 60 Hz preference; do not treat CI pixel checks as
 a game FPS benchmark or repeat 30 Hz/compression tests as the main experiment.
 

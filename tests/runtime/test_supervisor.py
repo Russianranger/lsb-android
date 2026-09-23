@@ -2,6 +2,51 @@ import importlib.util,json,pathlib,tempfile,unittest,uuid,io,time,hashlib
 from unittest.mock import patch,Mock
 spec=importlib.util.spec_from_file_location('supervisor',pathlib.Path(__file__).resolve().parents[2]/'runtime/supervisor.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class Contracts(unittest.TestCase):
+ def tuning_fixture(self,folder,request,env=None):
+  s=object.__new__(module.Supervisor);s.req=dict(renderer='turnip26',**request)
+  s.env=dict(env or {});s.state={};s.status=Mock();s.spawn=Mock();s.wait=Mock();s.logs=[Mock()]
+  (folder/'graphics-tuning.log').write_text('info: DXVK: Using 2 compiler threads\n')
+  s.spawn.return_value.poll.return_value=0
+  return s
+ def test_tuning_disabled_preserves_environment_and_skips_check(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   env={'TU_DEBUG':'perf','DXVK_CONFIG':'d3d9.maxFrameRate = 30','LD_PRELOAD':'gamepad upload'}
+   s=self.tuning_fixture(pathlib.Path(t),{},env);s.configure_graphics_tuning()
+   self.assertEqual(s.env,env);s.spawn.assert_not_called()
+   self.assertFalse(any(s.status.call_args.kwargs['graphics_tuning']['active'].values()))
+ def test_tuning_controls_are_independent_and_confirmed(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for sysmem,workers in [(True,False),(False,True),(True,True)]:
+    s=self.tuning_fixture(pathlib.Path(t),{'turnip_sysmem':sysmem,'dxvk_two_compilers':workers},{'LD_PRELOAD':'gamepad upload','DXVK_CONFIG':'d3d9.maxFrameRate = 30'})
+    s.configure_graphics_tuning();report=s.status.call_args.kwargs['graphics_tuning']
+    self.assertEqual(report['active'],{'turnip_sysmem':sysmem,'dxvk_two_compilers':workers})
+    self.assertEqual(s.env.get('TU_DEBUG'), 'sysmem' if sysmem else None)
+    self.assertEqual('dxvk.numCompilerThreads = 2' in s.env['DXVK_CONFIG'],workers)
+    self.assertTrue(s.env['DXVK_CONFIG'].startswith('d3d9.maxFrameRate = 30'));self.assertEqual(s.env['LD_PRELOAD'],'gamepad upload')
+    self.assertTrue(s.spawn.call_args.kwargs['fixed_output'])
+ def test_tuning_failed_or_unconfirmed_check_restores_both_options(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for previous in ({},{'TU_DEBUG':'perf','DXVK_CONFIG':'d3d9.maxFrameRate = 30'}):
+    for failure in ('exit','unconfirmed'):
+     s=self.tuning_fixture(pathlib.Path(t),{'turnip_sysmem':True,'dxvk_two_compilers':True},previous)
+     if failure=='exit':s.wait.side_effect=RuntimeError('fixture failure')
+     else:(pathlib.Path(t)/'graphics-tuning.log').write_text('info: DXVK: Using 8 compiler threads\n')
+     s.configure_graphics_tuning();self.assertEqual(s.env,previous)
+     report=s.status.call_args.kwargs['graphics_tuning'];self.assertIn('fallback',report);self.assertFalse(any(report['active'].values()))
+ def test_tuning_does_not_swallow_stop_or_apply_to_software(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   s=self.tuning_fixture(pathlib.Path(t),{'turnip_sysmem':True,'dxvk_two_compilers':True});s.wait.side_effect=module.Stopped()
+   with self.assertRaises(module.Stopped):s.configure_graphics_tuning()
+   s=self.tuning_fixture(pathlib.Path(t),{'turnip_sysmem':True,'dxvk_two_compilers':True});s.req['renderer']='software';s.configure_graphics_tuning()
+   self.assertEqual(s.env,{});s.spawn.assert_not_called()
+   s=self.tuning_fixture(pathlib.Path(t),{'turnip_sysmem':True});s.req['renderer']='turnip24';s.configure_graphics_tuning()
+   self.assertEqual(s.env,{});s.spawn.assert_not_called()
+ def test_tuning_inputs_are_booleans_not_arbitrary_driver_flags(self):
+  req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
+  for key in ('turnip_sysmem','dxvk_two_compilers'):
+   self.assertEqual(module.validate_request(dict(req,**{key:True}))[key],True)
+   for value in ('sysmem,noconform',1,None):
+    with self.assertRaises(ValueError):module.validate_request(dict(req,**{key:value}))
  def test_graphics_choices_are_closed_and_reversible(self):
   req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
   for version in ('2.5.3','2.7.1'):self.assertEqual(module.validate_request(dict(req,dxvk_version=version,shm_upload=True))['dxvk_version'],version)

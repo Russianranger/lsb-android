@@ -62,6 +62,7 @@ def main():
     for cycle in range(2):
         for n in ('stop','status.json','probe.json','display.sock'):Path('/session',n).unlink(missing_ok=True)
         req={'format':1,'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1,'display_fps':60 if cycle==1 else 30,'dxvk_diagnostics':cycle==1 and renderer!='software','shm_upload':cycle==1,'dxvk_version':'2.7.1' if cycle==1 else '2.5.3'}
+        req.update(turnip_sysmem=cycle==1,dxvk_two_compilers=cycle==1)
         Path('/session/request.json').write_text(json.dumps(req));receiver=Receiver('/session/audio.sock')
         p=subprocess.Popen(['python3','/opt/lsb/supervisor.py'],env=dict(os.environ,LSB_TEST_AUTOCLOSE='1'))
         try:
@@ -103,6 +104,12 @@ def main():
                 assert any('DXVK: v'+expected in f.read_text(errors='replace') for f in Path('/logs').glob('*d3d*.log'))
                 if cycle==1:
                     assert result['shm_upload_active'],result
+                    tuning=result['graphics_tuning']
+                    assert tuning['active']=={'turnip_sysmem':True,'dxvk_two_compilers':True},tuning
+                    assert tuning['compiler_threads']==2 and tuning['turnip_debug']=='sysmem' and 'fallback' not in tuning,tuning
+                    assert 'DXVK: Using 2 compiler threads' in log, 'Main Wine probe did not inherit worker setting'
+                    assert 'dxvk.numCompilerThreads = 2' in log, 'DXVK did not consume the requested config'
+                    print('PASS: checked graphics tuning persists into actual Wine/DXVK rendering; two workers confirmed (CI Vulkan is lavapipe, not Adreno)',flush=True)
                     if expected=='2.5.3':assert 'dxvk_fallback' in result,result
                     else:assert 'dxvk_fallback' not in result,result
                     # Exclude preflight's exactly 40 uploads; the real Wine/DXVK
@@ -110,6 +117,8 @@ def main():
                     counters=[struct.unpack('<12Q',f.read_bytes()) for f in Path('/logs').glob('wsi-upload-*.bin')]
                     assert any(c[2]>=250 and c[7]==0 for c in counters),counters
                     print('PASS: actual Wine/DXVK uses shared-memory XCB presentation;',expected,'selected',flush=True)
+                else:assert not any(result['graphics_tuning']['active'].values()),result
+            else:assert not any(result['graphics_tuning']['active'].values()),result
             assert not receiver.errors,receiver.errors
             Path('/logs/acceptance-'+str(cycle)+'.json').write_text(json.dumps({'runtime':result,'audio':receiver.snapshot()},indent=2))
             print('PASS:',renderer,'cycle',cycle+1,'PE32, registry, COM, D3D8 pixels, keyboard/mouse, PCM and clean exit',flush=True)

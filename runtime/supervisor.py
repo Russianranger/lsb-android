@@ -47,10 +47,10 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers'}:raise ValueError('Unexpected runtime request field')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
     if req.get('dxvk_version','2.5.3') not in ('2.5.3','2.7.1'):raise ValueError('Unsupported DXVK version')
-    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload'):
+    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload','turnip_sysmem','dxvk_two_compilers'):
         if key in req and not isinstance(req[key],bool):raise ValueError('Unsupported '+key+' setting')
     if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
     if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','windowed540','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
@@ -257,6 +257,42 @@ class Supervisor:
             dxvk_dll_sha256={name:bundle['files']['dxvk-'+('2.7.1-' if version=='2.7.1' else '')+name+'.dll'] for name in ('d3d8','d3d9')},
             graphics='DXVK '+version+' / '+self.state['vulkan'].get('device','unknown'))
 
+    def configure_graphics_tuning(self):
+        # Opt-in controls for the already selected renderer, never a DLL/driver
+        # replacement. The original environment is restored together on failure.
+        requested={key:self.req.get(key,False) for key in ('turnip_sysmem','dxvk_two_compilers')}
+        report={'requested':requested,'active':dict.fromkeys(requested,False)}
+        active={'turnip_sysmem':requested['turnip_sysmem'] and self.req['renderer']=='turnip26',
+                'dxvk_two_compilers':requested['dxvk_two_compilers'] and self.req['renderer']!='software'}
+        if requested['turnip_sysmem'] and self.req['renderer']!='turnip26':
+            report['turnip_note']='System-memory experiment applies only to Turnip 26'
+        if not any(active.values()):
+            self.status(graphics_tuning=report);return
+        previous={key:self.env.get(key) for key in ('TU_DEBUG','DXVK_CONFIG')}
+        proc=None
+        try:
+            # No noconform/nosync/relaxed-memory flags. Sysmem still renders on
+            # Adreno; it bypasses Turnip's tile-memory render-pass selection.
+            if active['turnip_sysmem']:self.env['TU_DEBUG']='sysmem'
+            if active['dxvk_two_compilers']:
+                self.env['DXVK_CONFIG']=';'.join(filter(None,[previous['DXVK_CONFIG'],'dxvk.numCompilerThreads = 2']))
+            proc=self.spawn(['/usr/local/bin/box64','/opt/wine/bin/wine','P:\\graphics-check.exe'],'graphics-tuning.log',fixed_output=True)
+            self.wait(proc,45,'Graphics tuning draw and presentation check')
+            self.logs[-1].thread.join(3)
+            if active['dxvk_two_compilers'] and 'DXVK: Using 2 compiler threads' not in (LOGS/'graphics-tuning.log').read_text(errors='replace'):
+                raise ValueError('DXVK did not confirm two compiler workers')
+            report.update(active=active,check='eight D3D8 draw/present frames passed',
+                          turnip_debug='sysmem' if active['turnip_sysmem'] else 'unchanged',
+                          compiler_threads=2 if active['dxvk_two_compilers'] else 'automatic')
+        except (OSError,ValueError,RuntimeError) as error:
+            if proc is not None and proc.poll() is None:
+                os.killpg(proc.pid,signal.SIGKILL);proc.wait()
+            for key,value in previous.items():
+                if value is None:self.env.pop(key,None)
+                else:self.env[key]=value
+            report['fallback']=str(error)
+        self.status(graphics_tuning=report)
+
     def start_native_surface(self):
         if not self.req.get('native_surface',False):return
         try:
@@ -317,6 +353,7 @@ class Supervisor:
         if self.req['renderer']!='software':
             self.configure_upload()
             self.select_dxvk(bundle)
+        self.configure_graphics_tuning()
         if self.req.get('action')=='gamepad-config':
             from client_setup import validate_manifest,client_path,windows_path
             manifest=json.loads((SESSION/'client-manifest.json').read_text());validate_manifest(manifest)
