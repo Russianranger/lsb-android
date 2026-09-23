@@ -87,8 +87,49 @@ eight sampled buffer vertices, alpha/state-block observation and device-release
 detachment. This exercises the real ABI and dynamic buffer writes; no app
 request field or production environment override enables the fixture.
 
-Qualification status and delivered APK identity are recorded in HANDOFF and
-validation after CI completes. Do not deliver an unqualified APK.
+Qualification completed on implementation
+`ec8986faa494779712197997a7d04a0389004a8c`. [PR run 35878718602](https://github.com/Russianranger/lsb-android/actions/runs/35878718602)
+passes all six applicable jobs: presentation, server deployment, Android/core
+verification, native Windows launcher, Box64 and FEX. Publication correctly
+skips for the PR. Verification includes 60 runtime parser/contracts, 5 server
+contracts and 16 Android tests. Local MinGW compilation and diff checks pass.
+
+The successful PR FEX log has 128 PASS receipts and two observed-fixture passes
+(full80 and strict64). Box64 has 143 PASS receipts and four observed-fixture
+passes across its two hardware-runtime configurations and two cycles. Each
+observed invocation passes all 128 SWVP/HWVP pixel samples; capture attaches to
+the first fixture device and detaches on that device's release. Retained
+captures contain 32 draws (24 UP, 8 buffered), 32 sampled vertices including
+8 buffer vertices, zero flagged/unavailable samples or failed draws, alpha
+states, and `hooks_restored=1`. These are synthetic lavapipe checks, not an
+Adreno/FFXI rendering result.
+
+[Push run 35878706832](https://github.com/Russianranger/lsb-android/actions/runs/35878706832)
+also passes FEX and the non-Box64 jobs. Its Box64 job 107242276646 times out in
+the existing untraced pixel fixture: the first 64 SWVP samples pass and HWVP
+does not complete. The new observed fixture has not run at that point.
+The failure is retained with unknown cause; the independent PR completes
+without code changes, reruns or weakened checks. Do not describe the push
+workflow as fully green or claim the timeout was caused by the observer.
+
+| Artifact | ID | SHA-256 |
+| --- | --- | --- |
+| Passing PR device build | 10759513662 | `4a7d8c0f6a258c903f6027d26a0a33ddb243ba1a19d8bcb8c99accdff3158cdd` |
+| Passing PR FEX evidence | 10760941680 | `a27e64185914d7abe78fa29e885b57284945aa4258ff3f91df4ca0f966a17c05` |
+| Passing PR Box64 evidence | 10760248661 | `af00253f2b4b95a9ed3841c57c6cee0e6ca9217ce1980cd360edb2e96f9fb1c7` |
+| Initial push Box64 failure | 10760111015 | `0c84b87a48feafb7b66a9a9e66e8fe3974d15debc3398103bb4309ca30ec0801` |
+
+Delivered APK: **LSB-Android-0.5.16.apk**, versionCode **32**, **18,288,788 bytes**.
+SHA-256 `efeeb880c6c4f8c4efaa32047e8f9dbb4e4ceb2e67e216deef1f7381f80fbcb2`.
+Original signer SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+The passing PR APK was re-signed with the original key; all non-signature
+payload entries remain identical. ZIP integrity, v2/v3 signatures, alignment,
+package/version and packaged Python source identity were checked. Relative to
+0.5.15, changed entries are the manifest, classes, graphics-check.exe,
+startup-trace.dll, graphics_diagnostics.py, startup_diagnostics.py, and
+bundle.json key ordering only. Runtime/driver and native presentation/audio/input
+assets are unchanged. The app exports its actual installed version.
 
 ## Focused device test after qualification
 

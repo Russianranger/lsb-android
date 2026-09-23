@@ -1,21 +1,45 @@
-# 0.5.16 D3D8 game capture: implementation under qualification
+# Ready for Thor: bounded D3D8 game capture (0.5.16)
 
-The user completed the actual-game DXVK 2.5.3 comparison. The selected DLL
-hashes confirm 2.5.3; screenshots show the same missing menu and severe
-corruption at about 13 FPS. All 500 game uploads use SHM without failure.
-A 2.7.1-specific defect is less likely; the rendering fault remains unresolved.
-The earlier on/off pixel checks and this version comparison are complete.
+The actual-game DXVK 2.5.3 comparison is complete. Selected DLL hashes confirm
+2.5.3; the screenshots show the same missing menu and severe corruption at
+about 13 FPS. All 500 game uploads use SHM without failure. A 2.7.1-specific
+defect is less likely; the rendering fault remains unresolved. Do not repeat
+the completed on/off pixel checks or the actual-game DXVK comparison.
 
-[Current audit, implementation and next device procedure](d3d8-game-capture-0516.md).
-0.5.16 adds an opt-in, bounded capture of the game's actual D3D8 states and
-sampled submitted positions. It records numeric metadata without GPU readbacks
-or recurring process scans. It is a diagnostic build, not a graphics fix.
-Qualification is in progress; do not deliver an unqualified APK.
+**0.5.16 is a qualified diagnostic build.** Its opt-in capture records the
+game's actual D3D8 states and sampled submitted positions, with fixed numeric
+metadata, bounded work and no GPU readbacks or recurring process scans.
+It is not a claimed graphics fix. [Audit, limits and device procedure](d3d8-game-capture-0516.md).
 
-Preserve the prepared client, original loader and working Termux server.
-Existing authorization to change/push the repo remains active. The next device
-step after qualification is one brief actual-game launch with **Capture FFXI
-startup and graphics** enabled, then Stop/export and disable capture.
+Implementation `ec8986faa494779712197997a7d04a0389004a8c` is pushed to
+`codex/client-baseline`. [PR run 35878718602](https://github.com/Russianranger/lsb-android/actions/runs/35878718602)
+passes all six applicable jobs; publication correctly skips. FEX reports
+128 PASS receipts and Box64 143, including the real observed pixel fixture.
+The independent push FEX job also passes. The initial push Box64 job timed out
+in the existing untraced pixel fixture after SWVP passed, before the new
+observer loaded. That failure remains recorded; its cause is unknown. No
+retry, timeout relaxation or implementation change was used for qualification.
+CI uses synthetic clients and lavapipe, not Thor hardware.
+
+Delivered **LSB-Android-0.5.16.apk**, versionCode **32**, **18,288,788 bytes**.
+SHA-256: `efeeb880c6c4f8c4efaa32047e8f9dbb4e4ceb2e67e216deef1f7381f80fbcb2`.
+Original signer:
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+The APK comes from the passing PR artifact; its payload, v2/v3 signatures,
+alignment, package/version and ZIP integrity were verified. Wine/FEX, DXVK,
+Turnip and display/audio/input binaries are unchanged. Version text now reads
+the installed package metadata instead of the stale hardcoded label.
+
+Install over the existing app. Restore DXVK 2.7.1; keep FEX faster x87 on,
+Turnip 26, 60 Hz, Native Surface and SHM, with sysmem/two-compiler tuning off.
+Enable **Capture FFXI startup and graphics**, launch once to the broken menu,
+take a screenshot, Stop/export Diagnostics, then disable capture. No standalone
+Windows check is needed. If launch fails or hangs, Stop/export rather than
+repeated relaunches. Diagnostic FPS is not a benchmark.
+
+Preserve prepared client `30251204_1`, the original loader and working Termux
+server. No client re-import, preparation or runtime download is required.
+Authorization for repo changes and pushes remains active.
 
 Earlier entries below are historical.
 
