@@ -15,7 +15,7 @@ def archive(name,entries):
             else:tar.addfile(info)
 files={p.relative_to(root).as_posix():sha(p) for p in sorted(root.rglob('*')) if p.is_file() and not p.is_symlink()}
 m={'format':1,'candidate':'wine10-arm64-fex2510','wine_commit':'b073859675060c9211fcbccfd90e4e87520dc2c2','fex_commit':'320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab','guest':'i386','host':'aarch64','wine_backports':['d53a9ba0cd5ee46852b00e4a106e2eb679b5aa3d'],'files':files}
-m['fex_patches']=[{'name':'cpu-features.patch','sha256':sha(Path('/recipe/cpu-features.patch'))}]
+m['fex_patches']=[{'name':name,'sha256':sha(Path('/recipe',name))} for name in ('cpu-features.patch','x87-flags.patch')]
 (root/'lsb-fex.json').write_text(json.dumps(m,sort_keys=True,indent=2)+'\n')
 archive('runtime-fex-arm64.tar.gz',[(p,p.relative_to(root).as_posix()) for p in sorted(root.rglob('*'))])
 sources=[]
@@ -26,8 +26,9 @@ for p in sorted(Path('/recipe').rglob('*')):sources.append((p,'recipe/'+p.relati
 archive('runtime-fex-sources.tar.gz',sources)
 p=out/'runtime-fex-arm64.tar.gz'
 manifest={k:v for k,v in m.items() if k!='files'}
-manifest.update(sha256=sha(p),bytes=p.stat().st_size,manifest_sha256=sha(root/'lsb-fex.json'),url='https://github.com/Russianranger/lsb-android/releases/download/runtime-fex-v2/runtime-fex-arm64.tar.gz')
+manifest.update(sha256=sha(p),bytes=p.stat().st_size,manifest_sha256=sha(root/'lsb-fex.json'),url='https://github.com/Russianranger/lsb-android/releases/download/runtime-fex-v3/runtime-fex-arm64.tar.gz')
 (out/'fex-bundle.json').write_text(json.dumps(manifest,indent=2)+'\n')
 import shutil
 shutil.copytree('/cpu-evidence',out/'cpu-evidence',dirs_exist_ok=True)
+shutil.copytree('/flags-evidence',out/'flags-evidence',dirs_exist_ok=True)
 print(json.dumps(manifest))

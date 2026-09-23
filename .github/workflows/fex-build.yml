@@ -1,7 +1,7 @@
 name: Build isolated FEX runtime
 on:
   push:
-    paths: ['native/fex/**', 'tests/windows/cpu-dispatch.c', 'scripts/build-fex.sh', '.github/workflows/fex-build.yml']
+    paths: ['native/fex/**', 'tests/windows/cpu-dispatch.c', 'tests/windows/x87-flags.c', 'scripts/build-fex.sh', '.github/workflows/fex-build.yml']
   workflow_dispatch:
 permissions:
   contents: read

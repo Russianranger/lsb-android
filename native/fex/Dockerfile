@@ -76,5 +76,18 @@ RUN i686-w64-mingw32-clang -std=c11 -O2 -Wall -Wextra -Werror -msse2 -static \
     -Wl,--no-insert-timestamp /cpu-dispatch.c -o /cpu-dispatch.exe
 COPY native/fex/check-cpu-dispatch.py /check-cpu-dispatch.py
 RUN python3 /check-cpu-dispatch.py
+# Preserve the already-qualified CPU-feature fix. Isolate the x87 flags change.
+RUN cp /stage/opt/wine/lib/wine/aarch64-windows/libwow64fex.dll /pre-flags-wow64fex.dll
+COPY native/fex/x87-flags.patch /x87-flags.patch
+RUN git -C fex apply /x87-flags.patch \
+ && cmake --build fex-build --target wow64fex --parallel 4 \
+ && cp fex-build/Bin/libwow64fex.dll /stage/opt/wine/lib/wine/aarch64-windows/ \
+ && cp /x87-flags.patch /stage/opt/wine/share/lsb-sources/ \
+ && python3 /verify-imports.py
+COPY tests/windows/x87-flags.c /x87-flags.c
+RUN i686-w64-mingw32-clang -std=c11 -O2 -Wall -Wextra -Werror -static \
+    -Wl,--no-insert-timestamp /x87-flags.c -o /x87-flags.exe
+COPY native/fex/check-x87-flags.py /check-x87-flags.py
+RUN python3 /check-x87-flags.py
 COPY native/fex/pack.py /pack.py
 CMD ["python3", "/pack.py"]
