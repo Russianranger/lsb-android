@@ -33,7 +33,7 @@ The final Surface delivery error coincides with Stop. Audio has two early
 underruns, remains stable during play and records one more at shutdown.
 Startup observation again finishes at 8.194 s; it does not poll throughout
 play. Both old and current FEX game diagnostics count 104 first-chance
-exceptions. That count does not establish an exception storm.
+exception messages. That count does not establish an exception storm.
 
 The intact HUD and working final upload path suggest a fault upstream in game
 rendering or CPU translation. They do **not** identify a particular FEX opcode,
@@ -80,10 +80,40 @@ is proposed. 0.5.15 is a diagnostic build, **not a claimed rendering fix**.
 
 ## Qualification and next device test
 
-Local runtime contracts pass (58 tests). ARM64 FEX/Box64 and Android CI
-qualification is pending; do not deliver an unqualified APK.
+Local runtime contracts pass (58 tests). Push run `35855473122` passes the
+Android build/contracts, presentation, native Windows, server, full FEX and
+full Box64 execution gates. The original-prefix, audio, input, Stop/crash and
+launch/relaunch checks remain covered. PR run `35855479506` also passes all six applicable gates on attempt 2,
+after retrying its isolated FEX probe hang. The push publication gate passes;
+the PR publication gate correctly skips. The signed diagnostic APK is delivered.
 
-After qualification, install over the current app. Keep the working Termux
+The successful FEX run contains these actual rendering receipts:
+
+| FEX mode | DXVK | Pixel samples | Interactive frames | Audio/input |
+| --- | --- | ---: | ---: | --- |
+| full80 | 2.5.3 | 128 passed | 300 | passed |
+| strict64 | 2.7.1 | 128 passed | 300 | passed |
+
+Each pixel receipt includes software and hardware vertex-processing modes.
+CI renders with lavapipe; it does not establish Adreno or real FFXI correctness.
+The device comparison below holds DXVK 2.7.1 fixed across both arithmetic modes.
+
+Push FEX evidence `10747962274`, SHA-256
+`01ae8b397e6548ec8402e18f1976a684ee4c630fc16b3993f5cd8652fe8b8e39`.
+Push Box64 evidence `10748361097`, SHA-256
+`44351d71686a50c721c3ff08a91e62cf9f08812b4147fb486aaddfd5c43ab363`.
+
+Signed APK prepared from implementation
+`66a65375a560ba81a17bf726fba8096acad2e347`: version 0.5.15, versionCode 31,
+18,288,704 bytes; SHA-256
+`d3be4e0475e8a814564d0cfa3080a36902eb1bb1cf0986d16f2378e45f4af592`.
+The original signer, v2/v3 signatures, alignment, package/version, CI payload
+identity and unchanged native runtime/driver assets are verified. The only
+changed payload entries from 0.5.14 are the manifest, graphics-check.exe,
+supervisor.py, startup_diagnostics.py and bundle.json (key ordering only).
+Java bytecode is unchanged. The FEX runtime does not need downloading again.
+
+Install 0.5.15 over the current app. Keep the working Termux
 server, existing prepared client and original xiloader. Keep FEX, Turnip 26,
 DXVK 2.7.1, 60 Hz, Native Surface and SHM selected.
 
@@ -97,3 +127,29 @@ These outcomes can narrow arithmetic versus generic D3D8/driver compatibility,
 but a passing fixture still does not establish real FFXI compatibility. Box64
 remains the previously working rendering baseline. There is no request to
 update/re-import/re-prepare the client, replace xiloader or migrate the server.
+
+## Retained initial CI failure and successful retry
+
+Implementation `66a65375a560ba81a17bf726fba8096acad2e347` builds successfully;
+Android/core/runtime contracts, native Windows, presentation and server gates
+pass. PR run `35855479506`, FEX job `107163713238`, passed all 128 pixel samples
+for full80/DXVK 2.5.3 and strict64/DXVK 2.7.1. The later interactive runtime probe
+then timed out before its 25-frame readiness report (three real SHM uploads,
+zero upload fallbacks/failures, zero ring waits). The new pixel report is passed;
+this is not evidence of a failed pixel comparison or blocked SHM slot reuse.
+The reason for the subsequent probe hang is not established. Delivery was held
+while qualification was incomplete. The independent push suite subsequently passed the same probe through all 300
+frames in each mode. The failed FEX job was retried on the same commit after
+Box64 finished. Retry job `107170957594` passes the complete FEX suite, including
+both pixel modes and 300-frame interactive probes. No application code or APK
+changed between these runs. The independent push and retry did not reproduce
+the initial hang; its underlying cause remains unknown.
+
+Failed-run evidence artifact `10748011799`, SHA-256
+`412cdae2c6e8a81945bf2ae8095358d7564cf8cbe2563c9f4f3ae3fd69c644f0`.
+
+
+Successful retry evidence: artifact `10749106532`, SHA-256
+`44dd2372f7d7e7c7430121112a11c83a8974363edba7cd2b9d2f5b0fa7048ac9`.
+Both successful FEX jobs record 126 PASS lines; push Box64 records 139.
+These are synthetic qualification results, not acceptance of real FFXI on Thor.

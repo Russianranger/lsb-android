@@ -1,23 +1,62 @@
-# Current: 0.5.14 graphics failure; 0.5.15 diagnostic qualification
+# Ready for Thor: graphics diagnostics (0.5.15)
 
-The latest Thor test improves FEX performance from about 5 to 13 FPS but has
-missing menu content and severe white geometric corruption. Both preflight
-and final launch verify strict64 arithmetic. Hardware Turnip 26/DXVK 2.7.1 and
-690 game SHM uploads are confirmed; copy averages 0.721 ms, with no upload
-fallback or attachment failure. This remains a failed real-client result.
+**0.5.14 FEX is not accepted for real FFXI.** Faster x87 improved the user's
+reported FPS from about 5 to 13, but menus are missing and character selection
+has severe white geometric corruption. The new support bundle verifies
+strict64 arithmetic in preflight and the actual launch child, hardware
+Turnip 26/Adreno 740, DXVK 2.7.1 and 690 SHM game uploads. Upload copies average
+0.721 ms, with zero fallback/attachment failures. An upstream rendering or CPU
+translation problem is suspected; no specific rendering fix is established.
 
-See [the current audit and diagnostic design](graphics-corruption-0515.md).
-0.5.15 adds actual texture/buffer/transform/render-target/alpha pixel checks to
-standalone Windows checks, plus fixed DXVK warning reasons. It is diagnostic,
-not a game fix. Game launch receives no new readback or recurring observation.
-CI qualification is pending; no 0.5.15 APK has been delivered. User permission
-to change and push this repository remains explicit and active.
+**0.5.15 is a qualified diagnostic build.** Standalone Windows checks now verify
+128 texture/buffer/transform/render-target/alpha pixel samples in software and
+hardware vertex-processing modes. Actual game launches gain fixed DXVK warning
+reasons and retain the prior preflight, with no new readbacks or recurring
+observer. See [the audit, qualification and device procedure](graphics-corruption-0515.md).
 
-The current support game session is `9c612832-2206-4d98-8fb1-a7afa1e7c414`.
-Previous runtime state is its strict64 probe; previous client-launch JSON is
-older 0.5.13 FEX session `f1565fe7-80be-48eb-a70a-3236450689e4`. Do not count
-those as a new 0.5.14 full80 comparison. Preserve the existing prepared client,
-client version, original xiloader and working Termux server.
+Implementation `66a65375a560ba81a17bf726fba8096acad2e347` is pushed to
+`codex/client-baseline`. [Push run 35855473122](https://github.com/Russianranger/lsb-android/actions/runs/35855473122)
+passes all seven gates. [PR run 35855479506](https://github.com/Russianranger/lsb-android/actions/runs/35855479506)
+passes all six applicable gates on attempt 2; publication correctly skips.
+The first PR FEX job passed the new pixels but the later interactive probe
+stalled after three uploads. The independent push and targeted retry both
+completed 300 frames per mode, audio/input and the complete suite. The initial
+hang and its evidence are retained; its cause is unknown. No code or APK change
+was made between attempts. CI uses synthetic clients/lavapipe, not Thor hardware.
+
+Delivered **LSB-Android-0.5.15.apk**, versionCode **31**, **18,288,704 bytes**.
+SHA-256: `d3be4e0475e8a814564d0cfa3080a36902eb1bb1cf0986d16f2378e45f4af592`.
+The original signer is verified:
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Only the manifest, graphics helper and two diagnostic Python files change in
+the APK (bundle.json key ordering also differs). Java, Wine/FEX, DXVK, Turnip,
+display/audio/input binaries and prepared client remain unchanged. Install over
+the existing app; there is no runtime re-download or fresh-prefix requirement.
+
+## Next device test
+
+1. Keep the current prepared client, original xiloader, client version and
+   working Termux server. Keep FEX, Turnip 26, DXVK 2.7.1, 60 Hz, Native Surface
+   and SHM selected; keep other graphics preferences fixed.
+2. Run Windows checks once with faster x87 on, exit/Stop and export Diagnostics.
+   Turn only faster x87 off, repeat Windows checks and export a separate ZIP.
+   A failed or hung check should be stopped and exported, not repeatedly relaunched.
+3. If both pass, a brief faster-mode game launch to the broken menu can collect
+   the newly classified D3D8 warning. Stop/export there; no long route or
+   world-entry attempt is required for this diagnostic comparison.
+
+The next task is to use these actual Adreno pixel receipts and specific warning
+reasons to localize the rendering failure. Passing this fixture still does not
+prove FFXI compatibility. Box64 remains the previously working rendering path.
+Do not update/re-import/re-prepare the client, replace xiloader or migrate the
+server as part of this comparison. User authorization to change and push the
+repository remains explicit and active; no renewed publication approval is needed.
+
+Current 0.5.14 game session: `9c612832-2206-4d98-8fb1-a7afa1e7c414`.
+Its previous runtime state is a strict64 probe. Its previous client-launch JSON
+is older 0.5.13 FEX session `f1565fe7-80be-48eb-a70a-3236450689e4`, not a second
+0.5.14 arithmetic comparison. Audit/version/test artifact details are in the
+linked 0.5.15 document. Earlier handoff/validation entries below are historical.
 
 ---
 

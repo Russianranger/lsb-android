@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.15 diagnostic qualification**. The Thor's 0.5.14 FEX faster-x87 test improved performance from about 5 to 13 FPS but still has missing menus and severe graphics corruption. 0.5.15 adds actual pixel checks for textures, transformed geometry, dynamic buffers and render targets, plus specific fixed graphics-warning reasons. It is not a claimed gameplay fix. See [the current audit and next test](docs/graphics-corruption-0515.md), [handoff](docs/HANDOFF.md) and [validation record](docs/validation.md).
+Current development: **0.5.15 graphics diagnostics**. The Thor's 0.5.14 FEX faster-x87 test improved performance from about 5 to 13 FPS but still has missing menus and severe graphics corruption. 0.5.15 adds actual pixel checks for textures, transformed geometry, dynamic buffers and render targets, plus specific fixed graphics-warning reasons. It is not a claimed gameplay fix. See [the current audit and next test](docs/graphics-corruption-0515.md), [handoff](docs/HANDOFF.md) and [validation record](docs/validation.md).
 
 Install the separately delivered signed APK over the existing app. Keep the accepted client preparation, client `30251204_1`, original xiloader and working Termux server. Existing FEX users need no runtime download, client re-import or re-preparation. Keep Turnip 26, DXVK 2.7.1, 60 Hz, Native Surface and shared-memory upload for the x87 comparison. Turning FEX off selects the preserved Box64 environment. Server migration remains a separate step; see [the server workflow](docs/milestone-050.md).
 
