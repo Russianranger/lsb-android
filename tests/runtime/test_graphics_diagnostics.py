@@ -4,6 +4,21 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'runtime'))
 from supervisor import PrivateEvents
 
 class GraphicsContracts(unittest.TestCase):
+    def test_batch_latest_snapshot_is_bounded_and_does_not_displace_frame_records(self):
+        from graphics_diagnostics import GraphicsDiagnostics
+        parser=GraphicsDiagnostics()
+        parser.line(b'lsb-d3d8-v1 device 00000040 00000500 000002d0')
+        for i in range(200):
+            row=[i,0,32,i+1]+[0]*13
+            parser.line(('lsb-d3d8-v1 batch_stats '+' '.join('%08x'%v for v in row)).encode())
+        parser.line(('lsb-d3d8-v1 batch_stats '+' '.join('%08x'%v for v in ([0,0,64,42]+[0]*13))).encode())
+        parser.line(b'lsb-d3d8-v1 batch_bounds 00000000 private')
+        report=parser.snapshot()
+        self.assertEqual(len(report['batches']),96)
+        self.assertEqual(report['batches'][0]['draws'],42)
+        self.assertEqual(report['records'][0]['event'],'device')
+        self.assertNotIn('private',json.dumps(report))
+        self.assertEqual(report['limits']['seconds'],90)
     def parse(self,raw):
         events=PrivateEvents()
         for i in range(0,len(raw),5):events.feed(raw[i:i+5])

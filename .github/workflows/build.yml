@@ -35,6 +35,8 @@ jobs:
           python3 scripts/test.py
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/native_surface.c -o /tmp/lsb-native-surface-test
           /tmp/lsb-native-surface-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/draw-stats.c -o /tmp/lsb-draw-stats-test
+          /tmp/lsb-draw-stats-test
           python3 -m unittest discover -s tests/runtime -p 'test_*.py'
           python3 -m unittest discover -s tests/server -p 'test_*.py'
       - uses: actions/cache@v4
@@ -65,12 +67,12 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.18.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.19.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.18.apk
+            out/LSB-Android-0.5.19.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/

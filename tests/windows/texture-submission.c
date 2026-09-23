@@ -5,6 +5,7 @@
 #include <d3d8.h>
 #include <stdio.h>
 #include <string.h>
+#include <wchar.h>
 
 typedef struct {float x,y,z,rhw;DWORD color;float u,v;} Vertex;
 static const DWORD rgb[4]={0x00ff0000,0x0000ff00,0x000000ff,0x00ffffff};
@@ -43,6 +44,14 @@ static HRESULT tile(IDirect3DDevice8 *d,unsigned panel,unsigned row,unsigned tx,
     Vertex vertices[]={
         {x-.5f,y-.5f,.5f,1,0x80808080,u,v},{x+59.5f,y-.5f,.5f,1,0x80808080,u1,v},
         {x-.5f,y+39.5f,.5f,1,0x80808080,u,v1},{x+59.5f,y+39.5f,.5f,1,0x80808080,u1,v1}};
+    if(panel){
+        /* Nonzero MinVertexIndex catches treating indices as relative offsets.
+         * Prefix vertices must not be sampled or rendered. */
+        Vertex padded[6];memset(padded,0xff,sizeof(padded));memcpy(padded+2,vertices,sizeof(vertices));
+        const WORD small[]={2,3,4,5};const DWORD large[]={2,3,4,5};
+        return IDirect3DDevice8_DrawIndexedPrimitiveUP(d,D3DPT_TRIANGLESTRIP,2,4,2,
+            panel==1?(const void*)small:(const void*)large,panel==1?D3DFMT_INDEX16:D3DFMT_INDEX32,padded,sizeof(Vertex));
+    }
     return IDirect3DDevice8_DrawPrimitiveUP(d,D3DPT_TRIANGLESTRIP,2,vertices,sizeof(vertices[0]));
 }
 
@@ -69,11 +78,18 @@ static BOOL matches(DWORD a,DWORD b){
 }
 
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR args,int show){
-    (void)previous;(void)args;(void)show;
+    (void)previous;(void)show;
     HWND window=CreateWindowW(L"STATIC",L"Synthetic texture submissions",WS_POPUP|WS_VISIBLE,0,0,1280,720,NULL,NULL,instance,NULL);
     if(!window)return 10;
     IDirect3D8 *api=Direct3DCreate8(D3D_SDK_VERSION);
     if(!api){DestroyWindow(window);return 11;}
+    if(!wcscmp(args,L"--trace")){
+        HMODULE trace=LoadLibraryW(L"P:\\startup-trace.dll");
+        typedef void (WINAPI *Attach)(IDirect3D8*);
+        Attach attach=trace?(Attach)(void*)GetProcAddress(trace,"LsbGraphicsTrace"):NULL;
+        if(!attach){IDirect3D8_Release(api);DestroyWindow(window);return 14;}
+        attach(api);
+    }
     IDirect3DDevice8 *d=NULL;IDirect3DTexture8 *textures[3]={0};
     IDirect3DSurface8 *back=NULL,*readback=NULL;HRESULT hr=S_OK;
     unsigned draws=0,samples=0;unsigned short control=0x003f;

@@ -4,8 +4,9 @@
 #include <stdint.h>
 #define GT_BUFFERS 32
 #define GT_BYTES 32768
-#define GT_DRAWS 65536
-#define GT_FRAMES 1024
+#define GT_DRAWS 1048576
+#define GT_FRAMES 4096
+#define GT_MILLISECONDS 90000
 static struct {
     IDirect3D8Vtbl api;
     IDirect3DDevice8Vtbl dev;
@@ -175,6 +176,7 @@ static UINT gt_vertex_count(D3DPRIMITIVETYPE type,UINT n){
     switch(type){case D3DPT_POINTLIST:return n;case D3DPT_LINELIST:return n*2;case D3DPT_LINESTRIP:return n?n+1:0;
         case D3DPT_TRIANGLELIST:return n*3;case D3DPT_TRIANGLESTRIP:case D3DPT_TRIANGLEFAN:return n?n+2:0;default:return 0;}
 }
+#include "draw-trace.h"
 static void gt_finish(DWORD reason);
 static void gt_draw(HRESULT hr,BOOL up){
     if(!gt.active)return;
@@ -195,23 +197,23 @@ static HRESULT WINAPI gt_dip(IDirect3DDevice8 *s,D3DPRIMITIVETYPE t,UINT min,UIN
 }
 static HRESULT WINAPI gt_up(IDirect3DDevice8 *s,D3DPRIMITIVETYPE t,UINT n,const void *v,UINT stride){
     HRESULT hr=gt.dev.DrawPrimitiveUP(s,t,n,v,stride);DWORD e=GetLastError();
-    if(s==gt.device){if(SUCCEEDED(hr)&&gt_sampling())gt_sample(s,v,0,gt_vertex_count(t,n),stride,FALSE);gt_draw(hr,TRUE);}
+    if(s==gt.device){if(SUCCEEDED(hr)){dt_up(s,t,n,v,stride,NULL,0,0,0,FALSE);if(gt_sampling())gt_sample(s,v,0,gt_vertex_count(t,n),stride,FALSE);}gt_draw(hr,TRUE);}
     SetLastError(e);return hr;
 }
 static HRESULT WINAPI gt_iup(IDirect3DDevice8 *s,D3DPRIMITIVETYPE t,UINT min,UINT vertices,UINT n,const void *indices,D3DFORMAT format,const void *v,UINT stride){
     HRESULT hr=gt.dev.DrawIndexedPrimitiveUP(s,t,min,vertices,n,indices,format,v,stride);DWORD e=GetLastError();
-    if(s==gt.device){if(SUCCEEDED(hr)&&gt_sampling())gt_sample(s,v,min,vertices,stride,FALSE);gt_draw(hr,TRUE);}
+    if(s==gt.device){if(SUCCEEDED(hr)){dt_up(s,t,n,v,stride,indices,format,min,vertices,TRUE);if(gt_sampling())gt_sample(s,v,min,vertices,stride,FALSE);}gt_draw(hr,TRUE);}
     SetLastError(e);return hr;
 }
-static void gt_report(void){GT_EMIT("frame",gt.frame,gt.draws,gt.up,gt.buffered,gt.vertices,gt.nonfinite,gt.extreme,gt.rhw_bad,gt.unavailable,gt.failures,gt.first_error,gt.buffer_vertices,(DWORD)gt.other_thread_draws);}
+static void gt_report(void){dt_report();GT_EMIT("frame",gt.frame,gt.draws,gt.up,gt.buffered,gt.vertices,gt.nonfinite,gt.extreme,gt.rhw_bad,gt.unavailable,gt.failures,gt.first_error,gt.buffer_vertices,(DWORD)gt.other_thread_draws);}
 static HRESULT WINAPI gt_present(IDirect3DDevice8 *s,const RECT *a,const RECT *b,HWND w,const RGNDATA *r){
     HRESULT hr=gt.dev.Present(s,a,b,w,r);DWORD e=GetLastError();
     if(s==gt.device&&gt.active){
-        if(!gt_owner()){if(GetTickCount64()-gt.started>=60000)gt_finish(2);SetLastError(e);return hr;}
-        gt.frame++;gt.samples=0;
+        if(!gt_owner()){if(GetTickCount64()-gt.started>=GT_MILLISECONDS)gt_finish(2);SetLastError(e);return hr;}
+        gt.frame++;gt.samples=0;dt_calls=0;
         if(gt.frame==1||gt.frame==32)gm_observe(FALSE);
         if(gt.frame==1||gt.frame%32==0)gt_report();
-        if(gt.frame>=GT_FRAMES)gt_finish(1);else if(GetTickCount64()-gt.started>=60000)gt_finish(2);
+        if(gt.frame>=GT_FRAMES)gt_finish(1);else if(GetTickCount64()-gt.started>=GT_MILLISECONDS)gt_finish(2);
     }
     SetLastError(e);return hr;
 }

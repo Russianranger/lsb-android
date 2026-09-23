@@ -1,3 +1,32 @@
+# 0.5.18 Thor math passes; 0.5.19 broader draw diagnostic in qualification
+
+Latest export `lsb-support(9).zip` (SHA-256
+`44393b0f180db2d532348922e5af2740944c451402e8650e87f5ae7957de2280`)
+confirms the delivered observer, actual game SSE2 selection (`2/0x222`),
+matching CPU bits 12, all 192 synthetic math results and all output-pointer
+returns passing. The table remains SSE2 through capture completion. Graphics
+still fail in both screenshots at about 13.5 FPS. Do not call this a math or
+rendering fix; actual input generation and other rendering paths remain open.
+
+[Latest evidence and 0.5.19 coverage design](draw-coverage-0519.md).
+The existing observer stops at frame 216 and samples only the first eight
+UP draws every 32 frames. 0.5.19 adds bounded numeric summaries of up to 1,024
+UP draws per sampled frame, distributed vertex/decoded-index samples,
+position/UV bounds and diffuse-alpha counts, grouped by layout/texture/state
+in four time windows. Capture lasts up to 90 seconds. No rendering patch,
+texture/vertex dump, runtime update or proprietary code is included.
+
+Local helper checks, 63 runtime tests and warning-free cross-compilation pass.
+ARM64 pixel/capture qualification and signed delivery are pending. Do not
+present an unqualified APK as ready. Next phone action after qualification:
+APK update only, one captured FEX run through agreement to character selection,
+wait there about 60 seconds, Stop/export Diagnostics, disable capture.
+No repeats of the math check, standalone runtime/precision/DXVK matrix or
+Box64 capture. Preserve client `30251204_1`, original xiloader, Box64 and the
+Termux server. Repo changes and pushes remain authorized.
+
+---
+
 # 0.5.18 delivered: isolated actual-game math diagnostic
 
 The 0.5.17 Thor export confirms runtime v2 and matching CPU features in both

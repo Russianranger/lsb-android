@@ -42,17 +42,39 @@ def checked(self):
     assert not any(r['event']=='coverage' for r in rows),report
     assert any(r['event']=='state' and r['alpha_blend']==1 for r in rows),report
     assert any(r['event']=='state' and r['alpha_test']==1 for r in rows),report
+    batches=report['batches'];stats=[r for r in batches if r['event']=='batch_stats']
+    assert sum(r['draws'] for r in stats)==6,report
+    assert sum(r['sampled_vertices'] for r in stats)==24,report
+    assert sum(r['uv_vertices'] for r in stats)>0,report
+    assert sum(r['opaque_alpha'] for r in stats)>0,report
+    for field in ('invalid_indices','unsupported_draws','nonfinite_positions','invalid_rhw','nonfinite_uv'):
+        assert all(r[field]==0 for r in stats),(field,report)
+    assert not report['batch_limits'],report
     Path('/logs/graphics-trace-fixture.json').write_text(json.dumps(report,indent=2))
     print('PASS: observed D3D8 pixels unchanged; actual UP/indexed-buffer geometry, state blocks, alpha and detach verified',flush=True)
     # The working and broken Thor captures share these texture formats/states.
     # Exercise their data path with synthetic assets and an independent oracle.
     texture_log='texture-submission-'+self.req['dxvk_version']+'.log'
-    proc=self.spawn(self.wine_command(r'Z:\fixtures\texture-submission.exe'),texture_log,fixed_output=True)
+    proc=self.spawn(self.wine_command(r'Z:\fixtures\texture-submission.exe','--trace'),texture_log,fixed_output=True)
     self.wait(proc,60,'Compressed texture and UP submission fixture')
     self.logs[-1].thread.join(3)
     text=Path('/logs',texture_log).read_text(errors='replace')
     match=re.search(r'^LSB_TEXTURE_SUBMISSIONS formats=3 frames=4 draws=1512 samples=144 x87=([0-9a-f]{4}) PASS\s*$',text,re.M)
     assert match and ' FAIL' not in text,text[-4000:]
+    submitted=GraphicsDiagnostics()
+    for line in text.lower().encode().splitlines():submitted.line(line)
+    summary=submitted.snapshot();assert summary is not None,'No texture submission observation'
+    batches=summary['batches'];stats=[r for r in batches if r['event']=='batch_stats']
+    assert sum(r['draws'] for r in stats)==378,summary
+    assert sum(r['sampled_vertices'] for r in stats)==1512,summary
+    assert sum(r['uv_vertices'] for r in stats)==1512,summary
+    assert any(r['event']=='batch' and r['indexed']==1 for r in batches),summary
+    for field in ('invalid_indices','unsupported_draws','nonfinite_positions','invalid_rhw','nonfinite_uv','large_uv','zero_alpha'):
+        assert all(r[field]==0 for r in stats),(field,summary)
+    assert not summary['batch_limits'],summary
+    assert any(r['event']=='complete' and r['hooks_restored']==1 for r in summary['records']),summary
+    Path('/logs',texture_log.replace('.log','-batches.json')).write_text(json.dumps(summary,indent=2))
+    print('PASS: all 378 sampled-frame UP draws and 1512 UV/color vertices observed, including 16/32-bit indices with nonzero minimum',flush=True)
     Path('/logs',texture_log.replace('.log','.json')).write_text(json.dumps({
         'engine':self.engine,'dxvk':self.state['dxvk_selected'],
         'fex_mode':self.state.get('fex_arithmetic',{}).get('mode'),
