@@ -39,6 +39,13 @@ RUN mkdir wine-build && cd wine-build && ../wine/configure --prefix=/opt/wine \
     --without-cups --without-sane --without-gphoto --without-pcap --without-kerberos \
     --without-wayland CFLAGS='-O2' \
  && make -j4 && make install DESTDIR=/stage
+# Backport Wine upstream d53a9ba0: FEX imports this post-10.0 entry point.
+# Rebuild/install only ntdll after the cached base build; the added prototype
+# does not change any existing caller's ABI.
+COPY native/fex/wow64-suspend.patch /tmp/wow64-suspend.patch
+RUN git -C wine apply /tmp/wow64-suspend.patch \
+ && make -C wine-build -j4 dlls/ntdll/all \
+ && make -C wine-build dlls/ntdll/install-lib DESTDIR=/stage
 RUN cp fex-build/Bin/libwow64fex.dll /stage/opt/wine/lib/wine/aarch64-windows/ \
  && mkdir -p /stage/opt/wine/share/lsb-sources \
  && cp wine/COPYING.LIB /stage/opt/wine/share/lsb-sources/Wine-LICENSE \
@@ -53,5 +60,7 @@ for p in root.rglob('*'):
         dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,dest)
 PYNOTICE
 RUN llvm-readobj --coff-imports /stage/opt/wine/lib/wine/aarch64-windows/libwow64fex.dll > /stage/opt/wine/share/lsb-sources/fex-imports.txt
+COPY native/fex/verify-imports.py /verify-imports.py
+RUN python3 /verify-imports.py
 COPY native/fex/pack.py /pack.py
 CMD ["python3", "/pack.py"]
