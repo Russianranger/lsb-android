@@ -23,6 +23,10 @@ static void *WINAPI wrong(void *o,const void *v,const void *m){vec2(o,v,m);((DWO
 int wmain(void){
     MathRoutine routines[3]={vec2,vec3,matrix};MathResult result;
     unsigned char before[512] __attribute__((aligned(16))),after[512] __attribute__((aligned(16)));
+    /* Box64's FXSAVE32 serializes its 8-byte internal x87 representation and
+     * leaves the rest of each slot untouched. Define those bytes before the
+     * comparison; uninitialized padding is not saved floating-point state. */
+    memset(before,0,sizeof(before));memset(after,0,sizeof(after));
     /* Non-default rounding, nonempty x87 stack, and sticky SSE flags survive. */
     unsigned short cw=0x077f;DWORD mxcsr=0x5fa0;
     __asm__ volatile("fninit; fldcw %0; fld1; fldpi; ldmxcsr %1; fxsave %2"::"m"(cw),"m"(mxcsr),"m"(before):"memory");
@@ -32,6 +36,7 @@ int wmain(void){
     BOOL preserved=!memcmp(before,after,5)&&!memcmp(before+24,after+24,4);
     for(unsigned i=0;i<8;i++)if(memcmp(before+32+i*16,after+32+i*16,10))preserved=FALSE;
     if(!preserved){
+        for(unsigned i=0;i<160;i++)if(before[i]!=after[i])printf("LSB_GAME_MATH state_byte=%u before=%02x after=%02x\n",i,before[i],after[i]);
         puts("LSB_GAME_MATH floating_state FAIL");return 2;
     }
     routines[0]=wrong;math_run(routines,&result);

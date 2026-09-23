@@ -86,6 +86,18 @@ last-error preservation and ensures unsupported profiles never run arithmetic.
 It runs on native Windows and both ARM64 runtime stacks in existing CI gates.
 Qualification and APK delivery receipts will be appended when complete.
 
+Initial implementation `6c480ac663062be39c8674566fca80caa96d295c` passes native
+Windows and Android packaging. Both Box64 jobs stop in the new floating-state
+fixture (PR job `107381167920`, push job `107381050870`), before graphics checks.
+The arithmetic itself passes. Inspection of Box64 `2f130fab1`'s
+`fpu_fxsave32`/`fpu_fxrstor32` finds that they copy the 8-byte internal register
+representation into each x87 slot; bytes 8–9 are untouched. The fixture compared
+those bytes in uninitialized buffers. Both snapshots now start zeroed, retaining
+the same control, status, tag, MXCSR and register comparison assertions; failures
+also print the differing synthetic state bytes. This is a fixture correction,
+with no production/runtime change or retry of the unchanged failing test.
+Source: [Box64 x87 helper](https://github.com/ptitSeb/box64/blob/2f130fab1/src/emu/x87emu_private.c).
+
 After qualification, install 0.5.18 over the app. No runtime download is needed.
 Retain FEX/faster x87, DXVK 2.7.1 and existing display settings. Enable
 **Capture FFXI startup and graphics**, launch once to the broken screens,
