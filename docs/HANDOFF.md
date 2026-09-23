@@ -13,7 +13,7 @@ The existing observer stops at frame 216 and samples only the first eight
 UP draws every 32 frames. 0.5.19 adds bounded numeric summaries of up to 1,024
 UP draws per sampled frame, distributed vertex/decoded-index samples,
 position/UV bounds and diffuse-alpha counts, grouped by layout/texture/state
-in four time windows. Capture lasts up to 90 seconds. No rendering patch,
+in four time windows. Capture lasts up to 180 seconds. No rendering patch,
 texture/vertex dump, runtime update or proprietary code is included.
 
 Local helper checks, 63 runtime tests and warning-free cross-compilation pass.

@@ -24,7 +24,9 @@ untuned Turnip remain confirmed. The capture still stops at 65,536 UP draws,
 frame 216, with 224 first-eight-draw position samples and no flags. Its five
 retained states match the earlier failing capture. That tiny sample does not
 cover all menu draws, UV/diffuse-alpha values, or the later character scene.
-Do not re-run this math check or the earlier runtime/precision/DXVK matrices.
+The session lasts 233 seconds; the character screenshot is about 118 seconds
+after session start. The new 180-second capture window accounts for that
+observed progression. Do not re-run this math check or the earlier runtime/precision/DXVK matrices.
 
 ## 0.5.19 diagnostic change
 
@@ -37,7 +39,7 @@ vertex. Buffered draws retain the previous limited capture only.
 Groups include FVF, stride, primitive/indexed mode, stage-zero texture
 type/size/format, alpha test/blend, color/alpha operations and arguments,
 texture-coordinate index and transform flags. Up to 24 groups are retained
-in each of four elapsed-time windows: 0–15, 15–30, 30–60 and 60–90 seconds.
+in each of four elapsed-time windows: 0–15, 15–30, 30–60 and 60–180 seconds.
 Descriptors and cumulative summaries replace prior snapshots for the same
 group, bounding the parser at 288 batch records plus four limit receipts.
 The original 64-row record budget remains separate.
@@ -51,7 +53,7 @@ proves a rendering defect. Unsupported FVF/shader handles are reported without
 exporting handle values. No texture content, vertex arrays, addresses, game
 code, credentials or private paths are exported. No GPU readback is added.
 
-The observer detaches at 90 seconds, 4,096 frames or 1,048,576 draws, whichever
+The observer detaches at 180 seconds, 8,192 frames or 2,097,152 draws, whichever
 comes first, or device release. Broader collection has diagnostic overhead;
 do not use a capture launch as a performance benchmark. Its purpose is to
 find which class of actual submissions diverges from expected screen geometry.

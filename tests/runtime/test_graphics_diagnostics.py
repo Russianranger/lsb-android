@@ -18,7 +18,7 @@ class GraphicsContracts(unittest.TestCase):
         self.assertEqual(report['batches'][0]['draws'],42)
         self.assertEqual(report['records'][0]['event'],'device')
         self.assertNotIn('private',json.dumps(report))
-        self.assertEqual(report['limits']['seconds'],90)
+        self.assertEqual(report['limits']['seconds'],180)
     def parse(self,raw):
         events=PrivateEvents()
         for i in range(0,len(raw),5):events.feed(raw[i:i+5])

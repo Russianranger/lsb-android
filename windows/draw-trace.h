@@ -37,7 +37,7 @@ static void dt_up(IDirect3DDevice8 *self,D3DPRIMITIVETYPE type,UINT primitives,
     if(dt_calls++>=DT_DRAWS){dt_limit(1);return;}
     DWORD saved=GetLastError(),key[DT_KEYS]={0};
     ULONGLONG ms=GetTickCount64()-gt.started;
-    key[0]=ms<15000?0:ms<30000?1:ms<60000?2:3;
+    key[0]=ms<30000?0:ms<60000?1:ms<120000?2:3;
     if(FAILED(gt.dev.GetVertexShader(self,&key[1]))){dt_limit(2);SetLastError(saved);return;}
     DrawLayout layout={0};BOOL layout_ok=ds_layout(key[1],stride,&layout);
     if(!layout_ok)key[1]=0; /* Never export a shader handle as an FVF. */

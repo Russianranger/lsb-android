@@ -56,8 +56,8 @@ class GraphicsDiagnostics:
             return {'format':2,'policy':'fixed_numeric_metadata_only','records':[dict(r) for r in self.records],
                     'batches':[dict(r) for r in self.batches.values()],
                     'batch_limits':[dict(r) for r in self.batch_limits],
-                    'dropped_records':self.dropped,'limits':{'frames':4096,'seconds':90,'draws':1048576,
+                    'dropped_records':self.dropped,'limits':{'frames':8192,'seconds':180,'draws':2097152,
                     'sample_period_frames':32,'sampled_draws_per_frame':8,'vertices_per_draw':8,
                     'tracked_buffers':32,'bytes_per_buffer':32768,'batch_draws_per_frame':1024,
-                    'batch_vertices_per_draw':64,'batch_groups_per_phase':24,'batch_phase_seconds':[0,15,30,60,90]},
+                    'batch_vertices_per_draw':64,'batch_groups_per_phase':24,'batch_phase_seconds':[0,30,60,120,180]},
                     'coverage':'Creation thread only. Original records sample first-eight-draw positions; indexed records sample the declared vertex range. Batches additionally sample up to 1024 UP draws every 32 frames with up to 64 distributed vertices, decoding submitted UP indices. They summarize finite position/UV bounds and diffuse alpha by layout, texture descriptor and state in four time windows. No buffered-draw batches or texture contents. Unsupported layouts, omitted vertices and coverage limits are explicit. Large UV/zero alpha values can be intentional; summaries do not prove correct game data.'}

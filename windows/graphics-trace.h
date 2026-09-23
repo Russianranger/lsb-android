@@ -4,9 +4,9 @@
 #include <stdint.h>
 #define GT_BUFFERS 32
 #define GT_BYTES 32768
-#define GT_DRAWS 1048576
-#define GT_FRAMES 4096
-#define GT_MILLISECONDS 90000
+#define GT_DRAWS 2097152
+#define GT_FRAMES 8192
+#define GT_MILLISECONDS 180000
 static struct {
     IDirect3D8Vtbl api;
     IDirect3DDevice8Vtbl dev;
