@@ -2,6 +2,22 @@ import importlib.util,json,pathlib,tempfile,unittest,uuid,io,time,hashlib
 from unittest.mock import patch,Mock
 spec=importlib.util.spec_from_file_location('supervisor',pathlib.Path(__file__).resolve().parents[2]/'runtime/supervisor.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class Contracts(unittest.TestCase):
+ def test_pixel_check_requires_both_modes_and_rejects_failure_receipts(self):
+  sw='LSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\n'
+  hw='LSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for log,passed in [(sw+hw,True),(sw,False),('',False),(sw+hw+sw,False),
+                      (sw+hw+'LSB_D3D8_PIXEL mode=swvp frame=0 panel=2 sample=0 expected=a04020 actual=000000 FAIL\n',False)]:
+    s=object.__new__(module.Supervisor);s.engine='fex';s.req={};s.env={};s.state={'dxvk_selected':'2.7.1'}
+    s.logs=[Mock()];s.spawn=Mock();s.wait=Mock();s.status=Mock()
+    (pathlib.Path(t)/'graphics-pixels.log').write_text(log)
+    if passed:
+     s.check_graphics_pixels();self.assertEqual(s.status.call_args.kwargs['graphics_pixels']['samples'],128)
+    else:
+     with self.assertRaisesRegex(RuntimeError,'incomplete'):s.check_graphics_pixels()
+     self.assertFalse(s.status.call_args.kwargs['graphics_pixels']['passed'])
+    self.assertEqual(s.spawn.call_args.args[0][-1],'--pixels')
+    self.assertTrue(s.spawn.call_args.kwargs['fixed_output'])
  def tuning_fixture(self,folder,request,env=None):
   s=object.__new__(module.Supervisor);s.engine="box64";s.req=dict(renderer='turnip26',**request)
   s.env=dict(env or {});s.state={};s.status=Mock();s.spawn=Mock();s.wait=Mock();s.logs=[Mock()]

@@ -103,6 +103,10 @@ def main():
                 assert 'd3d8.dll' in log and 'd3d9.dll' in log and ': native' in log
                 expected=os.environ.get('LSB_TEST_DXVK','2.5.3') if cycle==1 else '2.5.3'
                 assert result['dxvk_selected']==expected,result
+                assert result['graphics_pixels']['passed'] and result['graphics_pixels']['samples']==128,result
+                assert result['graphics_pixels']['vertex_processing']==['software','hardware'],result
+                assert result['graphics_pixels']['dxvk']==expected,result
+                print('PASS: D3D8 managed textures, indexed buffer transforms, render targets and alpha pixels in both vertex-processing modes',flush=True)
                 assert any('DXVK: v'+expected in f.read_text(errors='replace') for f in Path('/logs').glob('*d3d*.log'))
                 if cycle==1:
                     assert result['shm_upload_active'],result

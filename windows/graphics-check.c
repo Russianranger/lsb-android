@@ -1,10 +1,11 @@
-/* App-owned, finite DXVK D3D8->D3D9 device/draw/presentation compatibility check.
- * Runs before the login process; never opens client files or submits credentials. */
+/* Finite D3D8 compatibility check using only app-owned assets. */
 #define COBJMACROS
 #include <windows.h>
 #include <d3d8.h>
+#include <wchar.h>
+#include "graphics-pixels.h"
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR args,int show){
-    (void)previous;(void)args;(void)show;
+    (void)previous;(void)show;
     HWND window=CreateWindowW(L"STATIC",L"Graphics compatibility check",WS_POPUP|WS_VISIBLE,0,0,320,240,NULL,NULL,instance,NULL);
     if(!window)return 10;
     IDirect3D8 *api=Direct3DCreate8(D3D_SDK_VERSION);if(!api){DestroyWindow(window);return 11;}
@@ -24,6 +25,11 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR args,int show){
         if(SUCCEEDED(hr))hr=IDirect3DDevice8_Present(device,NULL,NULL,NULL,NULL);
         MSG message;while(PeekMessageW(&message,NULL,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}
     }
-    if(device)IDirect3DDevice8_Release(device);IDirect3D8_Release(api);DestroyWindow(window);
-    return FAILED(hr)?12:0;
+    if(device)IDirect3DDevice8_Release(device);
+    int result=FAILED(hr)?12:0;
+    if(!result && !wcscmp(args,L"--pixels")) {
+        result=check_pixels(api,window,D3DCREATE_SOFTWARE_VERTEXPROCESSING,"swvp");
+        if(!result)result=check_pixels(api,window,D3DCREATE_HARDWARE_VERTEXPROCESSING,"hwvp");
+    }
+    IDirect3D8_Release(api);DestroyWindow(window);return result;
 }

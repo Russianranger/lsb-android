@@ -311,6 +311,22 @@ class Supervisor:
             report['fallback']=str(error)
         self.status(graphics_tuning=report)
 
+    def check_graphics_pixels(self):
+        # Standalone Windows checks only: finite readbacks must not add frame
+        # synchronization or recurring observation to the real game launch.
+        proc=self.spawn(self.wine_command(r'P:\graphics-check.exe','--pixels'),'graphics-pixels.log',fixed_output=True)
+        self.status(graphics_pixels={'format':1,'passed':False,'log':'graphics-pixels.log'})
+        self.wait(proc,60,'D3D8 texture, geometry and render-target pixel check')
+        self.logs[-1].thread.join(3)
+        log=(LOGS/'graphics-pixels.log').read_text(errors='replace')
+        modes=re.findall(r'^LSB_D3D8_PIXELS mode=(swvp|hwvp) frames=4 samples=64 PASS\s*$',log,re.M)
+        if sorted(modes)!=['hwvp','swvp'] or re.search(r'^LSB_D3D8_.* FAIL\s*$',log,re.M):
+            raise RuntimeError('D3D8 pixel verification is incomplete; export Diagnostics')
+        self.status(graphics_pixels={'format':1,'passed':True,'log':'graphics-pixels.log',
+            'frames':8,'samples':128,'vertex_processing':['software','hardware'],
+            'cases':['transformed_quad','managed_texture','indexed_buffer_render_target','alpha_blend_test'],
+            'dxvk':self.state['dxvk_selected']})
+
     def start_native_surface(self):
         if not self.req.get('native_surface',False):return
         try:
@@ -413,6 +429,7 @@ class Supervisor:
                 check(self);self.status('completed')
             atomic(marker,signature)
             return
+        if self.req['renderer']!='software':self.check_graphics_pixels()
         self.status('starting_probe',prefix_system_files_verified=True)
         args=self.wine_command(r'P:\runtime-probe.exe')
         if os.environ.get('LSB_TEST_AUTOCLOSE')=='1':args+=['--autotest']

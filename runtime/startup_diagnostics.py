@@ -8,6 +8,17 @@ import threading
 
 
 class StartupDiagnostics:
+    # Exact upstream DXVK 2.5.3/2.7.1 messages only. Retain a fixed reason,
+    # never free-form shader text, interface names, resource paths or tokens.
+    DXVK_REASONS = {
+        b'd3d8device::setrenderstate: unimplemented render state d3drs_linepattern':'line_pattern_unsupported',
+        b'd3d8device::setrenderstate: unimplemented render state d3drs_patchsegments':'patch_segments_unsupported',
+        b'd3d8device::setindices: basevertexindex exceeds int_max':'base_vertex_out_of_range',
+        b'd3d9deviceex::setupfpu: not supported on this arch.':'fpu_setup_unsupported',
+        b'd3d8device: error! failed to get d3d9 bridge.':'d3d9_bridge_missing',
+        b'd3dtop_premodulate: not implemented':'premodulate_unsupported',
+        b'unhandled texture op!':'texture_operation_unsupported',
+    }
     WINE = re.compile(rb'^(?:[0-9]+\.[0-9]+:)?((?:[0-9a-f]{4,8}:){1,2})(trace|warn|err|fixme):([a-z0-9_]+):([a-z0-9_]+) (.*)$')
     MODULES = {n.lower().encode(): n for n in
                ('polcore.dll', 'polcoreeu.dll', 'FFXi.dll', 'FFXiMain.dll', 'd3d8.dll', 'd3d9.dll')}
@@ -108,4 +119,10 @@ class StartupDiagnostics:
                     if message.startswith(prefix):
                         category = label
                         break
-                self.add('dxvk', 'diagnostic', severity=level.decode(), category=category)
+                reason=self.DXVK_REASONS.get(message)
+                for method,label in ((b'capturestateblock','state_block_capture_invalid'),
+                                     (b'applystateblock','state_block_apply_invalid'),
+                                     (b'deletestateblock','state_block_delete_invalid')):
+                    if re.fullmatch(rb'd3d8device::'+method+rb': invalid token: [0-9a-f]{1,8}',message):reason=label
+                detail={'reason':reason} if reason else {}
+                self.add('dxvk', 'diagnostic', severity=level.decode(), category=category,**detail)

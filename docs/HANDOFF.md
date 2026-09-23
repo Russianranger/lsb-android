@@ -1,3 +1,26 @@
+# Current: 0.5.14 graphics failure; 0.5.15 diagnostic qualification
+
+The latest Thor test improves FEX performance from about 5 to 13 FPS but has
+missing menu content and severe white geometric corruption. Both preflight
+and final launch verify strict64 arithmetic. Hardware Turnip 26/DXVK 2.7.1 and
+690 game SHM uploads are confirmed; copy averages 0.721 ms, with no upload
+fallback or attachment failure. This remains a failed real-client result.
+
+See [the current audit and diagnostic design](graphics-corruption-0515.md).
+0.5.15 adds actual texture/buffer/transform/render-target/alpha pixel checks to
+standalone Windows checks, plus fixed DXVK warning reasons. It is diagnostic,
+not a game fix. Game launch receives no new readback or recurring observation.
+CI qualification is pending; no 0.5.15 APK has been delivered. User permission
+to change and push this repository remains explicit and active.
+
+The current support game session is `9c612832-2206-4d98-8fb1-a7afa1e7c414`.
+Previous runtime state is its strict64 probe; previous client-launch JSON is
+older 0.5.13 FEX session `f1565fe7-80be-48eb-a70a-3236450689e4`. Do not count
+those as a new 0.5.14 full80 comparison. Preserve the existing prepared client,
+client version, original xiloader and working Termux server.
+
+---
+
 # Ready for Thor: FEX arithmetic comparison (0.5.14)
 
 Thor 0.5.13 is **not accepted for real FFXI**: character selection was mostly

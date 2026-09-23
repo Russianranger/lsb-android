@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.14**, a focused FEX regression comparison. The in-app client already supports login, audio and controller input; the user accepted the earlier periodic-stutter fix, 60 Hz and an improvement with DXVK 2.7.1. The experimental 0.5.13 FEX path then produced a mostly black character screen at about 5 FPS. 0.5.14 makes Windows graphics checks use the client's selected settings and adds default-off **FEX faster x87 arithmetic** with actual precision and child-environment checks before login. It is an experiment, not a confirmed gameplay fix. See [the 0.5.14 evidence and Thor test](docs/fex-regression-0514.md), [current handoff](docs/HANDOFF.md) and [validation record](docs/validation.md).
+Current development: **0.5.15 diagnostic qualification**. The Thor's 0.5.14 FEX faster-x87 test improved performance from about 5 to 13 FPS but still has missing menus and severe graphics corruption. 0.5.15 adds actual pixel checks for textures, transformed geometry, dynamic buffers and render targets, plus specific fixed graphics-warning reasons. It is not a claimed gameplay fix. See [the current audit and next test](docs/graphics-corruption-0515.md), [handoff](docs/HANDOFF.md) and [validation record](docs/validation.md).
 
 Install the separately delivered signed APK over the existing app. Keep the accepted client preparation, client `30251204_1`, original xiloader and working Termux server. Existing FEX users need no runtime download, client re-import or re-preparation. Keep Turnip 26, DXVK 2.7.1, 60 Hz, Native Surface and shared-memory upload for the x87 comparison. Turning FEX off selects the preserved Box64 environment. Server migration remains a separate step; see [the server workflow](docs/milestone-050.md).
 
@@ -67,7 +67,7 @@ Host tests use synthetic PE fixtures, not proprietary game files. They cover arc
 
 ## Historical roadmap
 
-The following original roadmap is retained for context. Runtime, preparation, login, controller support and isolated server deployment have since been implemented. The current checkpoint is the 0.5.14 Thor performance comparison above; it does not authorize migration of the working Termux server or coordinated client/loader updates.
+The following original roadmap is retained for context. Runtime, preparation, login, controller support and isolated server deployment have since been implemented. The current checkpoint is the 0.5.15 graphics diagnostic above; it does not authorize migration of the working Termux server or coordinated client/loader updates.
 
 1. Build an app-owned runtime and fresh Windows prefix with in-app display/input/audio. Use open x86 registry/COM, Direct3D 8 and process-lifecycle probes before relying on proprietary client files. Keep the captured Proton/FEX setup as historical evidence; a different runtime is a new compatibility candidate, not an equivalent preset.
 2. Validate any surviving app import or client ZIP, then initialize PlayOnline/FFXI registration and dependencies in a staged prefix. Support official installers inside the app when reconstruction requires them. Preserve a stopped, usable environment before activation or repair.

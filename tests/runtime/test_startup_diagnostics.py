@@ -45,6 +45,20 @@ class StartupContracts(unittest.TestCase):
         self.assertEqual(report['counts']['dxvk_initialization_message'],1)
         self.assertLessEqual(len(events.tail),4096)
 
+    def test_graphics_reasons_are_exact_and_never_retain_private_suffixes(self):
+        raw=(b'warn: D3D8Device::SetRenderState: Unimplemented render state D3DRS_LINEPATTERN\n'
+             b'warn: D3D8Device::ApplyStateBlock: Invalid token: deadbeef\n'
+             b'warn: D3D8Device::SetIndices: BaseVertexIndex exceeds INT_MAX\n'
+             b'warn: D3D9DeviceEx::SetupFPU: not supported on this arch.\n'
+             b'warn: D3D8Device::ApplyStateBlock: Invalid token: private_password\n'
+             b'warn: D3D8Device::SetIndices: BaseVertexIndex exceeds INT_MAX private_password\n')
+        _,report=self.parsed(raw)
+        reasons={r['reason'] for r in report['records'] if 'reason' in r}
+        self.assertEqual(reasons,{'line_pattern_unsupported','state_block_apply_invalid',
+                                 'base_vertex_out_of_range','fpu_setup_unsupported'})
+        self.assertNotIn('private',json.dumps(report));self.assertNotIn('deadbeef',json.dumps(report))
+        self.assertIn({'source':'dxvk','event':'diagnostic','category':'d3d8','severity':'warn'},report['records'])
+
     def test_chunked_utf16_color_eof_and_echoes(self):
         for encoding in ('ascii','utf-16le','utf-16be'):
             raw=('username=00fc:err:module:LdrLoadDll secret\npassword=err:   D3D9: secret\n'

@@ -13,7 +13,7 @@ p.add_argument('--android-jar', type=Path, required=True)
 p.add_argument('--build-tools', type=Path, required=True)
 p.add_argument('--keystore', type=Path, required=True)
 p.add_argument('--alias', default='lsb-preview')
-p.add_argument('--output', type=Path, default=root/'out/LSB-Android-0.5.14.apk')
+p.add_argument('--output', type=Path, default=root/'out/LSB-Android-0.5.15.apk')
 args = p.parse_args()
 work = root/'out/apk-build'
 classes = work/'classes'
