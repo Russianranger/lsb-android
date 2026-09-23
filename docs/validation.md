@@ -1,3 +1,27 @@
+# Box64 comparison complete: both screens render correctly
+
+On 0.5.16, the same agreement/character-selection screens render correctly
+under Box64 at about 29 FPS. The runtime/driver/client checks match the FEX
+comparison except for the runtime stacks and separate Wine environments.
+
+All five captured FEX states are also present unchanged in working Box64,
+including FVF, texture formats and x87/MXCSR controls. Both captures hit the
+65,536 UP-draw limit with 224 unflagged sampled vertices and restore their
+hooks. Both contain the line-pattern warning and buffer-tracking limit.
+These shared receipts do not identify a cause of the FEX corruption.
+
+[Comparison and automated investigation](box64-fex-comparison-0516.md).
+A CI-only synthetic fixture now exercises the captured DXT1/DXT3 formats,
+MODULATE2X/alpha/additive combinations, and 378 small UP draws per frame.
+It is under ARM64 qualification. No production APK/runtime change is made.
+
+The requested device comparisons are complete; do not repeat them.
+Box64 remains the usable baseline. Keep the prepared client `30251204_1`,
+original xiloader and working Termux server. Repo changes/pushes remain
+authorized. Earlier entries below are historical.
+
+---
+
 # Thor 0.5.16 game capture received: rendering fault still unresolved
 
 The requested FEX game capture is verified against the delivered APK.

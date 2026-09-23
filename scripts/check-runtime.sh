@@ -28,7 +28,7 @@ docker build -f out/runtime-test/Dockerfile.modern -t lsb-runtime:modern out/run
 mkdir -p out/runtime-test/logs/dxvk271
 docker run --rm --network none -e LSB_TEST_VULKAN_ICD=/usr/share/vulkan/icd.d/lvp_icd.json -e LSB_TEST_RENDERER=turnip26 -e LSB_TEST_DXVK=2.7.1 \
  -v "$PWD/out/runtime-test/backend:/opt/lsb:ro" -v "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
- -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" -v "$PWD/out/runtime-test/logs/dxvk271:/logs" \
+ -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/out/windows-tests:/fixtures:ro" -v "$PWD/tests/runtime:/tests:ro" -v "$PWD/out/runtime-test/logs/dxvk271:/logs" \
  lsb-runtime:modern python3 /tests/integration.py
 for renderer in software turnip26; do
  mkdir -p "out/runtime-test/logs/$renderer"

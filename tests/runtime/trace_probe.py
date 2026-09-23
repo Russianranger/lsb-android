@@ -32,6 +32,23 @@ def checked(self):
     assert any(r['event']=='state' and r['alpha_test']==1 for r in rows),report
     Path('/logs/graphics-trace-fixture.json').write_text(json.dumps(report,indent=2))
     print('PASS: observed D3D8 pixels unchanged; actual UP/indexed-buffer geometry, state blocks, alpha and detach verified',flush=True)
+    # The working and broken Thor captures share these texture formats/states.
+    # Exercise their data path with synthetic assets and an independent oracle.
+    texture_log='texture-submission-'+self.req['dxvk_version']+'.log'
+    proc=self.spawn(self.wine_command(r'Z:\fixtures\texture-submission.exe'),texture_log,fixed_output=True)
+    self.wait(proc,60,'Compressed texture and UP submission fixture')
+    self.logs[-1].thread.join(3)
+    text=Path('/logs',texture_log).read_text(errors='replace')
+    match=re.search(r'^LSB_TEXTURE_SUBMISSIONS formats=3 frames=4 draws=1512 samples=144 x87=([0-9a-f]{4}) PASS\s*$',text,re.M)
+    assert match and ' FAIL' not in text,text[-4000:]
+    Path('/logs',texture_log.replace('.log','.json')).write_text(json.dumps({
+        'engine':self.engine,'dxvk':self.state['dxvk_selected'],
+        'fex_mode':self.state.get('fex_arithmetic',{}).get('mode'),
+        'formats':['A8R8G8B8','DXT1','DXT3'],'texture_size':[1024,1024],
+        'frames':4,'draws':1512,'samples':144,'x87_control':int(match[1],16),
+        'vertex_processing':'hardware','pixel_checks':'passed',
+        'coverage':'Synthetic point-filtered MODULATE2X UP tiles; opaque, alpha-test/blend and additive blending. Not a game or Adreno capture.'},indent=2))
+    print('PASS: compressed DXT1/DXT3 and ARGB updates; 1512 UP draws and 144 MODULATE2X/alpha/additive pixels',flush=True)
 
 supervisor.Supervisor.check_graphics_pixels=checked
 supervisor.main()
