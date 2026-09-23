@@ -11,6 +11,7 @@ typedef struct {float x,y,z,rhw;DWORD color;float u,v;} Vertex;
 static const DWORD rgb[4]={0x00ff0000,0x0000ff00,0x000000ff,0x00ffffff};
 static const WORD rgb565[4]={0xf800,0x07e0,0x001f,0xffff};
 static const BYTE alpha[4]={0,136,255,68};
+static volatile unsigned path_draws[3];
 #define TRY(stage,call) do {hr=(call);if(FAILED(hr)){printf("LSB_TEXTURE_API stage=%s hr=%08lx FAIL\n",stage,(unsigned long)hr);goto done;}} while(0)
 #define RELEASE(kind,p) do {if(p)kind##_Release(p);} while(0)
 
@@ -45,6 +46,7 @@ static HRESULT tile(IDirect3DDevice8 *d,unsigned panel,unsigned row,unsigned tx,
         {x-.5f,y-.5f,.5f,1,0x80808080,u,v},{x+59.5f,y-.5f,.5f,1,0x80808080,u1,v},
         {x-.5f,y+39.5f,.5f,1,0x80808080,u,v1},{x+59.5f,y+39.5f,.5f,1,0x80808080,u1,v1}};
     if(panel){
+        path_draws[panel]++;
         /* Nonzero MinVertexIndex catches treating indices as relative offsets.
          * Prefix vertices must not be sampled or rendered. */
         Vertex padded[6];memset(padded,0xff,sizeof(padded));memcpy(padded+2,vertices,sizeof(vertices));
@@ -52,6 +54,7 @@ static HRESULT tile(IDirect3DDevice8 *d,unsigned panel,unsigned row,unsigned tx,
         return IDirect3DDevice8_DrawIndexedPrimitiveUP(d,D3DPT_TRIANGLESTRIP,2,4,2,
             panel==1?(const void*)small:(const void*)large,panel==1?D3DFMT_INDEX16:D3DFMT_INDEX32,padded,sizeof(Vertex));
     }
+    path_draws[0]++;
     return IDirect3DDevice8_DrawPrimitiveUP(d,D3DPT_TRIANGLESTRIP,2,vertices,sizeof(vertices[0]));
 }
 
@@ -156,6 +159,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR args,int show){
         TRY("present",IDirect3DDevice8_Present(d,NULL,NULL,NULL,NULL));
         MSG message;while(PeekMessageW(&message,NULL,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}
     }
+    printf("LSB_TEXTURE_PATHS up=%u indexed16=%u indexed32=%u\n",path_draws[0],path_draws[1],path_draws[2]);
     printf("LSB_TEXTURE_SUBMISSIONS formats=3 frames=4 draws=%u samples=%u x87=%04x PASS\n",draws,samples,control);
 done:
     RELEASE(IDirect3DSurface8,readback);RELEASE(IDirect3DSurface8,back);

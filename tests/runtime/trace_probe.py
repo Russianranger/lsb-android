@@ -61,6 +61,7 @@ def checked(self):
     text=Path('/logs',texture_log).read_text(errors='replace')
     match=re.search(r'^LSB_TEXTURE_SUBMISSIONS formats=3 frames=4 draws=1512 samples=144 x87=([0-9a-f]{4}) PASS\s*$',text,re.M)
     assert match and ' FAIL' not in text,text[-4000:]
+    assert 'LSB_TEXTURE_PATHS up=504 indexed16=504 indexed32=504' in text,text[-4000:]
     submitted=GraphicsDiagnostics()
     for line in text.lower().encode().splitlines():submitted.line(line)
     summary=submitted.snapshot();assert summary is not None,'No texture submission observation'
