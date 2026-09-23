@@ -1,4 +1,4 @@
-/* One bounded diagnostic of already-loaded client math, on its render thread.
+/* One bounded diagnostic of already-loaded client math, on a disposable thread.
  * Only exact file/PE identities AND complete pure-kernel hashes permit calls.
  * Never initialize dispatch, replace a game routine, or export client bytes.
  * Unknown clients/routines are observed as unsupported and never invoked. */
@@ -8,6 +8,8 @@
 static BYTE *gm_base;
 static BOOL gm_prepared,gm_checked;
 static unsigned gm_attempts;
+static MathJob gm_job;
+static HANDLE gm_thread;
 static const char gm_file_sha[]="d528142a9bfb7767b4d4574dde531ea87a673670c81892f1eab37563b82c0235";
 typedef struct {DWORD rva,size;const char *sha;} GameKernel;
 static const GameKernel gm_kernels[2][3]={
@@ -82,8 +84,26 @@ static unsigned gm_kernel(DWORD pointer,unsigned slot){
     }
     return 0;
 }
+static void gm_collect(BOOL final){
+    if(!gm_thread)return;
+    DWORD status=WaitForSingleObject(gm_thread,0);
+    if(status==WAIT_TIMEOUT){
+        if(final){event("main_math_pending",1,0);CloseHandle(gm_thread);gm_thread=NULL;}
+        return;
+    }
+    DWORD code=1;
+    if(status!=WAIT_OBJECT_0||!GetExitCodeThread(gm_thread,&code)||code)event("main_math_unavailable",2,0);
+    else{
+        MathResult *r=&gm_job.result;
+        event("main_math_controls",gm_job.observed_cw,gm_job.observed_mxcsr);
+        event("main_math_result",r->failures,r->samples);event("main_math_returns",r->returns,0);
+        if(r->failures){event("main_math_case",r->first_case,0);event("main_math_expected",r->expected,0);event("main_math_actual",r->actual,0);}
+    }
+    CloseHandle(gm_thread);gm_thread=NULL;
+}
 static void gm_observe(BOOL final){
     DWORD saved=GetLastError();gm_prepare();
+    gm_collect(final);
     if(!gm_base||(!final&&(gm_checked||gm_attempts>=2))){SetLastError(saved);return;}
     DWORD pointers[4],mode;unsigned paths[3];
     if(!gm_read(gm_base+0x3ca2c0,pointers,sizeof(pointers))||!gm_read(gm_base+0x3cab04,&mode,4)){
@@ -103,8 +123,7 @@ static void gm_observe(BOOL final){
     if(!paths[0]||!paths[1]||!paths[2]||(features&12)!=12){event("main_math_skipped",1,gm_attempts);SetLastError(saved);return;}
     gm_checked=TRUE;
     MathRoutine routines[3]={(MathRoutine)(uintptr_t)pointers[0],(MathRoutine)(uintptr_t)pointers[1],(MathRoutine)(uintptr_t)pointers[3]};
-    MathResult result;event("main_math_begin",0,192);math_run(routines,&result);
-    event("main_math_result",result.failures,result.samples);event("main_math_returns",result.returns,0);
-    if(result.failures){event("main_math_case",result.first_case,0);event("main_math_expected",result.expected,0);event("main_math_actual",result.actual,0);}
+    event("main_math_begin",0,192);gm_thread=math_start(&gm_job,routines,(HMODULE)gm_base);
+    if(!gm_thread)event("main_math_unavailable",3,0);
     SetLastError(saved);
 }

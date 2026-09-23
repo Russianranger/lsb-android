@@ -84,7 +84,7 @@ class StartupDiagnostics:
                      'main_directplay_load','main_windows_version','main_window_class','main_window_create','main_d3d8_create',
                      'main_math_profile','main_math_dispatch','main_math_final','main_math_cpu','main_math_unavailable',
                      'main_math_skipped','main_math_begin','main_math_result','main_math_returns','main_math_case',
-                     'main_math_expected','main_math_actual'}
+                     'main_math_expected','main_math_actual','main_math_controls','main_math_pending'}
             if name.decode() in allowed:
                 self.add('startup',name.decode(),process_id=int(pid,16),thread_id=int(tid,16),code=int(code,16),detail=int(detail,16))
             return

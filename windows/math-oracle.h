@@ -19,9 +19,7 @@ static void math_compare(MathResult *r,const uint32_t *out,const int *expected,u
     }
 }
 static __attribute__((noinline)) void math_run(const MathRoutine routines[3],MathResult *r){
-    unsigned char fp[512] __attribute__((aligned(16)));
-    unsigned short cw;memset(r,0,sizeof(*r));
-    __asm__ volatile("fxsave %0; fnstcw %1; fninit; fldcw %1":"=m"(fp),"=m"(cw)::"memory");
+    memset(r,0,sizeof(*r));
     const int m[16]={2,-3,4,1,5,6,-2,3,-4,2,7,-1,11,-5,3,2};
     uint32_t storage[20] __attribute__((aligned(16))),v[4],out[16];
     for(unsigned alignment=0;alignment<2;alignment++){
@@ -50,5 +48,29 @@ static __attribute__((noinline)) void math_run(const MathRoutine routines[3],Mat
         if(routines[2](dest,left,alias==3?left:right)!=dest)r->returns++;
         math_compare(r,dest,expected,16,32+alias);
     }
-    __asm__ volatile("fxrstor %0"::"m"(fp):"memory","st","st(1)","st(2)","st(3)","st(4)","st(5)","st(6)","st(7)","xmm0","xmm1","xmm2","xmm3","xmm4","xmm5","xmm6","xmm7");
+}
+/* Pure kernels run on a disposable thread. Do not use FXRSTOR to repair the
+ * game thread: translators need not implement its full x87 context correctly.
+ * The job must outlive the thread; the observer uses one static job per process. */
+typedef struct {
+    MathRoutine routines[3];MathResult result;
+    unsigned short cw,observed_cw;DWORD mxcsr,observed_mxcsr;
+    HMODULE module_hold;
+} MathJob;
+static DWORD WINAPI math_worker(void *context){
+    MathJob *job=context;
+    __asm__ volatile("fninit; fldcw %2; ldmxcsr %3; fnstcw %0; stmxcsr %1"
+        :"=m"(job->observed_cw),"=m"(job->observed_mxcsr)
+        :"m"(job->cw),"m"(job->mxcsr):"memory");
+    math_run(job->routines,&job->result);
+    if(job->module_hold)FreeLibrary(job->module_hold);
+    return 0;
+}
+static HANDLE math_start(MathJob *job,const MathRoutine routines[3],HMODULE module){
+    memset(job,0,sizeof(*job));memcpy(job->routines,routines,sizeof(job->routines));
+    __asm__ volatile("fnstcw %0; stmxcsr %1":"=m"(job->cw),"=m"(job->mxcsr));
+    if(module&&!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,(LPCWSTR)module,&job->module_hold))return NULL;
+    HANDLE thread=CreateThread(NULL,0,math_worker,job,0,NULL);
+    if(!thread&&job->module_hold){FreeLibrary(job->module_hold);job->module_hold=NULL;}
+    return thread;
 }

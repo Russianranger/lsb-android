@@ -37,12 +37,17 @@ The only supported bodies are the privately inspected pure Vec2 transform,
 Vec3 transform and matrix multiply routines (x87 or SSE2 selection).
 No client code, bytes, assets or disassembly are included in the repository.
 
-Once, on the existing rendering thread, the observer supplies synthetic local
+Once, on a disposable worker thread, the observer supplies synthetic local
 buffers to those three **already selected** functions. An independent integer
 oracle checks 192 exactly representable results: positive/negative vector
 inputs, aligned/unaligned matrices, separate matrix output, left/right aliasing
-and squaring in place. Both signs of zero are accepted. The probe saves/restores
-the floating-point state and isolates its temporary x87 stack. It does not
+and squaring in place. Both signs of zero are accepted. The worker uses the
+render thread's captured x87 control word and MXCSR settings, starts with an
+empty x87 stack, and records its observed controls. It uses no FXRSTOR on the
+game thread. The loaded module remains referenced for the worker's lifetime.
+Collection at frame 32/completion is nonblocking; a still-running worker is
+reported as pending, not passed. One static job bounds storage and prevents a
+timeout/use-after-free race. The probe does not
 initialize the dispatcher or change pointers, registry, files, rendering inputs,
 runtime settings or game data. Normal capture limits and hook restoration remain.
 
@@ -63,17 +68,21 @@ results of synthetic inputs only.
 | `main_math_dispatch`, `main_math_final` | mode 0 scalar, 1 3DNow choice, 2 SSE2, 3 SSE, 65535 uninitialized, 65534 unknown | three nibbles: Vec2, Vec3, matrix; each 0 unknown, 1 x87, 2 SSE2 |
 | `main_math_cpu` | 0 | bits 0/1 = CPUID/API 3DNow; bits 2/3 = CPUID/API SSE2 |
 | `main_math_begin` | 0 | 192 planned samples |
+| `main_math_controls` | observed worker x87 control word | observed worker MXCSR |
 | `main_math_result` | failed components | checked components (192 complete) |
 | `main_math_returns` | incorrect output-pointer returns | 0 |
 | `main_math_case` | first failing synthetic case × 16 + component | 0 |
 | `main_math_expected`, `main_math_actual` | synthetic result IEEE float bits | 0 |
-| `main_math_unavailable`, `main_math_skipped` | 1 | 0 or attempt number |
+| `main_math_unavailable`, `main_math_skipped` | read/worker/creation error 1/2/3, or unsupported 1 | 0 or attempt number |
+| `main_math_pending` | 1 | 0; worker not complete before capture ended |
 
 For corrected FEX, `main_math_cpu.detail=12` is the expected feature report.
 `main_math_dispatch(code=2, detail=546)` means mode SSE2 with all three kernel
 hashes recognized as SSE2 (`0x222`). This would establish actual selection;
 it is not asserted before receiving the phone result. `main_math_begin` without
-`main_math_result` identifies an interrupted probe, not a pass.
+`main_math_result` identifies an incomplete probe, not a pass. The worker is
+not claimed to reproduce the game thread's incoming x87 stack, flags, TLS or
+real inputs; the inspected pure routines use none of those process-specific inputs.
 
 ## Verification and next device run
 
@@ -97,6 +106,16 @@ the same control, status, tag, MXCSR and register comparison assertions; failure
 also print the differing synthetic state bytes. This is a fixture correction,
 with no production/runtime change or retry of the unchanged failing test.
 Source: [Box64 x87 helper](https://github.com/ptitSeb/box64/blob/2f130fab1/src/emu/x87emu_private.c).
+
+The initial FEX job `107381051057` also fails the snapshot-restoration fixture
+after its other launch checks. FEX 2510's `SaveX87State` rotates saved slots by
+TOP and converts strict64 values to extended format, while `RestoreX87State`
+loads those slots directly into physical registers. The diagnostic must not
+depend on this pair preserving its caller's state. Synthetic calls now use the
+isolated worker described above. The fixture retains its parent-state equality
+assertions and checks that the worker receives the captured control settings.
+There is no runtime patch and no claim that this FEX defect caused the original
+graphics corruption. [Exact FEX source](https://github.com/FEX-Emu/FEX/blob/320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab/FEXCore/Source/Interface/Core/OpcodeDispatcher/Vector.cpp).
 
 After qualification, install 0.5.18 over the app. No runtime download is needed.
 Retain FEX/faster x87, DXVK 2.7.1 and existing display settings. Enable
