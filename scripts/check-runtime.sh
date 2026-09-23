@@ -16,10 +16,13 @@ DOCKER
 docker build -t lsb-runtime:test out/runtime-test
 python3 scripts/check-display-wire.py --backend docker
 # A separate, disposable modern Mesa environment actually executes DXVK 2.7.1.
+# Upgrade only Mesa and its required dependencies. A full dist-upgrade also
+# replaced TigerVNC with 1.15, whose Composite redirect crashed in miValidateTree
+# in the PR fixture. Keep the exact device X server, checked by binary digest.
 # The pinned device rootfs and the baseline / PRoot tests stay unchanged.
 cat > out/runtime-test/Dockerfile.modern <<'DOCKER'
 FROM lsb-runtime:test
-RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* && echo 'deb https://deb.debian.org/debian trixie main' > /etc/apt/sources.list && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confold dist-upgrade && apt-get install -y --no-install-recommends mesa-vulkan-drivers && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN sha256sum /usr/bin/Xtigervnc > /tmp/lsb-xserver.sha256 && rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* && echo 'deb https://deb.debian.org/debian trixie main' > /etc/apt/sources.list && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confold install --no-install-recommends mesa-vulkan-drivers && sha256sum -c /tmp/lsb-xserver.sha256 && apt-get clean && rm -rf /var/lib/apt/lists/*
 DOCKER
 docker build -f out/runtime-test/Dockerfile.modern -t lsb-runtime:modern out/runtime-test
 mkdir -p out/runtime-test/logs/dxvk271

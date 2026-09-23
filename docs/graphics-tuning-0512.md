@@ -28,6 +28,11 @@ around 20–23 posts/s. The counters establish that the game, not only preflight
 uses SHM uploads. Tiny slot waits do not implicate the upload ring. They do not
 measure GPU execution/readback, translated game CPU work or shader compilation.
 The native capture path remains MIT-SHM with zero socket pixel payload.
+The five largest current-run gaps in that window are 130–149 ms, with six or
+seven unchanged responses between posts. Their capture cost is 1.6–6.0 ms and
+Surface post cost 0.3–0.8 ms once the next image arrives. This supports looking
+upstream of Android submission, while not distinguishing stationary scenes,
+game CPU stalls, shader work and GPU/readback delays.
 
 The startup D3D8 compatibility log reports **eight compiler workers** and
 immediate Vulkan presentation. This is a preflight property; it is not proof of
@@ -89,6 +94,14 @@ CI uses lavapipe: it cannot qualify Adreno performance or forced-sysmem pixels
 on physical hardware. On-device preflight is required on each tuned launch.
 
 CI and artifact results will be recorded after the gates finish.
+
+The first duplicate PR run failed inside TigerVNC 1.15's Composite redirect
+(`compRedirectWindow` / `miValidateTree`), after the tuned eight-frame check
+confirmed two workers. The modern-Mesa Docker fixture had unnecessarily
+upgraded the entire rootfs from Bookworm to Trixie. It now installs only Mesa
+and required dependencies and verifies that the original X server binary's
+SHA-256 remains unchanged. All graphics assertions remain; no test is skipped
+or automatically retried. The distributed device runtime is unaffected.
 
 ## Focused Thor test
 
