@@ -1,4 +1,4 @@
-# Current work: Turnip rendering and DXVK compiler scheduling (0.5.12)
+# Completed milestone: Turnip rendering and DXVK compiler scheduling (0.5.12)
 
 The user reports that DXVK 2.7.1 improved the experience, but FPS slowdowns remain.
 `lsb-support (8).zip` confirms hardware Turnip 26 / Adreno 740, DXVK 2.7.1,
@@ -16,8 +16,45 @@ DXVK pair. Requested/active settings and fallback reason appear in Diagnostics.
 No client/config/source files are changed. This is a qualified experiment, not
 an established fix for the remaining FPS loss. See [evidence and test](graphics-tuning-0512.md).
 
-Implementation and validation are in progress. Replace this paragraph with the
-actual CI results and signed artifact before delivery.
+**All six CI gates pass** for `ae984d3ab8e473fcccf650c83aced0d2fc4c98d5`
+in [push run 35803742003](https://github.com/Russianranger/lsb-android/actions/runs/35803742003):
+`presentation`, `verify`, `windows-launcher`, `runtime`, `server-deployment` and
+`runtime-release`. [PR run 35803744607](https://github.com/Russianranger/lsb-android/actions/runs/35803744607)
+passes all five applicable gates; release correctly skips. No current CI gate
+is pending or failing.
+
+Both full runtime runs confirm two compiler workers in the actual Wine rendering
+process with DXVK 2.7.1 and the 2.5.3 compatibility fallback, alongside real
+D3D8 pixels, shared-memory uploads, PCM, input, clean exit and cancellation.
+Both pass Linux and PRoot controller enumeration, all four axes, buttons/hat,
+release and stale-input neutralization. Startup-only observer idle/Stop/crash
+checks remain green. The native display/upload fixtures, 116 core checks,
+RGB565, 90 ZRLE checks, native bounds, 49 Python runtime contracts, five server
+contracts, 15 Android tests and 36 native Windows checks pass. Real MariaDB
+import, failed-update preservation, update, rollback and process lifecycle pass.
+CI validates compatibility using lavapipe, not Adreno performance.
+
+The first PR run exposed a crash in the unnecessarily upgraded TigerVNC 1.15.
+The modern-Mesa fixture now upgrades only Mesa and required dependencies and
+verifies the original X server's binary digest. An initial push run separately
+failed PRoot controller enumeration despite native attachment; Docker passed.
+That failure did not recur in either complete corrected run. Controller code,
+assertions and timeouts remain unchanged; no new controller fix is claimed.
+Runtime evidence artifact `10727272220`, SHA-256
+`1f9b236f71a59d26b9262925d415ebc6cdc878f54d68c3f5aefe46dd15f34a3a`.
+
+**Signed install-in-place APK:** `LSB-Android-0.5.12.apk`, versionCode 28,
+18,214,515 bytes, SHA-256
+`7203f7967be42bf52a69673b82853ef708be061094c9d22455c5047a48042a49`.
+Original signer SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`;
+v2/v3 signatures, alignment, ZIP integrity, package/version and CI payload
+identity verify. CI device artifact `10727275250`, APK SHA-256
+`fe678dac8727a615be3ed574ab1c9e1b27ee706b13eb35fcbb085215f41a329c`.
+Only `AndroidManifest.xml`, `classes.dex` and `assets/runtime/supervisor.py`
+differ from 0.5.11. Every native graphics/display/audio/controller/launcher
+component, both DXVK pairs, Wine/Box64/PRoot components and purple icon remain
+byte-identical. Both new switches off preserve 0.5.11 graphics behavior.
 
 Preserve the existing Termux server, client `30251204_1`, xiloader, preparation,
 accepted startup-only observer, 60 Hz, audio, controller and relaunch behavior.
