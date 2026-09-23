@@ -167,6 +167,10 @@ class Supervisor:
         self.state['runtime_engine']=self.engine
         if self.engine=='fex':
             self.env={k:v for k,v in self.env.items() if not k.startswith('BOX64_')}
+            # Wine strips .dll but retains .exe when matching load overrides.
+            # Disable the automatic debugger explicitly; FEX must return a
+            # crashed child's exit status instead of waiting inside winedbg.
+            self.env['WINEDLLOVERRIDES']+=';winedbg.exe='
             self.state['runtime_candidate']='Wine 10 native ARM64 / FEX 2510 WoW64'
     def wine_command(self,*args):
         return ([] if self.engine=='fex' else ['/usr/local/bin/box64'])+['/opt/wine/bin/wine',*args]

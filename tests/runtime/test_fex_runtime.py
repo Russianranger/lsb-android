@@ -12,7 +12,8 @@ class FexContracts(unittest.TestCase):
         self.assertEqual(native.wine_command('a'),['/opt/wine/bin/wine','a'])
         self.assertEqual(native.server_command('-k'),['/opt/wine/bin/wineserver','-k'])
         self.assertFalse(any(k.startswith('BOX64_') for k in native.env))
-        for name in ('LIBGL_ALWAYS_SOFTWARE','GALLIUM_DRIVER','LP_NUM_THREADS','WINEDLLOVERRIDES'):
+        self.assertEqual(native.env['WINEDLLOVERRIDES'],baseline.env['WINEDLLOVERRIDES']+';winedbg.exe=')
+        for name in ('LIBGL_ALWAYS_SOFTWARE','GALLIUM_DRIVER','LP_NUM_THREADS'):
             self.assertEqual(native.env[name],baseline.env[name])
         for value in ('latest','../fex',None,True):
             with self.assertRaises(ValueError):Supervisor(dict(req,engine=value))
