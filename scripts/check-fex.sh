@@ -23,7 +23,7 @@ docker run --rm --network none "${common[@]}" \
  -v "$PWD/out/fex-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
  -v "$PWD/out/fex-test/baseline-prefix:/prefix" -v "$PWD/out/fex-test/client:/client" \
  -v "$PWD/out/fex-test/session:/session" -v "$PWD/out/fex-test/logs/seed:/logs" \
- lsb-fex:base python3 /tests/initialization.py
+ lsb-fex:base sh -ec 'chown 0:0 /prefix; python3 /tests/initialization.py'
 native=(-v "$PWD/out/fex-test/wine:/opt/wine:ro" -e LSB_TEST_ENGINE=fex)
 docker run --rm --network none "${common[@]}" "${native[@]}" \
  -v "$PWD/out/fex-test/baseline-prefix:/baseline-prefix:ro" -v "$PWD/out/fex-test/client:/client" \
