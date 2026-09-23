@@ -1,0 +1,19 @@
+name: Build isolated FEX runtime
+on:
+  push:
+    paths: ['native/fex/**', 'scripts/build-fex.sh', '.github/workflows/fex-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fex-build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/build-fex.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fex-runtime
+          path: out/fex-runtime/
+          compression-level: 0
