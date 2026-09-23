@@ -89,11 +89,11 @@ real inputs; the inspected pure routines use none of those process-specific inpu
 Locally, the exact six private routines pass the same 192 cases per path under
 Unicorn, including the stdcall ABI and output pointer return. This validates
 the diagnostic's function signatures/reference expectations, not FEX behavior.
-The host oracle passes result/error-detection and floating-state checks. The
+The initial host oracle passed result/error-detection and floating-state checks. The
 Windows fixture additionally rejects unreadable/unsupported images, checks
 last-error preservation and ensures unsupported profiles never run arithmetic.
 It runs on native Windows and both ARM64 runtime stacks in existing CI gates.
-Qualification and APK delivery receipts will be appended when complete.
+Qualification and APK delivery receipts are recorded below.
 
 Initial implementation `6c480ac663062be39c8674566fca80caa96d295c` passes native
 Windows and Android packaging. Both Box64 jobs stop in the new floating-state
@@ -117,7 +117,58 @@ assertions and checks that the worker receives the captured control settings.
 There is no runtime patch and no claim that this FEX defect caused the original
 graphics corruption. [Exact FEX source](https://github.com/FEX-Emu/FEX/blob/320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab/FEXCore/Source/Interface/Core/OpcodeDispatcher/Vector.cpp).
 
-After qualification, install 0.5.18 over the app. No runtime download is needed.
+With initialized snapshots, FEX job `107384204999` confirms the live values
+move from saved ST0/ST1 to ST2/ST3 after the round trip, matching the TOP-rotation
+problem in the source. Box64's corrected oracle passes in job `107384170347`;
+that job later times out in the existing observed pixel fixture.
+
+## Worker implementation and package identities
+
+Implementation: `f8c3083e1471cde332230213e0b8b7d57cec1dfd`.
+The revised observer compiles locally and all 62 runtime unit tests pass.
+PR run `35921519475` passes native Windows (36 process/registry checks plus
+the 192-sample worker oracle, four guards, injected-error detection and parent
+floating-state preservation). The same worker oracle passes under Box64 job
+`107387172562` and FEX job `107387172573`. The Box64 job later times out in
+the observed pixel fixture; the FEX job later exits -11 in the unchanged,
+unobserved pixel fixture, before loading the new observer. These failures are
+retained, not relabeled as passes. Independent push run `35921514817` completes
+all seven jobs successfully with the same implementation. FEX job `107387741358`
+has 134 PASS records, including two worker-oracle runs; Box64 job `107387741316`
+has 155, including four worker-oracle runs. Both complete their normal graphics,
+audio, input, launch/recovery and PRoot gates. No timeout or assertion was relaxed,
+and no unchanged job was rerun for this final implementation.
+
+| Evidence | Artifact | ZIP SHA-256 |
+| --- | --- | --- |
+| FEX qualification | `10777777967` | `ff3e838e56d052ed7996fe326d57469859a00813a07dba13fca5a2141e1322ea` |
+| Box64 qualification | `10778790869` | `6a6221e8b7c48e2413afef4a6dd455f81546d3942ba77edc0d76ed67e8ea8afa` |
+| Qualified push build | `10777611552` | `40bec2c3936711ebb67ced7042b0c3ddefc21591f244d803e5eb4a78b4533f65` |
+
+[Passing workflow](https://github.com/Russianranger/lsb-android/actions/runs/35921514817).
+The qualified push APK and delivery PR APK have identical complete ZIP entry
+payloads after excluding CI signing metadata, with no serialization differences.
+
+The packaged APK is from PR artifact `10776719660` (28,557,231-byte ZIP,
+SHA-256 `cf8dc215eb167b97146247c05be322ff2fc96a53d0349dd605a92158001d3452`).
+After original-certificate signing, `LSB-Android-0.5.18.apk` is 18,292,884 bytes,
+versionCode 34, SHA-256
+`093f668754b2d542b1ad6a0a1129809f10b84de599ab9183eb5871a80776653d`.
+Signer: `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Observer DLL: `b7e3893f00dba83bd4b4d67d644fe69db70742db421365de47cf9505b403b7ab`.
+The CI APK SHA is `b3c59c2c657fe0b2c96401d4462362f499b93b4f169f5002c288209d30846466`.
+ZIP integrity, v2/v3 signatures, alignment, package/version, CI payload identity,
+observer artifact identity and Python source identity pass. Compared with
+0.5.17, only the manifest, startup observer, diagnostic parser and serialization
+of the unchanged Box64 manifest differ. FEX, Box64, DXVK, Turnip, presentation,
+audio and input assets are unchanged. No test executable is packaged.
+Earlier on-thread 0.5.18 candidates were not delivered; use the identity above.
+Delivered file: Library ID `libfile_c52db2ae710481919a70c8569638841e`, version 0,
+content ID `file_00000000dc8c81f99bea7cb6d78e7b7d`. Local identity/xattrs are saved.
+
+## Focused device check
+
+Install the delivered 0.5.18 over the app. No runtime download is needed.
 Retain FEX/faster x87, DXVK 2.7.1 and existing display settings. Enable
 **Capture FFXI startup and graphics**, launch once to the broken screens,
 then Stop/export Diagnostics and disable capture. No standalone runtime check,

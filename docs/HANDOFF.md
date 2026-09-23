@@ -1,23 +1,55 @@
-# 0.5.17 Thor result: corrected runtime confirmed, graphics still broken
+# 0.5.18 delivered: isolated actual-game math diagnostic
 
-The latest export confirms app 0.5.17, corrected runtime v2 and matching
-Windows/CPUID reports in both preflight and launch parent/child processes.
-The same missing menu elements and severe character-selection corruption remain
-at about 13 FPS. The CPU-reporting correction is real but insufficient.
-The retained graphics capture also completed with the same bounded observations.
-[Current audit and diagnostic design](game-math-0518.md).
+The 0.5.17 Thor export confirms runtime v2 and matching CPU features in both
+launch parent/child processes. Missing agreement graphics and severe character
+selection corruption remain at about 13 FPS. The CPU-reporting correction
+reached the device but did not fix rendering. Actual FEX gameplay/world entry
+remain unconfirmed. [Audit, diagnostic design and qualification](game-math-0518.md).
 
-0.5.18 adds a bounded, exact-client-guarded observation of the game's actual
-lazy math dispatch and 192 synthetic arithmetic checks through its selected
-pure routines. It is a diagnostic, not a claimed graphics fix. Local compilation,
-private reference replay and host oracle checks pass; CI qualification and APK
-delivery are pending. Do not distribute until those checks complete.
+Implementation `f8c3083e1471cde332230213e0b8b7d57cec1dfd` is qualified by
+[run 35921514817](https://github.com/Russianranger/lsb-android/actions/runs/35921514817):
+all seven jobs pass. FEX has 134 PASS records; Box64 has 155. The new worker
+oracle passes twice under FEX, four times under Box64 and on native Windows.
+Earlier failed candidates and separate pixel-test failures are retained in the
+audit. No assertions/timeouts were weakened or unchanged final jobs rerun.
 
-Next device check after qualification: one FEX launch with startup/graphics
-capture enabled, Stop/export. No new runtime installation or standalone checks.
-Do not repeat the completed precision/DXVK/Box64 matrices or request client DLLs.
-Preserve client `30251204_1`, original xiloader, working Box64 and Termux server.
-Repo changes/pushes remain authorized. Earlier entries below are historical.
+0.5.18 fingerprints the exact client and selected pure math routines, observes
+the live lazy dispatch table, and checks 192 synthetic results on a disposable
+worker using captured FP controls. It uses no FXRSTOR on the game thread.
+The initial design's checks exposed a FEX context-restoration limitation; the
+worker avoids depending on that operation. This is a diagnostic, not a claimed
+graphics fix. It ships no proprietary code, disassembly or client data.
+
+Delivered **LSB-Android-0.5.18.apk**, versionCode 34, 18,292,884 bytes.
+SHA-256: `093f668754b2d542b1ad6a0a1129809f10b84de599ab9183eb5871a80776653d`.
+Original signer: `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Library ID: `libfile_c52db2ae710481919a70c8569638841e`.
+The signed payload matches the passing implementation's build. Only the app
+manifest, startup observer and diagnostic parser change (Box64 manifest values
+are identical). FEX, Box64, DXVK, Turnip and presentation/audio/input assets stay
+identical to 0.5.17. Earlier on-thread 0.5.18 packages were never delivered.
+
+**Next: APK update only, one captured FEX launch and support export.** Keep
+faster x87, DXVK 2.7.1, Turnip 26 and Native Surface/SHM. Enable **Capture FFXI
+startup and graphics**, launch to character selection, Stop/export Diagnostics,
+then disable capture. No runtime download, standalone check or new screenshot
+is required for this diagnostic result. Box64 remains the usable baseline.
+
+Audit the next export for observer SHA
+`b7e3893f00dba83bd4b4d67d644fe69db70742db421365de47cf9505b403b7ab`.
+`main_math_profile.code=0` means the exact image is recognized. Expected feature
+bits are `main_math_cpu.detail=12`. Dispatch mode 2 with detail `0x222` would
+prove the three selected routines are SSE2; do not assume it before receiving
+the result. A complete pass is `main_math_result(code=0, detail=192)` and
+`main_math_returns.code=0`. Unsupported, skipped or pending checks are not
+passes. `main_math_final` records the later table. Interpret the result within
+the documented synthetic-input and worker-thread limits.
+
+Do not request the client DLLs again or repeat the completed precision/DXVK/
+Box64 capture matrices. Preserve prepared client `30251204_1`, original
+xiloader, working Box64 and the Termux server. No reimport, preparation reset,
+client update or server migration. Repo changes/pushes remain authorized.
+Earlier entries below are historical.
 
 ---
 
