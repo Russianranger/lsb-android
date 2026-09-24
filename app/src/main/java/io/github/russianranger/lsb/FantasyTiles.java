@@ -16,13 +16,14 @@ public final class FantasyTiles extends LinearLayout {
     private int columns;
     private final java.util.function.Consumer<String> selectionChanged;
     private static final class Entry {
-        final String title; final View body;
-        Entry(String title,View body){this.title=title;this.body=body;}
+        final String title; final View body; final String actionLabel; final Runnable action;
+        Entry(String title,View body,String actionLabel,Runnable action){this.title=title;this.body=body;this.actionLabel=actionLabel;this.action=action;}
     }
     public FantasyTiles(Context context,String selected,java.util.function.Consumer<String> changed){
         super(context);setOrientation(VERTICAL);this.selected=selected;selectionChanged=changed;
     }
-    public void addSection(String title,View body){entries.add(new Entry(title,body));}
+    public void addSection(String title,View body){entries.add(new Entry(title,body,null,null));}
+    public void addAction(String title,String label,Runnable action){entries.add(new Entry(title,null,label,action));}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     static int columnsFor(float widthDp,float fontScale){
         float usable=widthDp/Math.max(1f,fontScale);
@@ -37,7 +38,7 @@ public final class FantasyTiles extends LinearLayout {
         selected=title.equals(selected)?"":title;selectionChanged.accept(selected);rebuild();
     }
     private void rebuild(){
-        for(Entry e:entries)if(e.body.getParent()!=null)((android.view.ViewGroup)e.body.getParent()).removeView(e.body);
+        for(Entry e:entries)if(e.body!=null&&e.body.getParent()!=null)((android.view.ViewGroup)e.body.getParent()).removeView(e.body);
         removeAllViews();
         for(int start=0;start<entries.size();start+=Math.max(1,columns)){
             LinearLayout row=new LinearLayout(getContext());row.setBaselineAligned(false);
@@ -45,19 +46,19 @@ public final class FantasyTiles extends LinearLayout {
             for(int col=0;col<Math.max(1,columns);col++){
                 LayoutParams cell=new LayoutParams(0,-1,1);cell.setMargins(dp(4),dp(5),dp(4),dp(5));
                 if(start+col>=entries.size()){row.addView(new View(getContext()),cell);continue;}
-                Entry e=entries.get(start+col);boolean open=e.title.equals(selected);
-                TextView tile=new TextView(getContext());tile.setText("◇  "+e.title+"\n"+(open?"Close  −":"Open  +"));
+                Entry e=entries.get(start+col);boolean open=e.body!=null&&e.title.equals(selected);
+                TextView tile=new TextView(getContext());tile.setText("◇  "+e.title+"\n"+(e.action!=null?e.actionLabel+"  →":open?"Close  −":"Open  +"));
                 tile.setTextColor(open?TEXT:GOLD);tile.setTextSize(17);tile.setTypeface(Typeface.create("serif",Typeface.BOLD));
                 tile.setGravity(Gravity.CENTER);tile.setPadding(dp(12),dp(18),dp(12),dp(18));tile.setMinHeight(dp(100));
                 tile.setBackground(new Panel(getResources().getDisplayMetrics().density,open));
                 tile.setClickable(true);tile.setFocusable(true);tile.setSelected(open);
-                tile.setContentDescription(e.title+", "+(open?"expanded":"collapsed"));
+                tile.setContentDescription(e.title+(e.action!=null?", "+e.actionLabel:", "+(open?"expanded":"collapsed")));
                 tile.setAccessibilityDelegate(new View.AccessibilityDelegate(){
                     @Override public void onInitializeAccessibilityNodeInfo(View host,AccessibilityNodeInfo info){
                         super.onInitializeAccessibilityNodeInfo(host,info);info.setClassName(Button.class.getName());
                     }
                 });
-                tile.setOnClickListener(v->select(e.title));row.addView(tile,cell);if(open)expanded=e;
+                tile.setOnClickListener(v->{if(e.action!=null)e.action.run();else select(e.title);});row.addView(tile,cell);if(open)expanded=e;
             }
             if(expanded!=null){LayoutParams detail=new LayoutParams(-1,-2);detail.setMargins(dp(4),0,dp(4),dp(8));addView(expanded.body,detail);}
         }

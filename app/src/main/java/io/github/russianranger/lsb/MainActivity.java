@@ -75,7 +75,8 @@ public final class MainActivity extends Activity {
         draw();
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 30);
     }
-    @Override protected void onResume() { super.onResume(); if(tab.equals("Runtime")||tab.equals("Client"))draw(); handler.post(poll); }
+    @Override protected void onResume() { super.onResume(); if(tab.equals("Runtime")||tab.equals("Client"))draw(); Fullscreen.apply(this);handler.post(poll); }
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus)Fullscreen.apply(this);}
     @Override protected void onPause() { if(loginPassword!=null)loginPassword.setText("");handler.removeCallbacks(poll); super.onPause(); }
     @Override public void onSaveInstanceState(Bundle out) { out.putString("tab", tab); out.putString("pending", pending); out.putBoolean("preserve", preserveOnImport); Bundle sections=new Bundle();for(Map.Entry<String,String> entry:expandedSections.entrySet())sections.putString(entry.getKey(),entry.getValue());out.putBundle("sections",sections); super.onSaveInstanceState(out); }
     static File storage(Context ctx) throws IOException {
@@ -129,8 +130,9 @@ public final class MainActivity extends Activity {
         page.addView(label("Client & server launcher · "+appVersion(this),11,MUTED));
         LinearLayout nav = new LinearLayout(this);nav.setOrientation(LinearLayout.VERTICAL);LinearLayout navRow=null;int navIndex=0;int navColumns=getResources().getConfiguration().screenWidthDp>=600?6:3;
         for (String name : new String[]{"Client", "Controller", "Server", "Runtime", "Profile", "Diagnostics"}) {
-            Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12);b.setTypeface(Typeface.create("serif",Typeface.BOLD)); b.setPadding(0, 0, 0, 0); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(44));b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(name.equals(tab)?Color.rgb(38,80,111):Color.rgb(23,41,60)));
-            if(navIndex++%navColumns==0){navRow=new LinearLayout(this);nav.addView(navRow);}navRow.addView(b, new LinearLayout.LayoutParams(0, -2, 1));
+            Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12);b.setTypeface(Typeface.create("serif",Typeface.BOLD)); b.setPadding(dp(4),dp(8),dp(4),dp(8)); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));b.setSelected(name.equals(tab));
+            b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x446ed5e8),new FantasyTiles.Panel(getResources().getDisplayMetrics().density,name.equals(tab)),null));
+            if(navIndex++%navColumns==0){navRow=new LinearLayout(this);nav.addView(navRow);}LinearLayout.LayoutParams navCell=new LinearLayout.LayoutParams(0,-2,1);navCell.setMargins(dp(3),dp(3),dp(3),dp(3));navRow.addView(b,navCell);
             b.setOnClickListener(v -> { tab = name; draw(); });
         }
         page.addView(nav);
@@ -143,7 +145,12 @@ public final class MainActivity extends Activity {
         try { switch (tab) { case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Controller": controllerPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
         catch (Exception e) { content.addView(label("Cannot read app state: " + e.getMessage(), 16, TEXT)); }
         content.addView(tiles);
+        Fullscreen.apply(this);
     }
+    private void supportTile(){tiles.addAction("Export support ZIP","Save ZIP",()->{
+        if(WorkService.busy){toast("Wait for the current operation, or cancel it.");return;}
+        try{create("support","lsb-support.zip");}catch(Exception error){error(error);}
+    });}
     private void runtimeSelector(LinearLayout panel,ClientRuntime rt) {
         CheckBox fex=new CheckBox(this);fex.setText("FEX / native ARM64 Wine");fex.setTextColor(TEXT);
         fex.setChecked(getSharedPreferences("runtime",0).getBoolean("fex",false));fex.setEnabled(!rt.alive()&&(fex.isChecked()||rt.fexInstalled()));
@@ -185,7 +192,7 @@ public final class MainActivity extends Activity {
     private void clientPage() throws Exception {
         ClientStore s = store(this);
         boolean ready=ClientRuntime.get(this).preparationState().has("current");
-        if(ready)loginCard(s);
+        if(ready)loginCard(s);else supportTile();
         initializationCard(s);
         if (s.hasPendingImport() && !WorkService.busy) pendingImportCard(s);
         LinearLayout status = card(s.hasClient() ? "Imported client" : "Bring your FFXI installation");
@@ -243,6 +250,9 @@ public final class MainActivity extends Activity {
         display.setSelection(Math.max(0,selected));graphics.addView(display);
         graphics.addView(label("Applied at launch; original display settings remain available to restore. 960×540 reduces rendering load.",13,MUTED));
         setting(graphics,"Show DXVK game FPS","dxvk_hud",true,"");
+        CheckBox fullscreen=setting(graphics,"Fullscreen app and game","fullscreen",false,"Hides Android bars and the game's bottom status strip. Use the game menu to exit fullscreen; swipe from an edge for Android controls. Rendering resolution stays the same.");
+        fullscreen.setOnCheckedChangeListener((button,enabled)->Fullscreen.set(this,enabled));
+        supportTile();
         LinearLayout proven=card("Proven fixes");
         proven.addView(label("Confirmed on Thor: runtime v3 restores the missing menus and distorted graphics. World play now reported at 20–30 FPS. Your current choices are preserved.",15,TEXT));
         runtimeSelector(proven,rt);
@@ -257,14 +267,13 @@ public final class MainActivity extends Activity {
         past.addView(label("No meaningful improvement in earlier comparisons. Retained for troubleshooting; both switches stay at your saved values. They were off in the successful 0.5.19 run.",15,TEXT));
         setting(past,"Turnip system-memory rendering","turnip_sysmem",false,"Changes GPU rendering mode; no established gameplay benefit. Next launch only, with compatibility fallback.");
         setting(past,"Two shader compiler workers","dxvk_two_compilers",false,"Limits shader compilation threads. Earlier comparisons did not establish a useful speedup; automatic worker count remains the baseline.");
-        past.addView(label("Earlier metadata caching did not noticeably improve gameplay. Full x87 precision and changing DXVK versions did not fix the old corruption. The CPU-feature correction alone also left it unresolved; it remains part of runtime v3 for correctness.",13,MUTED));
+        past.addView(label("Earlier metadata caching and hidden-cursor polling did not noticeably improve gameplay. Hidden-cursor polling did remove 85% of position queries in the 0.5.20 run and remains active. Full x87 precision and changing DXVK versions did not fix the old corruption. The CPU-feature correction alone also left it unresolved; it remains part of runtime v3 for correctness.",13,MUTED));
         LinearLayout tuning=card("New optimization");
-        tuning.addView(label("Hidden-cursor polling",18,ACCENT));
-        tuning.addView(label("The display bridge now skips mouse-position round trips while the cursor is invisible, and resumes them when it appears. Active automatically; its effect on Thor performance still needs your next run.",14,TEXT));
+        tuning.addView(label("Quieter gameplay overlay",18,ACCENT));
+        tuning.addView(label("Unchanged status text no longer triggers a redraw every second. Fullscreen also hides the bottom status strip. This reduces overlay work; a gameplay FPS benefit is not yet established.",14,TEXT));
         LinearLayout diagnostics=card("Capture & diagnostics");
         CheckBox startupTrace=setting(diagnostics,"Capture FFXI startup and graphics","startup_trace",false,"For graphics faults only. Capture can affect FPS; leave it off for normal play and performance comparisons.");
         setting(diagnostics,"Show stutter diagnostics","dxvk_diagnostics",false,"Adds frame timing and shader activity to the FPS overlay. Applies on the next launch.");
-        button(diagnostics,"Export support ZIP",()->create("support","lsb-support.zip"));
         LinearLayout fallback=card("Fallback display");
         fallback.addView(label("Used only when Native Surface is off or unavailable. These options do not alter the active shared-memory display.",14,MUTED));
         setting(fallback,"Compress display transfer · lossless","compressed_display",true,"Established traffic reduction on the older display path.");
@@ -437,9 +446,9 @@ public final class MainActivity extends Activity {
         button(recovery,"Probe saved server address",()->run("Checking server TCP ports",(ctx,p)->{String address=store(ctx).config().host;StringBuilder result=new StringBuilder("TCP reachability only: "+address+"\n");for(int port:new int[]{54231,54230,54001})try(Socket socket=new Socket()){socket.connect(new InetSocketAddress(address,port),2500);result.append(port).append(": reachable\n");}catch(IOException e){result.append(port).append(": unavailable\n");}FilesEx.text(new File(ctx.getFilesDir(),"server-probe.txt"),result.toString());return result.toString();}));
     }
     private void diagnosticsPage() throws IOException {
+        supportTile();
         LinearLayout d = card("Support and validation");
         d.addView(label("Support ZIPs contain the reference profile, key-file hashes, import summary, saved server/region, and app operation/probe logs. They exclude game payloads, Wine registry hives, and account passwords.", 14, MUTED));
-        button(d, "Export support ZIP", () -> create("support", "lsb-support.zip"));
         button(d, "View client inventory", () -> { try { showText("Client inventory", store(this).inventory()); } catch (Exception e) { error(e); } });
         button(d, "View repair script", () -> { try { File f = new File(getFilesDir(), "repair-preview.txt"); showText("Repair recipe · not yet executed", f.exists() ? FilesEx.read(f, 32768) : "Use Client → Validate client and preview repair script first."); } catch (Exception e) { error(e); } });
         button(d, "View operation log", () -> { try { File f = new File(getFilesDir(), "operations.log"); showText("Operation log", f.exists() ? FilesEx.read(f, 262144) : "No operations yet"); } catch (Exception e) { error(e); } });

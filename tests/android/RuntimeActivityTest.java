@@ -41,6 +41,7 @@ public class RuntimeActivityTest {
     @After public void cleanup() throws Exception {
         if(activity!=null)activity.pause().stop().destroy();
         runtime.starting=false;
+        RuntimeEnvironment.getApplication().getSharedPreferences("runtime",0).edit().remove("fullscreen").commit();
         field(ClientRuntime.class, "instance").set(null, null);
     }
     private static Field field(Class<?> type,String name)throws Exception {
@@ -51,6 +52,32 @@ public class RuntimeActivityTest {
         activity.windowFocusChanged(true);
     }
     private void tick(){shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(200));}
+    private void menuItem(int index)throws Exception{
+        android.widget.FrameLayout root=(android.widget.FrameLayout)field(RuntimeActivity.class,"layout").get(activity.get());
+        for(int i=0;i<root.getChildCount();i++)if("Game menu".contentEquals(root.getChildAt(i).getContentDescription()==null?"":root.getChildAt(i).getContentDescription()))root.getChildAt(i).performClick();
+        android.app.AlertDialog dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();
+        assertNotNull(dialog);android.widget.ListView list=dialog.getListView();assertNotNull(list);list.performItemClick(null,index,index);shadowOf(Looper.getMainLooper()).idle();
+    }
+    @Test public void fullscreenMenuPersistsWithoutReconnectingAndOverlayUpdatesOnlyWhenChanged()throws Exception{
+        android.content.SharedPreferences prefs=RuntimeEnvironment.getApplication().getSharedPreferences("runtime",0);
+        prefs.edit().putBoolean("fullscreen",false).putString("display_profile","windowed720").commit();open();
+        RuntimeActivity viewer=activity.get();android.widget.TextView status=(android.widget.TextView)field(RuntimeActivity.class,"status").get(viewer);
+        int generation=field(RuntimeActivity.class,"connectionGeneration").getInt(viewer);int[] writes={0};
+        status.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){writes[0]++;}public void afterTextChanged(android.text.Editable e){}});
+        Runnable refresh=(Runnable)field(RuntimeActivity.class,"refresh").get(viewer);
+        refresh.run();refresh.run();assertEquals(0,writes[0]);
+        runtime.status="Changed status";refresh.run();assertEquals(1,writes[0]);
+        menuItem(4);assertTrue(Fullscreen.enabled(viewer));assertEquals(android.view.View.GONE,status.getVisibility());
+        assertEquals(generation,field(RuntimeActivity.class,"connectionGeneration").getInt(viewer));
+        assertEquals("windowed720",prefs.getString("display_profile",""));
+        runtime.status="Latest hidden status";refresh.run();assertEquals(1,writes[0]);
+        activity.windowFocusChanged(false);activity.windowFocusChanged(true);assertEquals(android.view.View.GONE,status.getVisibility());
+        menuItem(5);android.widget.TextView message=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog().findViewById(android.R.id.message);assertNotNull(message);assertEquals("Latest hidden status",message.getText().toString());
+        org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog().dismiss();
+        activity.pause().stop().destroy();activity=null;open();
+        assertTrue(Fullscreen.enabled(activity.get()));status=(android.widget.TextView)field(RuntimeActivity.class,"status").get(activity.get());assertEquals(android.view.View.GONE,status.getVisibility());
+        menuItem(4);assertFalse(Fullscreen.enabled(activity.get()));assertEquals(android.view.View.VISIBLE,status.getVisibility());assertEquals("Latest hidden status",status.getText().toString());
+    }
     private File session(String id)throws Exception {
         File pad=runtime.gamepadState();
         Files.deleteIfExists(pad.toPath());

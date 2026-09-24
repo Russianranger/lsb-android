@@ -43,7 +43,7 @@ public final class RuntimeActivity extends Activity {
     private long lastStats;
     private final Runnable refresh=new Runnable(){public void run(){
         if(!viewing)return;ClientRuntime rt=ClientRuntime.get(RuntimeActivity.this);
-        status.setText(rt.status+(presentationStatus.isEmpty()?"":"\n"+presentationStatus)+(displayError.isEmpty()||!rt.launchError.isEmpty()?"":"\n"+displayError));
+        updateStatus();
         DisplaySession display=displaySession;
         if(display!=null&&System.currentTimeMillis()-lastStats>5000){lastStats=System.currentTimeMillis();recordFrames(display);}
         if(!rt.alive()&&!rt.launchError.isEmpty()&&!failureShown){
@@ -57,15 +57,33 @@ public final class RuntimeActivity extends Activity {
         super.onCreate(state);setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         controller=new ControllerInput(this);
         layout=new FrameLayout(this);layout.setBackgroundColor(Color.BLACK);screen=new Screen();layout.addView(screen,new FrameLayout.LayoutParams(-1,-1));
-        Button menu=new Button(this);menu.setText("☰");menu.setTextColor(Color.WHITE);menu.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xcc15334c));
+        Button menu=new Button(this);menu.setText("☰");menu.setContentDescription("Game menu");menu.setTextColor(Color.WHITE);menu.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xcc15334c));
         int size=Math.round(48*getResources().getDisplayMetrics().density);FrameLayout.LayoutParams place=new FrameLayout.LayoutParams(size,size,Gravity.TOP|Gravity.RIGHT);place.setMargins(0,8,8,0);layout.addView(menu,place);
-        menu.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("FFXI").setItems(new String[]{"Back to launcher","Keyboard","Send Esc","Controller mapping","Stop client"},(d,which)->{switch(which){case 0:finish();break;case 1:keyboard();break;case 2:tapKey(0xff1b);break;case 3:startActivity(new android.content.Intent(this,MainActivity.class).putExtra("tab","Controller"));break;case 4:startForegroundService(new android.content.Intent(this,RuntimeService.class).setAction("stop"));finish();break;}}).show());
+        menu.setOnClickListener(v->showMenu());
         status=new TextView(this);status.setTextColor(Color.WHITE);status.setTextSize(11);status.setBackgroundColor(0x88000000);status.setMaxLines(3);layout.addView(status,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));setContentView(layout);
+        applyFullscreen();
+    }
+    private String statusText(){ClientRuntime rt=ClientRuntime.get(this);return rt.status+(presentationStatus.isEmpty()?"":"\n"+presentationStatus)+(displayError.isEmpty()||!rt.launchError.isEmpty()?"":"\n"+displayError);}
+    private void updateStatus(){
+        if(status==null||status.getVisibility()!=View.VISIBLE)return;
+        String next=statusText();if(!android.text.TextUtils.equals(status.getText(),next))status.setText(next);
+    }
+    private void applyFullscreen(){
+        Fullscreen.apply(this);if(status!=null){status.setVisibility(Fullscreen.enabled(this)?View.GONE:View.VISIBLE);updateStatus();}
+    }
+    private void showMenu(){
+        new AlertDialog.Builder(this).setTitle("FFXI").setItems(new String[]{"Back to launcher","Keyboard","Send Esc","Controller mapping",Fullscreen.enabled(this)?"Exit fullscreen":"Enter fullscreen","Client status","Stop client"},(d,which)->{
+            switch(which){case 0:finish();break;case 1:keyboard();break;case 2:tapKey(0xff1b);break;
+                case 3:startActivity(new android.content.Intent(this,MainActivity.class).putExtra("tab","Controller"));break;
+                case 4:Fullscreen.set(this,!Fullscreen.enabled(this));applyFullscreen();break;
+                case 5:new AlertDialog.Builder(this).setTitle("Client status").setMessage(statusText()).setPositiveButton("Close",null).show();break;
+                case 6:startForegroundService(new android.content.Intent(this,RuntimeService.class).setAction("stop"));finish();break;}
+        }).show();
     }
     private void button(LinearLayout row,String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setOnClickListener(v->action.run());row.addView(b,new LinearLayout.LayoutParams(0,-2,1));}
-    @Override protected void onResume(){super.onResume();viewing=true;connect();ui.post(refresh);ui.post(padTick);}
+    @Override protected void onResume(){super.onResume();applyFullscreen();viewing=true;connect();ui.post(refresh);ui.post(padTick);}
     @Override protected void onPause(){viewing=false;ui.removeCallbacks(refresh);ui.removeCallbacks(padTick);controller.close();closeNative();releaseAndClose();super.onPause();}
-    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus&&controller!=null)controller.close();}
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus)applyFullscreen();else if(controller!=null)controller.close();}
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e){if(hasWindowFocus()&&controller!=null&&controller.motion(e))return true;return super.dispatchGenericMotionEvent(e);}
     @Override protected void onDestroy(){closeNative();releaseAndClose();input.shutdown();super.onDestroy();}
     private static final class DisplaySession {

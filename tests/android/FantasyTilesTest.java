@@ -63,16 +63,30 @@ public class FantasyTilesTest {
         try{
             Field f=MainActivity.class.getDeclaredField("tiles");f.setAccessible(true);FantasyTiles tiles=(FantasyTiles)f.get(activity.get());
             layout(tiles,920);assertNotNull(text(tiles,"◇  Proven fixes"));assertNotNull(text(tiles,"◇  Past experiments"));
+            assertNotNull(text(tiles,"◇  Export support ZIP"));
             capture(tiles,"client-tiles-wide.png");
             text(tiles,"◇  Proven fixes").performClick();layout(tiles,920);
             assertTrue(((CheckBox)text(tiles,"FEX / native")).isChecked());
             assertTrue(((CheckBox)text(tiles,"DXVK 2.7.1")).isChecked());
             assertNull(text(tiles,"Turnip system-memory rendering"));
             capture(tiles,"proven-fixes-wide.png");
+            text(tiles,"◇  Export support ZIP").performClick();
+            android.content.Intent export=org.robolectric.Shadows.shadowOf(activity.get()).getNextStartedActivityForResult().intent;
+            assertEquals(android.content.Intent.ACTION_CREATE_DOCUMENT,export.getAction());assertEquals("application/zip",export.getType());assertEquals("lsb-support.zip",export.getStringExtra(android.content.Intent.EXTRA_TITLE));
+            assertNotNull(text(tiles,"FEX / native"));
             text(tiles,"◇  Past experiments").performClick();layout(tiles,400);
             assertFalse(((CheckBox)text(tiles,"Turnip system-memory rendering")).isChecked());
             assertNull(text(tiles,"FEX / native"));assertEquals(before,prefs.getAll());
             capture(tiles,"past-experiments-narrow.png");
+            android.widget.LinearLayout page=(android.widget.LinearLayout)((android.view.ViewGroup)activity.get().findViewById(android.R.id.content)).getChildAt(0);
+            // The exact navigation label is a button; the version subtitle starts similarly.
+            java.util.ArrayList<android.widget.Button> tabs=new java.util.ArrayList<>();collectTabs(page,tabs);assertEquals(6,tabs.size());
+            for(android.widget.Button tab:tabs)assertTrue(tab.getBackground() instanceof android.graphics.drawable.RippleDrawable);
+            page.measure(View.MeasureSpec.makeMeasureSpec(920,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(620,View.MeasureSpec.EXACTLY));page.layout(0,0,920,620);capture(page,"launcher-tabs-wide.png");
         }finally{activity.pause().stop().destroy();Files.deleteIfExists(state.toPath());prefs.edit().clear().commit();instance.set(null,null);}
+    }
+    private static void collectTabs(View v,java.util.List<android.widget.Button> result){
+        if(v instanceof android.widget.Button&&java.util.Arrays.asList("Client","Controller","Server","Runtime","Profile","Diagnostics").contains(((android.widget.Button)v).getText().toString()))result.add((android.widget.Button)v);
+        if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++)collectTabs(((ViewGroup)v).getChildAt(i),result);
     }
 }

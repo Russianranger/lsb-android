@@ -1,3 +1,29 @@
+# 0.5.21 fullscreen and export polish in qualification
+
+User reports 0.5.20 performance about the same, with remaining slowdowns.
+The hidden-cursor optimization is active (85.1% of pointer requests skipped)
+but is not a demonstrated FPS improvement. Preserve the accepted FEX v3 /
+strict64 / DXVK 2.7.1 / Turnip 26 / SHM / 60 Hz baseline.
+[Evidence, implementation and next phone check](thor-fullscreen-0521.md).
+
+This pass adds persistent fullscreen for launcher/game, an in-game toggle,
+gold-bordered navigation tabs, and direct support-export tiles on Client and
+Diagnostics. Fullscreen hides Android bars and the bottom status strip while
+keeping the game menu available. Unchanged/hidden status text no longer causes
+redundant periodic updates. Runtime and game resolution are unchanged.
+
+Local core and 63 runtime checks pass. Android/full CI and signed 0.5.21 APK
+qualification are pending. Do not present the new APK as ready before checks.
+Next phone test after delivery: update APK only, enable fullscreen, check
+edge controls, toggling/reopening, touch/controller alignment, familiar world
+route, then Stop and use Export support ZIP. Keep startup capture off.
+No reinstall, reset, reimport, preparation or old runtime test matrix.
+Repo edits and pushes remain authorized; no PR merge requested.
+
+Earlier entries below are historical.
+
+---
+
 # 0.5.20 delivered: accepted world play, fantasy tiles and display optimization
 
 User confirms correct menus/world rendering and best performance so far,
