@@ -279,7 +279,7 @@ public final class MainActivity extends Activity {
                 if(!value.equals(getSharedPreferences("runtime",0).getString("performance_trial","none")))getSharedPreferences("runtime",0).edit().putString("performance_trial",value).apply();
             }
         });
-        trials.addView(label("A showed a small improvement in your latest comparison. Keep it as a promising trial: earlier logs were overwritten, so its effective settings could not be independently checked. New shaders may take longer to compile.",14,MUTED));
+        trials.addView(label("A uses one compiler worker. Your comparison suggests a small improvement, but the timing logs do not establish a consistent win. Keep A as a promising trial. New shaders may take longer to compile.",14,MUTED));
         trials.addView(label("Returning to Baseline restores two workers. Use Windowed 1280×720 to restore the full 3D resolution after C. Support ZIPs now retain six sessions; they cannot recover runs already overwritten before this update.",13,MUTED));
         LinearLayout past=card("Past experiments");
         past.addView(label("These rendering experiments have no demonstrated benefit in the latest comparisons. Keep them off when using the tested shader settings; saved choices remain available for troubleshooting.",15,TEXT));
