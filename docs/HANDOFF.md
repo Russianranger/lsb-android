@@ -50,6 +50,32 @@ prunes exactly the excluded copy paths, retaining external/recursive link checks
 for copied content and build binary recovery.24 server unit tests now pass. No
 weakened gates or unchanged retry; real integration reruns on this code fix.
 
+Delivered **LSB-Android-0.5.29.apk**,18,325,802 bytes,SHA-256
+`c647d2d224a49c9f289b3efa80c99ab8dcd0441ebb82e35924f8026406999b73`.
+Library `libfile_a5b81db72a7881918ac8ab9ebf183f1a`,version0,
+file `file_0000000021d0822f9c45d0e9cbdcaadb`. Original update signer retained;
+package/code45,v2/v3 signatures,alignment and signing payload identity verified.
+All37 client runtime/native entries are byte-identical to .28. Bundled server
+assets match committed source. Wide/narrow account and database panels reviewed.
+
+Final implementation **ba179358579e0912ce90c003c97f4ccaacf77b96**. Push
+run36066678276,APK artifact10836441930;PR run36066682077. Both verify jobs pass41
+Android tests,24 server unit tests,82 runtime contracts and29 account transport
+checks. **Both real ARM64 MariaDB integration jobs pass**, including all9 PASS
+markers for full SQL objects,cloned restore/failure/rollback,bcrypt accounts,
+duplicates,credential-log exclusion and managed fixture process startup/shutdown.
+Push presentation and Windows gates pass. Full unchanged runtime CI remains
+pending at delivery: push Box64 job107858914937,FEX107858914975;check those and the
+matching PR runtime jobs next turn. Do not call all CI green yet.
+
+Install APK in place. Server → Import your working server → install runtime/tools,
+import complete matching server ZIP plus full SQL/GZ,deploy prebuilt first or
+explicitly rebuild the imported revision. Stop Termux server before starting the
+managed one;Client connection127.0.0.1. Stop client/server before account or DB
+maintenance. Attach ZIP and SQL dump next so its exact source/client/binary
+compatibility can be inspected. No full upstream update until the imported server
+works. The detailed guide contains the exact button labels and exporter command.
+
 Prior .28 CI follow-through complete: push36057571648 and PR36057577993 pass all
 Box64/FEX/presentation/server/Windows/build gates. Do not change client binaries,
 settings or the accepted Trial F default while implementing this server phase.
