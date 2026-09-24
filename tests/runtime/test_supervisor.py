@@ -104,7 +104,7 @@ class Contracts(unittest.TestCase):
  def test_trials_are_isolated_and_failure_keeps_validated_baseline(self):
   with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
    folder=pathlib.Path(t)
-   for trial in ('one_compiler','retain_pipelines'):
+   for trial in ('one_compiler',):
     for failure in ('none','timeout','pixels','workers','config','stop','no_gpl'):
      if failure=='no_gpl' and trial!='retain_pipelines':continue
      s=self.trial_fixture(folder,trial);previous=dict(s.env);log=folder/'performance-trial.log'
@@ -125,6 +125,13 @@ class Contracts(unittest.TestCase):
       self.assertEqual(s.env['DXVK_CONFIG'].count(';'),1)
      else:
       self.assertEqual(report['active'],'none');self.assertIn('fallback',report);self.assertEqual(s.env,previous)
+ def test_retired_trials_cannot_be_reactivated_by_old_saved_requests(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for trial in ('retain_pipelines','lighter_scene'):
+    s=self.trial_fixture(pathlib.Path(t),trial);s.req.update(action='launch',display_profile='windowed720')
+    previous=dict(s.env);s.configure_performance_trial();s.spawn.assert_not_called()
+    report=s.status.call_args.kwargs['performance_trial'];self.assertEqual(report['requested'],trial)
+    self.assertEqual(report['active'],'none');self.assertIn('Retired',report['note']);self.assertEqual(s.env,previous)
  def test_trial_guards_and_lighter_scene_do_not_change_other_profiles(self):
   with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
    folder=pathlib.Path(t)
@@ -140,7 +147,7 @@ class Contracts(unittest.TestCase):
     s=self.trial_fixture(folder,'lighter_scene');s.req.update(action=action,display_profile=profile);previous=dict(s.env)
     s.configure_performance_trial();s.spawn.assert_not_called();self.assertEqual(s.env,previous)
     report=s.status.call_args.kwargs['performance_trial']
-    self.assertEqual(report['active'],'lighter_scene' if action=='launch' and profile=='windowed720' else 'none')
+    self.assertEqual(report['active'],'none');self.assertIn('Retired',report['note'])
     self.assertEqual(s.req['display_profile'],profile)
  def test_graphics_choices_are_closed_and_reversible(self):
   req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}

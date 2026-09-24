@@ -268,9 +268,9 @@ public final class MainActivity extends Activity {
         proven.addView(label("Always applied: corrected FEX x87 condition flags in runtime v3, Android shared-memory capture, and removal of recurring startup-observer stalls. Stop and relaunch after changing runtime or display options.",13,MUTED));
         LinearLayout trials=card("Optimization trials");
         trials.addView(label("Choose one test, then stop and relaunch. Start from the tested shader settings and Windowed 1280×720; keep border removal and startup capture off for comparisons.",15,TEXT));
-        final String[] trialValues={"none","one_compiler","retain_pipelines","lighter_scene"};
+        final String[] trialValues={"none","one_compiler"};
         Spinner trial=new Spinner(this);trial.setContentDescription("Performance trial");
-        trial.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Baseline · no trial","A · One compiler worker","B · Retain shader pipelines","C · Lighter 3D scene (540p)"}));
+        trial.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Baseline · no trial","A · One compiler worker"}));
         trial.setSelection(Math.max(0,Arrays.asList(trialValues).indexOf(getSharedPreferences("runtime",0).getString("performance_trial","none"))));trials.addView(trial);
         trial.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
             public void onNothingSelected(AdapterView<?> parent){}
@@ -279,10 +279,11 @@ public final class MainActivity extends Activity {
                 if(!value.equals(getSharedPreferences("runtime",0).getString("performance_trial","none")))getSharedPreferences("runtime",0).edit().putString("performance_trial",value).apply();
             }
         });
-        trials.addView(label("A tests less CPU competition during compilation; new shaders may take longer. B keeps pipelines for reuse during the session and uses more memory. C reduces 3D pixel count by 44% while keeping the 720p interface; the world may look softer. These are experiments, not proven improvements.",14,MUTED));
-        trials.addView(label("Two workers remain active for B and C. Returning to Baseline restores two workers and the selected display profile. Support ZIPs record the requested trial, configuration checks and any fallback.",13,MUTED));
+        trials.addView(label("A showed a small improvement in your latest comparison. Keep it as a promising trial: earlier logs were overwritten, so its effective settings could not be independently checked. New shaders may take longer to compile.",14,MUTED));
+        trials.addView(label("Returning to Baseline restores two workers. Use Windowed 1280×720 to restore the full 3D resolution after C. Support ZIPs now retain six sessions; they cannot recover runs already overwritten before this update.",13,MUTED));
         LinearLayout past=card("Past experiments");
         past.addView(label("These rendering experiments have no demonstrated benefit in the latest comparisons. Keep them off when using the tested shader settings; saved choices remain available for troubleshooting.",15,TEXT));
+        past.addView(label("Retired B · Retain shader pipelines: froze before the menu despite passing its startup pixel check. Retired C · Lighter 3D scene: severe camera-pan slowdowns. Both are disabled; do not repeat these tests.",14,MUTED));
         CheckBox turnipSysmem=setting(past,"Turnip system-memory rendering","turnip_sysmem",false,"Changes how the Turnip GPU driver renders; it does not select a different driver. No demonstrated benefit beyond two compiler workers. Recommended off. Stop and relaunch to apply.");
         CheckBox stagedGeometry=setting(past,"Staged geometry uploads","dxvk_staged_buffers",false,"The recent camera-pan comparison found no improvement. Recommended off. Requires DXVK 2.7.1 and retains the startup pixel check and compatibility fallback.");
         button(proven,"Use tested shader settings",()->{

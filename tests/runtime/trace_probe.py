@@ -102,7 +102,7 @@ def checked(self):
             self.env.pop('TU_DEBUG',None);self.env['DXVK_CONFIG']='dxvk.numCompilerThreads = 2'
             self.state['graphics_tuning']={'active':{'dxvk_two_compilers':True}}
             results={}
-            for trial in ('one_compiler','retain_pipelines'):
+            for trial in ('one_compiler',):
                 self.req['performance_trial']=trial
                 self.configure_performance_trial()
                 result=self.state['performance_trial'];assert result['active']==trial,result
@@ -111,7 +111,7 @@ def checked(self):
                 # Restore two workers before the next independent trial.
                 self.env['DXVK_CONFIG']='dxvk.numCompilerThreads = 2'
             Path('/logs/performance-trials.json').write_text(json.dumps(results,indent=2))
-            print('PASS: independent one-worker and pipeline-retention trials, 256 real D3D8 pixels; not device performance measurements',flush=True)
+            print('PASS: one-worker trial, 128 real D3D8 pixels; not device performance measurements',flush=True)
         finally:
             self.env=saved_env;self.req=saved_req;self.state['graphics_tuning']=saved_tuning
             self.state.pop('performance_trial',None)

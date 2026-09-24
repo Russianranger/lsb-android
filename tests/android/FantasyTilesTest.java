@@ -90,8 +90,8 @@ public class FantasyTilesTest {
             capture(tiles,"past-experiments-wide.png");
             text(tiles,"◇  Optimization trials").performClick();layout(tiles,920);
             Spinner trial=findTrial(tiles);assertNotNull(trial);assertEquals(0,trial.getSelectedItemPosition());
-            String[] values={"none","one_compiler","retain_pipelines","lighter_scene"};
-            for(int i=1;i<4;i++){
+            String[] values={"none","one_compiler"};assertEquals(2,trial.getCount());
+            for(int i=1;i<2;i++){
                 trial.setSelection(i);org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
                 assertEquals(values[i],prefs.getString("performance_trial","none"));
                 org.json.JSONObject selected=new org.json.JSONObject();runtime.applyGraphicsSettings(selected);assertEquals(values[i],selected.getString("performance_trial"));

@@ -1,3 +1,34 @@
+# 0.5.26: A promising, B/C retired; six-session support history
+
+User reports last four tests: baseline unchanged; A small improvement; B freezes
+before menu; C severe camera-pan regression to low single digits. First two
+older runs had staged geometry on; exclude those from the intended comparison.
+[Full evidence and next test](thor-trial-results-0526.md).
+
+**The uploaded ZIP contains only B and C.** Previous two-slot rotation overwrote
+Baseline/A. Do not pretend to verify four sessions or use unrelated stale `.new`
+files as missing evidence. B/C effective settings verified: geometry and sysmem
+off, 2 workers, SHM, border disabled. B passes preflight then freezes; C applies
+960×540 background correctly and has intermittent long gaps. Root causes remain
+unresolved. A is user-reported promising, not proven or quantitatively measured.
+
+0.5.26/code 42 disables B/C in UI and runtime, retains A, and adds six-session
+settings/launch/timing archives to support ZIPs. Only before-launch/export I/O,
+no per-frame changes. Existing old B/C slots are seeded; overwritten earlier runs
+cannot be restored. 720p selected profile restores C's previous background size.
+Next check: in-place update, Use tested shader settings, Windowed 1280×720, then
+select A. Past experiments/border/startup capture off. Same 3–5 minute route,
+Stop/export one ZIP. No B/C repeat, reinstall or cache reset.
+
+Prior CI: PR FEX passed full 0.5.25 gate. PR Box64 and push FEX failed the existing
+observed-pixel 60-second timeout on 2.5.3 before the new trials. Push Box64
+107794714596 still running at last check. Keep these failures recorded; no
+unchanged reruns or weakened gates. Repo edits/pushes authorized; no merge.
+
+Earlier entries below are historical.
+
+---
+
 # 0.5.25: three isolated performance trials delivered
 
 User confirms two-worker improvement and requests at least three independent

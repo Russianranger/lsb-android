@@ -261,6 +261,7 @@ final class ClientRuntime {
             reapOrphans();
             if(useFex){selectedFex=fex();if(!selectedFex.installed())throw new IOException("Install FEX on the Runtime tab first");}
             TarExtractor.remove(run);TarExtractor.remove(tmp);run.mkdirs();tmp.mkdirs();prefix.mkdirs();assets();
+            nativePerformance.flush(2000);retainSessionHistory();
             synchronized(performance){synchronized(nativePerformance){
                 File[] old=logs.listFiles();if(old!=null)for(File f:old)if(f.getName().matches("wsi-upload-[0-9]+\\.bin\\.previous"))f.delete();
                 if(old!=null)for(File f:old)if(f.isFile()&&!f.getName().endsWith(".previous"))LogRetention.rotate(f);
@@ -361,8 +362,12 @@ final class ClientRuntime {
         write(new File(run,"stop"),"stop\n");status="Stopping runtime…";
         Process active=process;if(active!=null&&!active.waitFor(30,TimeUnit.SECONDS)){active.destroy();if(!active.waitFor(5,TimeUnit.SECONDS))active.destroyForcibly();}
     }
+    private void retainSessionHistory(){
+        try{SessionHistory.capture(logs);new File(logs,"session-history-error.txt").delete();}
+        catch(Exception error){try{write(new File(logs,"session-history-error.txt"),"Could not archive session receipts. Current and previous logs remain available.\n");}catch(Exception ignored){}}
+    }
     void exportLogs(ZipOutputStream zip)throws Exception {
-        nativePerformance.flush(2000);
+        nativePerformance.flush(2000);retainSessionHistory();SessionHistory.export(logs,zip);
         SafeZip.entry(zip,"runtime/state.json",state().toString(2));
         PreparedClientStore ps=prepared();
         for(String kind:new String[]{"current","previous","candidate"}){

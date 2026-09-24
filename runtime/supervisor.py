@@ -330,6 +330,9 @@ class Supervisor:
         trial=self.req.get('performance_trial','none')
         report={'requested':trial,'active':'none'}
         baseline=self.state.get('graphics_tuning',{}).get('active',{})
+        if trial in ('retain_pipelines','lighter_scene'):
+            report['note']='Retired after Thor lockup or severe camera-pan regression; baseline retained'
+            self.status(performance_trial=report);return
         if trial=='none':
             self.status(performance_trial=report);return
         if (self.req['renderer']=='software' or self.state.get('dxvk_selected')!='2.7.1'
@@ -337,14 +340,7 @@ class Supervisor:
                 or baseline.get('turnip_sysmem') or baseline.get('dxvk_staged_buffers')):
             report['note']='Trials require DXVK 2.7.1, confirmed two-worker baseline and past experiments off'
             self.status(performance_trial=report);return
-        if trial=='lighter_scene':
-            if self.req.get('action')=='launch' and self.req.get('display_profile')=='windowed720':
-                report.update(active=trial,display_profile='windowed720lite',
-                    check='Registry values are verified by the launch helper before the game starts')
-            else:report['note']='The 540p scene trial requires a game launch with Windowed 1280×720 selected'
-            self.status(performance_trial=report);return
-        option={'one_compiler':'dxvk.numCompilerThreads = 1',
-                'retain_pipelines':'dxvk.trackPipelineLifetime = False'}[trial]
+        option='dxvk.numCompilerThreads = 1'
         previous=self.env.get('DXVK_CONFIG');proc=None
         try:
             self.env['DXVK_CONFIG']=';'.join(filter(None,(previous,option)))
@@ -353,12 +349,10 @@ class Supervisor:
             self.logs[-1].thread.join(3)
             log=(LOGS/'performance-trial.log').read_text(errors='replace')
             modes=re.findall(r'^LSB_D3D8_PIXELS mode=(swvp|hwvp) frames=4 samples=64 PASS\s*$',log,re.M)
-            workers=1 if trial=='one_compiler' else 2
+            workers=1
             if (option not in log or 'DXVK: Using '+str(workers)+' compiler threads' not in log
                     or sorted(modes)!=['hwvp','swvp'] or re.search(r'^LSB_D3D8_.* FAIL\s*$',log,re.M)):
                 raise ValueError('Trial configuration, worker count or pixel check not confirmed')
-            if trial=='retain_pipelines' and not re.search(r'^\s*(?:info:\s*)?graphicsPipelineLibrary\s*:\s*1\s*$',log,re.M):
-                raise ValueError('Graphics pipeline library support not confirmed')
             report.update(active=trial,option=option,compiler_threads=workers,
                           check='128 texture, geometry and alpha pixels passed in both vertex-processing modes')
         except (OSError,ValueError,RuntimeError) as error:
