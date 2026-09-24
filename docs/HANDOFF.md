@@ -1,4 +1,4 @@
-# 0.5.22: borderless game placement and staged-buffer experiment
+# 0.5.22 delivered for device testing: border removal and staged uploads
 
 Latest user reports camera-pan drops when more buildings/NPCs enter view, and
 an asymmetric top/left border in both Android display modes. Device evidence,
@@ -30,8 +30,11 @@ state are separate in `graphics_tuning`; inspect fallback, not just the toggle.
 
 65 Python runtime tests, core checks, 19 Android tests, UI preview review and
 package/signature/alignment/manifest checks pass. Native Windows geometry and launcher tests pass in PR run 35962087529.
-ARM64 validation continues in runs 35962083617 / 35962087529; append final
-outcomes before claiming complete qualification. Older initial Windows tests
+Primary FEX 107513222153 passes real Wine/FEX border and launcher checks,
+then times out at the 60-second observed graphics fixture after normal staged
+128-pixel checks pass. Archive 10792718543 and details are in the report.
+Its cause is unresolved; do not claim that run passed. Independent PR FEX
+and both Box64 jobs continue; append outcomes before full qualification. Older initial Windows tests
 failed because their synthetic decorated window was clamped to the small
 CI desktop. Full-size assertions remain; the fixture now supplies larger
 WM_GETMINMAXINFO limits and records requested/before/after dimensions.
@@ -44,6 +47,15 @@ file ID `file_00000000384881f58534f33f83e6bb64`.
 Built from 58e550f run 35961892890 artifact 10792217570, archive SHA-256
 `6656162454ba7d1c876f36b7e272b9340bd6e3c0cb20651fd05ad870959239bb`.
 The later commit changes tests only. No post-sign payload change.
+
+Delivery is a device-test build qualified by the passing Android suite,
+real Windows and Wine/FEX border/launcher checks, staged normal pixel checks
+on FEX and Box64, and package verification. It is not an all-green CI release.
+The primary FEX diagnostic timeout is retained above; the already-running
+independent FEX and both Box64 jobs remain pending at delivery. Inspect their
+final outcomes on the next follow-up. Do not rerun unchanged tests or weaken
+a timeout/assertion to erase a failure. The new upload mode stays off by
+default and restores baseline if its on-device normal pixel preflight fails.
 
 Next device comparison: border fix on, staged uploads off for a baseline;
 check all four edges/touch in fullscreen and windowed. Walk the same busy route

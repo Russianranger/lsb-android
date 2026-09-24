@@ -114,3 +114,51 @@ smaller hosted desktop. The synthetic window now supplies larger maximum
 tracking dimensions and asserts the requested size before and after. No
 production check, assertion, or timeout was removed to obtain a pass.
 ARM64 validation is still running at this checkpoint.
+
+
+Earlier ARM64 failures were inspected, not discarded: 121990d's new window
+fixture initially ran without an X display (Box64 job 107512348089). Commit
+58e550f moved it to the existing live-display phase. Its FEX jobs 107512645098
+and 107512610924 then passed all launch/opt-out/restore/idle/Stop/crash checks
+and failed only the full-size synthetic-window assertion, the same desktop
+constraint fixed by cf503a7. The original assertions and timeouts remain.
+
+## Primary FEX diagnostic timeout retained
+
+Latest primary FEX job 107513222153 (run 35962083617, cf503a7) passes migrated
+Wine/FEX window geometry at exact 1280×720 and 960×540, all launch/opt-out/
+restore/idle/Stop/crash cases, and controller checks. Its modern-DXVK cycle 2
+then times out at the unchanged 60-second `Observed D3D8 pixel fixture` wait.
+This is not reported as a successful full runtime job.
+
+Session `c0f6536d-b667-40e3-8a1a-95b2c79e1a85` confirms strict64, DXVK 2.7.1,
+staged uploads active, and both normal tuning pixel modes passed. The later
+regular graphics-pixel check also passes all 128 samples. The subsequent
+`--trace-pixels` process produces no trace events or pixel completion markers;
+its last lines describe a 320×240 immediate-mode swapchain and two compiler
+threads. That locates the stall before recorded observation, but does not
+establish its underlying cause or prove independence from tuning. Do not
+claim a pixel mismatch, a completed trace, or a resolved timeout.
+
+Failure artifact 10792718543 is retained, 233,314 bytes, SHA-256
+`4e2725cf4d1b5af15d4b4ee73609ef5652a11b379714eae8cd636c6f16ce937b`.
+The independent PR FEX run continues. No timeout, assertion or production
+safety check was weakened, and no unchanged retry was requested. On-device
+staged uploads remain opt-in with normal pixel-gated fallback.
+
+
+## Device-test delivery
+
+Delivery uses the APK identity above with the passing 65 Python runtime,
+core, 19 Android, real native-Windows and Wine/FEX border/launcher checks;
+FEX and Box64 both pass the normal staged-upload pixel path. The independent
+PR FEX and both latest Box64 jobs are still running at delivery, so this is
+not represented as an all-green CI release. Their final outcomes must be
+checked on the next follow-up. The failed primary diagnostic remains
+recorded; no unchanged retry or relaxed assertion was used.
+
+On-device appearance and a camera-pan speedup remain unverified. Border
+removal defaults on with an opt-out; the upload experiment defaults off and
+has a normal pixel-correctness startup gate with baseline fallback. The test
+instructions above compare only the new upload switch and preserve the
+accepted runtime/client setup.
