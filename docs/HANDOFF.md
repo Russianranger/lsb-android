@@ -1,4 +1,4 @@
-# 0.5.21 fullscreen and export polish in qualification
+# 0.5.21 delivered for device testing: fullscreen and export polish
 
 User reports 0.5.20 performance about the same, with remaining slowdowns.
 The hidden-cursor optimization is active (85.1% of pointer requests skipped)
@@ -14,8 +14,18 @@ redundant periodic updates. Runtime and game resolution are unchanged.
 
 Local core, 63 runtime contracts and all 19 Android checks pass. Native UI
 previews are reviewed. Signed 0.5.21 APK package/alignment/original-signature
-and CI-payload checks pass; FEX/Box64 compatibility gates are still running.
-Do not present the new APK as ready before these checks.
+and CI-payload checks pass. Primary FEX job 107463031167 timed out while
+waiting for the trace-probe process to exit, after rendering 300 frames. Its
+retained state passes math/pixels/input/audio; the shutdown cause is unresolved.
+Evidence artifact 10787106028 and its SHA-256 are recorded in the linked report.
+No timeout or assertion changed, and no unchanged retry was requested. Parallel
+FEX and both Box64 runs are still running; full CI must not be reported green.
+Delivery qualification is the Android suite plus exact
+native-asset identity with fully qualified 0.5.20: all changed application code
+is on Android; no guest runtime or native capture/input/audio code changed.
+The unchanged native-suite reruns continue in GitHub without holding this UI
+device-test update. Inspect their eventual results on the next follow-up;
+retain any failure evidence rather than silently retrying.
 
 APK SHA-256 `312267378bd71d55c5adc38c195a2cf6d65a05f8da2c4b7e0086dac7ec7f66df`.
 VersionCode 37, 18,305,172 bytes. Library ID

@@ -59,9 +59,14 @@ on reopening, no connection generation change during toggles, unchanged Windows
 resolution selection, and the export tile's actual document intent. Native UI
 previews cover the updated tiles and navigation and were visually reviewed.
 All 19 Android checks pass, along with the build, native Windows, presentation
-and server-deployment jobs. Primary FEX/Box64 checks are still running in
+and server-deployment jobs. Primary FEX failed at probe shutdown; Box64 and
+the independent PR runtime runs are still running. Current results are in
 [run 35945502024](https://github.com/Russianranger/lsb-android/actions/runs/35945502024)
-on implementation `d52a7542750fe48f45e3fca1b52abab8a91ef3c4`.
+on implementation `d52a7542750fe48f45e3fca1b52abab8a91ef3c4`. Their results are
+not claimed as passing. This Android-only device-test update is delivered on
+the passing Android checks and exact native-asset identity with the previously
+qualified 0.5.20 APK. The unchanged-runtime reruns continue independently;
+check and record their eventual outcome on the next follow-up.
 
 Signed APK: 0.5.21, versionCode 37, 18,305,172 bytes. SHA-256
 `312267378bd71d55c5adc38c195a2cf6d65a05f8da2c4b7e0086dac7ec7f66df`.
@@ -79,3 +84,26 @@ re-enter fullscreen, then reopen the display and check persistence. Verify
 controller and touch alignment, including near the edges. Play the familiar
 route for 3–5 minutes, stop, and use the Export support ZIP tile. Send the ZIP
 with any fullscreen/UI issues and remaining slowdown observations.
+
+
+## Failed primary FEX run retained
+
+Primary FEX job `107463031167` fails in integration.py's unchanged
+`p.wait(timeout=40)` for trace_probe.py, in the strict64/DXVK 2.7.1 cycle.
+The full evidence archive is artifact `10787106028`, SHA-256
+`36d660c79c3f3c64611417564aee14aac8eabcaf886650163fc44875560a74ba`.
+
+Before timeout, CPU/math and x87 flag checks, observed UP/indexed/texture pixels,
+and live 60 Hz Native Surface checks pass. Retained probe state has 300 D3D8
+frames, one keyboard event, one pointer event, submitted audio and HRESULT zero.
+Graphics pixel state passes all 128 samples. Wine's last log reports an
+out-of-date swapchain/recreation. The exact shutdown stall is unresolved;
+this log alone does not establish its cause. The final stopped phase comes
+from failure cleanup, not successful automatic exit.
+
+No deadline/assertion was relaxed and no unchanged retry was requested. The
+Android changes do not run in this Linux/ARM64 test; shipped native payloads
+are byte-identical to the fully qualified 0.5.20 build. This limits the evidence
+for a regression from this UI update, but does not turn the failed job into a
+pass. Delivery is a device-test APK with the CI limitation disclosed. Inspect
+the still-running PR FEX and both Box64 results at the next follow-up.
