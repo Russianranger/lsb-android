@@ -104,3 +104,26 @@ receipt and user observation supply the separate Android-device evidence.
 Prior 0.5.26 timeout failures remain historical unresolved findings; no unchanged
 retry or relaxed assertion was used to make 0.5.27 pass. This records 0.5.27
 results, not acceptance of the subsequent 0.5.28 implementation.
+
+## 0.5.28 delivery
+
+Delivered **LSB-Android-0.5.28.apk**, 18,313,443 bytes, SHA-256
+`fb76ae2c83794b7333b581dab304d1eec6ba3a551e49648f12e2ba54fafc8805`.
+Library `libfile_d08af7da6c9881918475e098b3a61723`, version 0,
+file `file_000000000eec81f6b5e9b0585d5a4ce6`. Original update signer;
+package/code44, v2/v3 signatures, alignment and payload identity after signing
+verified. Only supervisor.py changes in runtime/native payload versus .27;
+all renderer, FEX, PRoot, preflight, presentation and fixture binaries unchanged.
+Wide/narrow Proven fixes panels reviewed.
+
+Source `67e147ce496e74d22a96838f3cc9eb5271d4a945`, push run36057571648,
+APK artifact10832759007. Local82 runtime contracts and8 helper tests pass.
+Both .28 verify jobs pass31 Android tests and APK builds; presentation/server/
+Windows gates pass. Full .28 runtime CI pending at delivery: push Box64
+107829449362 and FEX107829449419; PR run36057577993 Box64107829323396 and
+FEX107829323430. Follow through next turn; do not substitute the previous .27
+full passes for these .28 results. No unchanged retries or weakened gates.
+
+Install in place; previous F selection migrates automatically. Normal play is
+sufficient; no new comparison matrix, runtime reinstall, reimport or cache reset.
+The feature can be disabled under Proven fixes if troubleshooting is needed.
