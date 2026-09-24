@@ -22,8 +22,21 @@ Stop/export one ZIP. No B/C repeat, reinstall or cache reset.
 
 Prior CI: PR FEX passed full 0.5.25 gate. PR Box64 and push FEX failed the existing
 observed-pixel 60-second timeout on 2.5.3 before the new trials. Push Box64
-107794714596 still running at last check. Keep these failures recorded; no
+107794714596 subsequently passed. Keep the two failures recorded; no
 unchanged reruns or weakened gates. Repo edits/pushes authorized; no merge.
+
+Delivered `LSB-Android-0.5.26.apk`, 18,305,172 bytes, SHA-256
+`701022255be4037fdcdfbaf54dd619f642f2a501418ca4b8a97bdf1430a5f8a2`.
+Library `libfile_0e87e80ecba08191aac36df30902f5af`, file
+`file_000000005f1081f4b0e5ae39a2876bbc`. Original signer retained; signatures,
+alignment, package, contents and native binary identity against 0.5.25 checked.
+Implementation `4f60a37b30188139364d4969565814fd1c6c79ee`; push run
+36050716378 artifact 10829958320. Local core/69 runtime contracts pass. Both CI
+verify jobs pass all 22 Android tests and APK build; server/presentation/native
+Windows gates pass. Wide/narrow UI previews reviewed. At 19:54 UTC full runtime
+jobs remain pending: push FEX 107806214742 / Box64 107806214712; PR run
+36050722375 FEX 107806500337 / Box64 107806500417. Follow through next turn;
+do not claim full CI green. No unchanged retries or weakened checks.
 
 Earlier entries below are historical.
 

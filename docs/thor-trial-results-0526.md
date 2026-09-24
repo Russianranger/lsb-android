@@ -80,11 +80,41 @@ registry checks; this did not predict B's device hang. PR Box64 107794277654
 failed on the existing observed D3D8 pixel fixture's 60-second timeout under
 DXVK 2.5.3, before reaching the new trials. Push FEX 107794714838 failed at that
 same earlier observed fixture; its expected negative-test exceptions are not
-the cause of the failed job. Push Box64 107794714596 was still running when
-checked. These remain unresolved; no unchanged retry or relaxed assertion.
+the cause of the failed job. Push Box64 107794714596 subsequently passed its
+complete gate. The two failed jobs remain unresolved; no unchanged retry or
+relaxed assertion.
 
 0.5.26 local core checks and 69 runtime contracts pass. New Android tests cover
 six-session pruning/order, upgrade seeding, final refresh, mismatched session
-rejection, partial-file exclusion and bounded source size. Android/CI and APK
-identity will be appended after packaging. This pass is recovery and evidence
+rejection, partial-file exclusion and bounded source size. This pass is recovery and evidence
 retention, not a claimed FPS increase over A.
+
+## Delivered APK and verification
+
+Implementation `4f60a37b30188139364d4969565814fd1c6c79ee`, version 0.5.26/code 42,
+pushed to `codex/client-baseline`; no merge. Push run 36050716378, device artifact
+10829958320, ZIP SHA-256
+`252ef34dde62ea0eed1e9a9ac78519be71b7eda210da90f0d2c93037776506b3`.
+
+`LSB-Android-0.5.26.apk`: 18,305,172 bytes, SHA-256
+`701022255be4037fdcdfbaf54dd619f642f2a501418ca4b8a97bdf1430a5f8a2`.
+Original signer SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Package/version, ZIP integrity, v2/v3 signatures, 16 KiB alignment, runtime
+manifest digests and unchanged payload through re-signing all checked. Compared
+with 0.5.25, all runtime/native entries are byte-identical except the two intended
+Python sources (`supervisor.py` and `client_launch.py`). No renderer/DLL change.
+Library `libfile_0e87e80ecba08191aac36df30902f5af`, file
+`file_000000005f1081f4b0e5ae39a2876bbc`.
+
+At 2026-09-24 19:54 UTC both push and PR verify jobs passed, including all 22
+Android tests, core checks, packaging, presentation and server gates. Both native
+Windows jobs passed. Wide/narrow optimization and past-experiment screenshots
+were visually reviewed; text and controls fit. Full runtime gates remain pending:
+
+* Push 36050716378: FEX 107806214742, Box64 107806214712.
+* PR 36050722375: FEX 107806500337, Box64 107806500417.
+
+Do not describe full CI as green or device A performance as proven. Follow through
+on these jobs next turn; diagnose failures without unchanged retries or relaxed
+assertions. Install this signed APK over the existing app; do not uninstall.
