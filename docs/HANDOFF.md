@@ -1,3 +1,52 @@
+# 0.5.26 follow-up: fresh Baseline/A logs verified
+
+Before APK delivery the user supplied `lsb-support (9)(2).zip` and `(10)(2).zip`
+from the previous build. They are a **new** Baseline/A pair, not recovery of the
+original overwritten pair. Baseline session `7f8d465e-0b07-475c-acbf-cb20cea9677d`
+uses 2 workers; A `921258d1-f3bc-4b0b-adde-84b248eddddd` confirms 1 worker and 128
+passing startup pixels. A's graphics_tuning still describes its 2-worker starting
+profile; performance_trial and DXVK effective config confirm the override.
+Both have full 1280×720 background/interface, FEX v3/strict64, DXVK 2.7.1, SHM,
+Turnip 26; geometry/sysmem/border are off. Baseline restores C's 540p background.
+Export 10's previous Baseline receipts duplicate export 9 exactly; deduplicate.
+
+After the first minute, excluding terminal windows, weighted Surface posts/s are
+27.25 Baseline over 100.25 seconds and 27.45 A over 160.40 seconds. These are not
+actual game FPS or scene-matched samples. A remains promising, not proven; no
+percentage improvement claim. Both fluctuate and both have early long gaps with
+responsive unchanged replies. No evidence the Android copy or log writer explains
+those waits; game/asset/shader/render timing remains unresolved. Full measurements,
+ZIP identities and selection rule: [report](thor-trial-results-0526.md).
+
+The requested repeat A check is now satisfied. Do not ask for another matrix just
+to recover settings. Normal play with A if preferred, 720p, past experiments off;
+export after a noticeable pause. Baseline remains 2 workers. B/C stay retired.
+Update trial description for these new verified logs; UI-only commit
+`cd290be19d5ec51657202fb1bd043d39794fd660` follows recovery implementation
+`4f60a37b30188139364d4969565814fd1c6c79ee`.
+
+Final `LSB-Android-0.5.26.apk` is 18,309,268 bytes, SHA-256
+`0474b2a67f3f16a8e8dd1e913dd624520ad46c115b50c05ddf9406f66fc09d4a`.
+Library `libfile_0e87e80ecba08191aac36df30902f5af`, version 1, file
+`file_0000000048cc822f8cec65553716b828`. Original signer; identity, alignment,
+signatures and rendering binary identity against 0.5.25 checked. This supersedes
+the preliminary 0.5.26 APK listed in the historical entry below. Final push run
+36051583691 / artifact 10830034448. Both final verify jobs pass (22 Android tests),
+server/presentation/Windows pass; updated wide/narrow UI previews checked. Full
+runtime jobs pending: push FEX 107809166178 / Box64 107809166474; PR run
+36051588916 FEX 107809407297 / Box64 107809407350. Do not claim full CI green.
+
+Prior implementation CI follow-through: push Box64 107806214712 failed the
+existing observed D3D8 pixel fixture's 60-second timeout on DXVK 2.5.3, before
+trial activation; this is distinct from the real-device B freeze. Keep the failure
+recorded. Earlier PR FEX 107806500337 also failed: 2.7.1 preflight timeout caused
+2.5.3 fallback, then the exact-version assertion failed at integration.py:107.
+Its earlier negative-test exceptions were expected. No retry or relaxed assertion.
+Earlier push FEX 107806214742 and PR Box64 107806500417 need follow-through.
+The UI-only wording update does not fix those timeout failures.
+
+---
+
 # 0.5.26: A promising, B/C retired; six-session support history
 
 User reports last four tests: baseline unchanged; A small improvement; B freezes
