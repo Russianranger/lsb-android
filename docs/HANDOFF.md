@@ -1,3 +1,61 @@
+# 0.5.24: two shader compiler workers confirmed on Thor
+
+The new four-way comparison supports **two shader compiler workers on** with
+**Turnip system-memory rendering off**. Both-on improved performance; workers
+alone retained it; sysmem alone was worse. The older 0.5.23 control also ran
+poorly with both off, so an app rollback did not recover performance. Do not
+repeat that rollback or the four-way matrix. [Evidence and next check](thor-two-compilers-0524.md).
+
+All effective settings verified in local supplied ZIPs, including the final
+ZIP's previous slot for the workers-only run. Improved preflights explicitly
+use 2 compiler threads; sysmem-only uses 8. All retain the Turnip 26 driver,
+FEX v3/strict64, DXVK 2.7.1, SHM and 60 Hz. Do not confuse the sysmem switch
+with disabling/replacing Turnip. Frame histories agree directionally but lack
+matched scene markers: no claimed percentage FPS gain or diagnosis of every
+remaining pause.
+
+Implementation `c6d1eba232cc17685d22a77f3c168c645c47deb4` is pushed, version
+0.5.24/code 40. Two workers moves into Proven fixes; staged geometry joins
+sysmem in Past experiments. **Use tested shader settings** sets only workers
+on, sysmem off and staged geometry off, synchronizes the checkboxes and retains
+the live form. Saved preferences do not change merely on update/open. Other
+runtime/display settings and the compatibility fallback remain intact.
+
+This is the regular branch build again, not the manifest-only 0.5.23 control.
+No guest runtime, native display or Windows source changes from 0.5.22. Border
+adjustment remains available; leave it off in the next performance run. Its
+measured 1280×694 sizing caveat remains a separate unresolved display issue.
+Do not claim this pass fixes that or adds another performance algorithm.
+
+Next phone test after APK delivery: update in place, Client → Proven fixes →
+Use tested shader settings; leave border removal/startup capture off. Keep
+Turnip 26, FEX v3/strict64, DXVK 2.7.1, Native Surface/SHM, 60 Hz. Same route
+3–5 minutes, first and repeat pans, Stop/export one ZIP. No runtime reinstall,
+client preparation, reimport or cache reset. Preserve this profile as the
+baseline while investigating remaining stalls.
+
+Delivered `LSB-Android-0.5.24.apk`, 18,309,268 bytes, SHA-256
+`afc4a359e936cf7b2a5c79ff3cc3a140231e008217856e17049c6d1c906ccc48`.
+Library ID `libfile_72c33ec2f01081919178b0305b8a0329`, file ID
+`file_0000000021cc81f5a24754baa453e689`. Original signer retained. Source PR
+run 36042830832, artifact 10827736387; identity details in the report.
+Core, 65 runtime contracts, 5 server contracts, 19 Android tests, native Windows,
+package/signature/alignment and UI preview checks pass. Every runtime binary,
+native library and Python asset matches 0.5.22 exactly. The generated bundle
+manifest differs only in key ordering; parsed JSON and content hashes match.
+
+New FEX 107780270354 / Box64 107780270519 and push run 36042824628 native gates
+remain in progress at delivery. Delivery qualification uses passing Android
+checks and the exact previously qualified runtime bytes. Do not call full CI
+green or discard any later failures. Follow up on their final outcomes next
+turn; no unchanged retries or weakened assertions. The 0.5.22 primary FEX
+observed-pixel timeout remains documented.
+Repo edits/pushes authorized, no merge requested.
+
+Earlier entries below are historical.
+
+---
+
 # 0.5.23 baseline control: reported slowdown in every 0.5.22 combination
 
 User reports all four border/geometry combinations feel slightly slower.
