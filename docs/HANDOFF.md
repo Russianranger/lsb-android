@@ -1,3 +1,64 @@
+# 0.5.22: borderless game placement and staged-buffer experiment
+
+Latest user reports camera-pan drops when more buildings/NPCs enter view, and
+an asymmetric top/left border in both Android display modes. Device evidence,
+source diagnosis and next comparison are in [the 0.5.22 report](thor-border-pan-0522.md).
+Keep FEX v3 / strict64 / DXVK 2.7.1 / Turnip 26 / SHM / 60 Hz and startup
+capture off. No FEX/runtime reinstall, client preparation, reimport or reset.
+
+App changes are implementation `121990d5101fb19b2aba77ecd53c2921cf2c0227`.
+Follow-up commits `58e550f2318df4179703b47ba1cdf5bff15acef3` and
+`cf503a7fe1e033859ce8e4912760e461cd911223` correct only synthetic tests:
+run window geometry with a live display, and allow full 1280×720 on a smaller
+Windows CI desktop. No production source differs across these commits.
+
+**Remove game window borders** defaults on. Startup adjusts only the owned,
+visible FFXiClass window in registry windowed mode: frame removal, client
+origin zero, unchanged measured client dimensions, partial-failure rollback.
+It is independent of Android fullscreen and performs no recurring scans.
+`process.game_window` receipts record numeric before/after geometry and errors.
+Disable this option and relaunch to opt out; fullscreen registry modes are
+left intact.
+
+**Staged geometry uploads** defaults off under New optimization. On selected
+DXVK 2.7.1 it disables direct vertex/index buffer mapping to test reduced
+synchronization waits. Adds copying and is not a demonstrated FFXI speedup.
+Startup verifies DXVK acknowledgment plus 128 rendered pixels in both vertex
+processing modes, or restores baseline tuning. Existing pixel fixtures now
+exercise ordinary locks as well as DISCARD/NOOVERWRITE. Request and active
+state are separate in `graphics_tuning`; inspect fallback, not just the toggle.
+
+65 Python runtime tests, core checks, 19 Android tests, UI preview review and
+package/signature/alignment/manifest checks pass. Native Windows geometry and launcher tests pass in PR run 35962087529.
+ARM64 validation continues in runs 35962083617 / 35962087529; append final
+outcomes before claiming complete qualification. Older initial Windows tests
+failed because their synthetic decorated window was clamped to the small
+CI desktop. Full-size assertions remain; the fixture now supplies larger
+WM_GETMINMAXINFO limits and records requested/before/after dimensions.
+
+Signed APK is `/workspace/scratch/ee8c6f15b83e/LSB-Android-0.5.22.apk`, code 38,
+18,301,076 bytes, SHA-256
+`8a1dfe49bee5e348d4b263da1f1c2492ae0ed898511c478af2585221ff395c93`.
+Original signer retained. Library ID `libfile_7739c6e448a08191971ac26e549b4306`,
+file ID `file_00000000384881f58534f33f83e6bb64`.
+Built from 58e550f run 35961892890 artifact 10792217570, archive SHA-256
+`6656162454ba7d1c876f36b7e272b9340bd6e3c0cb20651fd05ad870959239bb`.
+The later commit changes tests only. No post-sign payload change.
+
+Next device comparison: border fix on, staged uploads off for a baseline;
+check all four edges/touch in fullscreen and windowed. Walk the same busy route
+and pan twice (first encounter and repeat), Stop and export. Then enable only
+staged uploads, relaunch/repeat/export; report correctness, FPS and CS syncs.
+Turn the experiment off if slower or incorrect. Preserve both exports.
+
+0.5.21 follow-through: primary Box64 and independent PR FEX/Box64 passed.
+Primary FEX timeout remains recorded; never describe that entire run as green.
+Repo changes and pushes authorized; no PR merge requested.
+
+Earlier entries below are historical.
+
+---
+
 # 0.5.21 delivered for device testing: fullscreen and export polish
 
 User reports 0.5.20 performance about the same, with remaining slowdowns.
