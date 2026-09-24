@@ -88,3 +88,30 @@ DXVK 2.7.1 draw/present preflight timed out after 45 s and selected 2.5.3. Later
 pixels/input/audio completed, but the exact-version acceptance assertion failed.
 That failure remains unresolved and recorded; no unchanged retry or weakened
 assertion. The runtime-release job was skipped. Do not describe all CI as green.
+
+## APK delivery
+
+Implementation commit `57d5871f7ae5554e82de697e44854a54848c8e60`, PR build
+36047112262, artifact 10828707828. Artifact ZIP SHA-256
+`76069342cf92a3176f89726e63024f739643ef82fd20589d742d35a4d202a419`.
+Delivered `LSB-Android-0.5.25.apk`, version code 41, 18,305,172 bytes; SHA-256
+`777f8e6bbb12eaac2f4abcecfc339981fe7f4037de6bddf6ca416629d138380e`.
+Original signer retained; v2/v3 signatures, 16 KiB alignment check, package ID,
+version, ZIP integrity, bundled hashes and signed/unsigned payload identity pass.
+Only expected runtime payloads differ from 0.5.24: `supervisor.py`,
+`client_launch.py`, `client-launch.exe`. All other runtime/native bytes match.
+Library ID `libfile_7545cab12c3481919990247881cb9424`, file ID
+`file_000000007be881fdb1594aca43e32012`.
+
+PR verify job 107793408936 passes core, 68 runtime contracts, 5 server contracts,
+19 Android tests and APK build. Native-Windows job 107794277484 passes its
+existing checks. New trial tile previews inspected at narrow/wide sizes.
+The scene-scaling registry fixture runs in the Wine gates, not that existing
+native-Windows job. New A/B real pixel runs are also in the Wine gates.
+
+At delivery, PR FEX 107794277708 and Box64 107794277654 are still running.
+Push run 36047105778 is also pending full compatibility results. This is an
+opt-in experimental device build; **not a claim that the full Wine gates or
+new on-device performance tests have passed**. Follow up these exact runs on
+the next turn; retain and diagnose failures, with no unchanged retries or
+weakened gates. No new shader/driver/FEX binaries were built or substituted.

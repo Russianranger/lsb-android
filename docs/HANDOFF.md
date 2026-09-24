@@ -1,4 +1,4 @@
-# 0.5.25: three isolated performance trials (validation in progress)
+# 0.5.25: three isolated performance trials delivered
 
 User confirms two-worker improvement and requests at least three independent
 variables. New **Optimization trials** selector: A one compiler worker,
@@ -16,6 +16,25 @@ adjustment and startup capture off. No FEX/runtime reinstall or cache reset.
 2.7.1 preflight timeout, correctly fell back, then failed exact-version acceptance.
 Recorded, not retried or relaxed. See new report. Border sizing issue is separate.
 Repo edits/pushes authorized, no merge requested. Version 0.5.25/code 41.
+
+Delivered `LSB-Android-0.5.25.apk`, 18,305,172 bytes, SHA-256
+`777f8e6bbb12eaac2f4abcecfc339981fe7f4037de6bddf6ca416629d138380e`.
+Library `libfile_7545cab12c3481919990247881cb9424`, file
+`file_000000007be881fdb1594aca43e32012`. Original signing key retained.
+Implementation `57d5871f7ae5554e82de697e44854a54848c8e60`; PR run
+36047112262 artifact 10828707828. Core, 68 runtime contracts, 5 server,
+19 Android tests, existing native-Windows checks, APK integrity/signatures
+and native UI preview checks pass. New A/B Wine pixels and C Wine registry
+checks are inside still-running FEX 107794277708 / Box64 107794277654.
+Push run 36047105778 also needs final follow-through. Experimental opt-in APK;
+do not claim full CI green. Record/diagnose failures next turn, no unchanged
+retry or weakened gates. Full identity and limits in the report.
+
+Phone test: install over current app, Use tested shader settings, Windowed
+1280×720. Run Baseline then A, B, C independently, relaunching each time.
+Same 3–5 minute route and first/repeat camera pans, export after every run.
+Keep border/startup capture off, remaining accepted settings unchanged.
+C softens 3D only; B uses more memory; A may compile new shaders more slowly.
 
 Earlier entries below are historical.
 
