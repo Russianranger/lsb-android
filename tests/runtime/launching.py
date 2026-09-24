@@ -31,6 +31,7 @@ def main():
     (SESSION/'stop').unlink(missing_ok=True)
     setup=Supervisor({'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher'})
     try:
+        setup.wait(setup.spawn(setup.wine_command(r'Z:\fixtures\game-window.exe'),'game-window.log'),90,'Synthetic borderless game window checks')
         setup.wait(setup.spawn(setup.wine_command(r'Z:\fixtures\display-config.exe'),'display-config.log'),90,'Synthetic display configuration checks')
         setup.wait(setup.spawn(setup.wine_command(r'Z:\fixtures\version-registry.exe',r'Z:\session\version-fixture.bin'),'version-registry.log'),90,'Synthetic version registry checks')
     finally:setup.stop()
@@ -49,6 +50,8 @@ def main():
         request={'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher' if case=='check-only' else 'launch'}
         if request['engine']=='fex':request['fex_x87']=case=='relaunch'
         if case in ('launch','windowed-existing'):request['display_profile']='windowed720'
+        if case=='relaunch':request['borderless']=False
+        if case=='window-idle':request['display_profile']='windowed540'
         elif case=='restore-display':request['display_profile']='restore'
         if case in STARTUP:
             request['startup_trace']=case!='trace-off'
@@ -82,6 +85,9 @@ def main():
                     if current.get('phase')=='running' and observation.get('complete') and acknowledged:
                         assert observation['policy']=='startup_only' and observation['ffxi_window_seen'],current
                         assert 'FFXiMain.dll' in observation['modules_seen'],current
+                        if case=='window-idle':
+                            assert current['game_window']['state']=='applied',current
+                            assert current['game_window']['after']['client_x']==current['game_window']['after']['client_y']==0,current
                         frozen=(SESSION/'loader-process.json').read_bytes()
                         break
                 except (OSError,ValueError):pass
@@ -125,6 +131,13 @@ def main():
             # returns ERROR_NO_MORE_FILES (18) even though earlier samples saw
             # FFXiMain and the game window. Keep that code in the receipt.
             assert observed['samples']>0 and observed['module_error'] in (0,18) and observed['window_error']==0,observed
+            window=report['process']['game_window']
+            assert window['policy']=='startup_only' and window['win32_error']==0 and window['rollback_error']==0,window
+            assert window['state']==('disabled' if case=='relaunch' else 'not_windowed' if case=='restore-display' else 'applied'),window
+            if window['state']=='applied':
+                assert window['after']['client_x']==window['after']['client_y']==0,window
+                assert window['before']['client_y']>0,window
+                assert all(window['after'][k]==window['before'][k] for k in ('width','height')),window
             config=report['process']['display_config'];assert config['ok'] and config['policy']==request.get('display_profile','preserve'),config
             assert config['rollback_error']==0,config
             expected={'launch':1280,'relaunch':1024,'windowed-existing':1280,'restore-display':640}

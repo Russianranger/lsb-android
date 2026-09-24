@@ -249,6 +249,7 @@ public final class MainActivity extends Activity {
         int selected=Arrays.asList(displayProfiles).indexOf(getSharedPreferences("runtime",0).getString("display_profile","windowed720"));
         display.setSelection(Math.max(0,selected));graphics.addView(display);
         graphics.addView(label("Applied at launch; original display settings remain available to restore. 960×540 reduces rendering load.",13,MUTED));
+        setting(graphics,"Remove game window borders","borderless",true,"Removes the Windows frame and top-left offset on the next launch, keeping the full game image and resolution. Applies to windowed FFXI in either Android display mode.");
         setting(graphics,"Show DXVK game FPS","dxvk_hud",true,"");
         CheckBox fullscreen=setting(graphics,"Fullscreen app and game","fullscreen",false,"Hides Android bars and the game's bottom status strip. Use the game menu to exit fullscreen; swipe from an edge for Android controls. Rendering resolution stays the same.");
         fullscreen.setOnCheckedChangeListener((button,enabled)->Fullscreen.set(this,enabled));
@@ -267,10 +268,10 @@ public final class MainActivity extends Activity {
         past.addView(label("No meaningful improvement in earlier comparisons. Retained for troubleshooting; both switches stay at your saved values. They were off in the successful 0.5.19 run.",15,TEXT));
         setting(past,"Turnip system-memory rendering","turnip_sysmem",false,"Changes GPU rendering mode; no established gameplay benefit. Next launch only, with compatibility fallback.");
         setting(past,"Two shader compiler workers","dxvk_two_compilers",false,"Limits shader compilation threads. Earlier comparisons did not establish a useful speedup; automatic worker count remains the baseline.");
-        past.addView(label("Earlier metadata caching and hidden-cursor polling did not noticeably improve gameplay. Hidden-cursor polling did remove 85% of position queries in the 0.5.20 run and remains active. Full x87 precision and changing DXVK versions did not fix the old corruption. The CPU-feature correction alone also left it unresolved; it remains part of runtime v3 for correctness.",13,MUTED));
+        past.addView(label("Earlier metadata caching, quieter status overlays and hidden-cursor polling did not noticeably improve gameplay. Hidden-cursor polling did remove 85% of position queries in the 0.5.20 run and remains active. Full x87 precision and changing DXVK versions did not fix the old corruption. The CPU-feature correction alone also left it unresolved; it remains part of runtime v3 for correctness.",13,MUTED));
         LinearLayout tuning=card("New optimization");
-        tuning.addView(label("Quieter gameplay overlay",18,ACCENT));
-        tuning.addView(label("Unchanged status text no longer triggers a redraw every second. Fullscreen also hides the bottom status strip. This reduces overlay work; a gameplay FPS benefit is not yet established.",14,TEXT));
+        setting(tuning,"Staged geometry uploads","dxvk_staged_buffers",false,"Experimental: may reduce pauses when panning past buildings or NPCs, but adds buffer copies. Requires DXVK 2.7.1. Off by default; stop and relaunch to compare. Failed startup pixel checks automatically restore the baseline.");
+        tuning.addView(label("Compare the same route with only this switch changed. Check menus, characters, shadows and camera motion. Export a support ZIP after each run.",14,TEXT));
         LinearLayout diagnostics=card("Capture & diagnostics");
         CheckBox startupTrace=setting(diagnostics,"Capture FFXI startup and graphics","startup_trace",false,"For graphics faults only. Capture can affect FPS; leave it off for normal play and performance comparisons.");
         setting(diagnostics,"Show stutter diagnostics","dxvk_diagnostics",false,"Adds frame timing and shader activity to the FPS overlay. Applies on the next launch.");

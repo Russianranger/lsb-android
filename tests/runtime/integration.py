@@ -62,7 +62,7 @@ def main():
     for cycle in range(2):
         for n in ('stop','status.json','probe.json','display.sock'):Path('/session',n).unlink(missing_ok=True)
         req={'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'renderer':renderer,'audio':True,'session_id':str(uuid.uuid4()),'native_surface':cycle==1,'display_fps':60 if cycle==1 else 30,'dxvk_diagnostics':cycle==1 and renderer!='software','shm_upload':cycle==1,'dxvk_version':'2.7.1' if cycle==1 else '2.5.3'}
-        req.update(turnip_sysmem=cycle==1,dxvk_two_compilers=cycle==1)
+        req.update(turnip_sysmem=cycle==1,dxvk_two_compilers=cycle==1,dxvk_staged_buffers=cycle==1)
         if req['engine']=='fex':req['fex_x87']=cycle==1
         Path('/session/request.json').write_text(json.dumps(req));receiver=Receiver('/session/audio.sock')
         p=subprocess.Popen(['python3','/tests/trace_probe.py'],env=dict(os.environ,LSB_TEST_AUTOCLOSE='1'))
@@ -113,7 +113,9 @@ def main():
                 if cycle==1:
                     assert result['shm_upload_active'],result
                     tuning=result['graphics_tuning']
-                    assert tuning['active']=={'turnip_sysmem':True,'dxvk_two_compilers':True},tuning
+                    assert tuning['active']=={'turnip_sysmem':True,'dxvk_two_compilers':True,'dxvk_staged_buffers':expected=='2.7.1'},tuning
+                    if expected=='2.7.1':
+                        assert tuning['buffer_upload']=='staged' and '128' in tuning['buffer_check'],tuning
                     assert tuning['compiler_threads']==2 and tuning['turnip_debug']=='sysmem' and 'fallback' not in tuning,tuning
                     assert 'DXVK: Using 2 compiler threads' in log, 'Main Wine probe did not inherit worker setting'
                     assert 'dxvk.numCompilerThreads = 2' in log, 'DXVK did not consume the requested config'

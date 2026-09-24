@@ -107,3 +107,11 @@ are byte-identical to the fully qualified 0.5.20 build. This limits the evidence
 for a regression from this UI update, but does not turn the failed job into a
 pass. Delivery is a device-test APK with the CI limitation disclosed. Inspect
 the still-running PR FEX and both Box64 results at the next follow-up.
+
+
+## Follow-through on the next device report
+
+Primary Box64 and independent PR FEX/Box64 completed successfully. The primary
+FEX timeout remains recorded above. See [0.5.22 work](thor-border-pan-0522.md)
+for the next device evidence and implementation; no unchanged retry or timeout
+change was used to obtain the independent pass.

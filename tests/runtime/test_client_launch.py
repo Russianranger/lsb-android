@@ -92,7 +92,7 @@ class LaunchContracts(unittest.TestCase):
         self.assertEqual(snapshots[-1]['startup_diagnostics']['records'][0]['code'],0xc0000135)
         self.assertNotIn('secret',str(snapshots))
         self.assertNotIn('password',str(snapshots))
-        self.assertEqual(s.spawn.call_args.args[0][-1],r'D:\FINAL FANTASY XI')
+        self.assertEqual(s.spawn.call_args.args[0][-2:], [r'D:\FINAL FANTASY XI','1'])
 
     def test_version_registry_failure_has_specific_message(self):
         reason,message=client_launch.exit_problem({'phase':'version_configuration_failed','win32_error':5},[])

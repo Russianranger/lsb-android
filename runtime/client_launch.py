@@ -225,7 +225,7 @@ def run(s, display):
             from fex_runtime import check as check_fex
             check_fex(s,env=env,launch=True)
         # No credentials in argv/environment. Native helper supplies the Windows CLI.
-        p=s.spawn(s.wine_command(r'P:\client-launch.exe','launch',windows_path(loader),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile,windows_path(manifest['game'])),
+        p=s.spawn(s.wine_command(r'P:\client-launch.exe','launch',windows_path(loader),*flags[:3],str({'JP':0,'US':1,'EU':2}[manifest['region']]),profile,windows_path(manifest['game']),'1' if s.req.get('borderless',True) else '0'),
                   'loader-events.log',env=env,pipe_input=True)
         writer=s.logs[-1]
         try:p.stdin.write(payload);p.stdin.close()

@@ -40,6 +40,7 @@ if args.tests:
     build('tests/windows/cpu-dispatch.c', tests/'cpu-dispatch.exe', ['-mconsole','-msse2','-Dmain=wmain'])
     build('tests/windows/game-math.c', tests/'game-math.exe', ['-mconsole','-msse2'])
     build('tests/windows/x87-flags.c', tests/'x87-flags.exe', ['-mconsole','-Dmain=wmain'])
+    build('tests/windows/game-window.c', tests/'game-window.exe', ['-mconsole'])
     build('tests/windows/display-config.c', tests/'display-config.exe', ['-mconsole'])
     build('tests/windows/gamepad-check.c', tests/'gamepad-check.exe', ['-mconsole','-ldinput8','-ldxguid'])
     build('tests/windows/version-registry.c', tests/'version-registry.exe', ['-mconsole'])

@@ -239,6 +239,8 @@ final class ClientRuntime {
         request.put("dxvk_version",context.getSharedPreferences("runtime",0).getBoolean("dxvk_271",false)?"2.7.1":"2.5.3");
         request.put("turnip_sysmem",context.getSharedPreferences("runtime",0).getBoolean("turnip_sysmem",false));
         request.put("dxvk_two_compilers",context.getSharedPreferences("runtime",0).getBoolean("dxvk_two_compilers",false));
+        request.put("dxvk_staged_buffers",context.getSharedPreferences("runtime",0).getBoolean("dxvk_staged_buffers",false));
+        request.put("borderless",context.getSharedPreferences("runtime",0).getBoolean("borderless",true));
         request.put("dxvk_hud",context.getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));
         request.put("dxvk_diagnostics",context.getSharedPreferences("runtime",0).getBoolean("dxvk_diagnostics",false));
     }

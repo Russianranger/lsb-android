@@ -47,11 +47,11 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','engine','fex_x87'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87'}:raise ValueError('Unexpected runtime request field')
     if req.get('engine','box64') not in ('box64','fex'):raise ValueError('Unsupported runtime engine')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
     if req.get('dxvk_version','2.5.3') not in ('2.5.3','2.7.1'):raise ValueError('Unsupported DXVK version')
-    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload','turnip_sysmem','dxvk_two_compilers','fex_x87'):
+    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','fex_x87'):
         if key in req and not isinstance(req[key],bool):raise ValueError('Unsupported '+key+' setting')
     if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
     if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','windowed540','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
@@ -278,10 +278,13 @@ class Supervisor:
     def configure_graphics_tuning(self):
         # Opt-in controls for the already selected renderer, never a DLL/driver
         # replacement. The original environment is restored together on failure.
-        requested={key:self.req.get(key,False) for key in ('turnip_sysmem','dxvk_two_compilers')}
+        requested={key:self.req.get(key,False) for key in ('turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers')}
         report={'requested':requested,'active':dict.fromkeys(requested,False)}
         active={'turnip_sysmem':requested['turnip_sysmem'] and self.req['renderer']=='turnip26',
-                'dxvk_two_compilers':requested['dxvk_two_compilers'] and self.req['renderer']!='software'}
+                'dxvk_two_compilers':requested['dxvk_two_compilers'] and self.req['renderer']!='software',
+                'dxvk_staged_buffers':requested['dxvk_staged_buffers'] and self.req['renderer']!='software' and self.state.get('dxvk_selected')=='2.7.1'}
+        if requested['dxvk_staged_buffers'] and not active['dxvk_staged_buffers']:
+            report['buffers_note']='Staged buffers require hardware-renderer DXVK 2.7.1'
         if requested['turnip_sysmem'] and self.req['renderer']!='turnip26':
             report['turnip_note']='System-memory experiment applies only to Turnip 26'
         if not any(active.values()):
@@ -292,16 +295,25 @@ class Supervisor:
             # No noconform/nosync/relaxed-memory flags. Sysmem still renders on
             # Adreno; it bypasses Turnip's tile-memory render-pass selection.
             if active['turnip_sysmem']:self.env['TU_DEBUG']='sysmem'
-            if active['dxvk_two_compilers']:
-                self.env['DXVK_CONFIG']=';'.join(filter(None,[previous['DXVK_CONFIG'],'dxvk.numCompilerThreads = 2']))
-            proc=self.spawn(self.wine_command('P:\\graphics-check.exe'),'graphics-tuning.log',fixed_output=True)
+            options=[previous['DXVK_CONFIG']]
+            if active['dxvk_two_compilers']:options.append('dxvk.numCompilerThreads = 2')
+            if active['dxvk_staged_buffers']:options.append('d3d9.allowDirectBufferMapping = False')
+            if any(options):self.env['DXVK_CONFIG']=';'.join(filter(None,options))
+            proc=self.spawn(self.wine_command('P:\\graphics-check.exe',*(['--pixels'] if active['dxvk_staged_buffers'] else [])),'graphics-tuning.log',fixed_output=True)
             self.wait(proc,45,'Graphics tuning draw and presentation check')
             self.logs[-1].thread.join(3)
-            if active['dxvk_two_compilers'] and 'DXVK: Using 2 compiler threads' not in (LOGS/'graphics-tuning.log').read_text(errors='replace'):
+            log=(LOGS/'graphics-tuning.log').read_text(errors='replace')
+            if active['dxvk_staged_buffers']:
+                modes=re.findall(r'^LSB_D3D8_PIXELS mode=(swvp|hwvp) frames=4 samples=64 PASS\s*$',log,re.M)
+                if 'd3d9.allowDirectBufferMapping = False' not in log or sorted(modes)!=['hwvp','swvp'] or re.search(r'^LSB_D3D8_.* FAIL\s*$',log,re.M):
+                    raise ValueError('Staged buffer configuration or pixel check not confirmed')
+                report['buffer_check']='128 texture/indexed-geometry/alpha pixels passed in software and hardware vertex processing'
+            if active['dxvk_two_compilers'] and 'DXVK: Using 2 compiler threads' not in log:
                 raise ValueError('DXVK did not confirm two compiler workers')
             report.update(active=active,check='eight D3D8 draw/present frames passed',
                           turnip_debug='sysmem' if active['turnip_sysmem'] else 'unchanged',
-                          compiler_threads=2 if active['dxvk_two_compilers'] else 'automatic')
+                          compiler_threads=2 if active['dxvk_two_compilers'] else 'automatic',
+                          buffer_upload='staged' if active['dxvk_staged_buffers'] else 'default')
         except (OSError,ValueError,RuntimeError) as error:
             if proc is not None and proc.poll() is None:
                 os.killpg(proc.pid,signal.SIGKILL);proc.wait()

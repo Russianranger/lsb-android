@@ -14,13 +14,14 @@ static BOOL module_seen[6],game_window_seen,dialog_seen;
 static DWORD child_pid,samples,module_error,window_error;
 static ULONGLONG launched_at,last_sample_at,last_sample_ms,max_sample_ms,total_sample_ms;
 #include "display-config.h"
+#include "game-window.h"
 #include "version-registry.h"
 
 static BOOL CALLBACK window_observation(HWND window,LPARAM unused){
     (void)unused;DWORD pid=0;GetWindowThreadProcessId(window,&pid);
     if(pid!=child_pid||!IsWindowVisible(window))return TRUE;
     WCHAR cls[128];if(!GetClassNameW(window,cls,128))return TRUE;
-    if(!wcscmp(cls,L"FFXiClass"))game_window_seen=TRUE;
+    if(!wcscmp(cls,L"FFXiClass")){game_window_seen=TRUE;fit_game_window(window);}
     if(!wcscmp(cls,L"#32770"))dialog_seen=TRUE;
     return TRUE;
 }
@@ -90,9 +91,10 @@ static BOOL receipt(const char *phase,DWORD error,DWORD code){
     fprintf(f,"}},\"observation\":{\"child_pid\":%lu,\"samples\":%lu,\"elapsed_ms\":%llu,\"module_error\":%lu,\"window_error\":%lu,\"ffxi_window_seen\":%s,\"dialog_seen\":%s,\"modules_seen\":[",
         (unsigned long)child_pid,(unsigned long)samples,launched_at?(unsigned long long)(GetTickCount64()-launched_at):0ULL,(unsigned long)module_error,(unsigned long)window_error,game_window_seen?"true":"false",dialog_seen?"true":"false");
     BOOL first=TRUE;for(int i=0;i<6;i++)if(module_seen[i]){if(!first)fputc(',',f);quoted(f,module_names[i]);first=FALSE;}
-    fprintf(f,"],\"policy\":\"startup_only\",\"complete\":%s,\"last_sample_elapsed_ms\":%llu,\"last_sample_duration_ms\":%llu,\"max_sample_duration_ms\":%llu,\"total_sample_duration_ms\":%llu}}\n",
+    fprintf(f,"],\"policy\":\"startup_only\",\"complete\":%s,\"last_sample_elapsed_ms\":%llu,\"last_sample_duration_ms\":%llu,\"max_sample_duration_ms\":%llu,\"total_sample_duration_ms\":%llu}",
         game_window_seen?"true":"false",(unsigned long long)last_sample_at,(unsigned long long)last_sample_ms,
         (unsigned long long)max_sample_ms,(unsigned long long)total_sample_ms);
+    game_window_json(f);fputs("}\n",f);
     BOOL written=!ferror(f);if(fclose(f))written=FALSE;if(!written)return FALSE;
     return MoveFileExW(L"Z:\\session\\loader-process.new",L"Z:\\session\\loader-process.json",MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
 }
@@ -113,10 +115,12 @@ static BOOL line(WCHAR *out,unsigned capacity){
 }
 static int launch(int argc,WCHAR **argv){
     WCHAR dir[1024],magic[32],host[254],user[129],pass[129],command[8192]={0};
-    if(argc!=9||!directory(argv[2],dir)||wcscmp(argv[3],L"--server")||
+    if(argc!=10||!directory(argv[2],dir)||wcscmp(argv[3],L"--server")||
        (wcscmp(argv[4],L"--username")&&wcscmp(argv[4],L"--user"))||
        (wcscmp(argv[5],L"--password")&&wcscmp(argv[5],L"--pass"))||
-       (wcscmp(argv[6],L"0")&&wcscmp(argv[6],L"1")&&wcscmp(argv[6],L"2")))return 84;
+       (wcscmp(argv[6],L"0")&&wcscmp(argv[6],L"1")&&wcscmp(argv[6],L"2"))||
+       (wcscmp(argv[9],L"0")&&wcscmp(argv[9],L"1")))return 84;
+    borderless_requested=!wcscmp(argv[9],L"1");
     LONG config_error=display_config(argv[6],argv[7]);
     if(config_error){receipt("configuration_failed",(DWORD)config_error,0);return 1;}
     WCHAR full[1024];DWORD length=GetFullPathNameW(argv[8],1024,full,NULL);

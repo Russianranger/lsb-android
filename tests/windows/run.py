@@ -2,6 +2,7 @@
 import os, shutil, subprocess, tempfile, winreg
 from pathlib import Path
 source = Path(__file__).resolve().parents[2]/'out/windows-tests'
+subprocess.run([str(source/'game-window.exe')],check=True,timeout=30)
 subprocess.run([str(source/'version-registry.exe')],check=True,timeout=30)
 subprocess.run([str(source/'game-math.exe')],check=True,timeout=30)
 subprocess.run([str(source/'x87-flags.exe')],check=True,timeout=30)

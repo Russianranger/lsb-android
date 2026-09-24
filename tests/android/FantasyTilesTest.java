@@ -78,6 +78,13 @@ public class FantasyTilesTest {
             assertFalse(((CheckBox)text(tiles,"Turnip system-memory rendering")).isChecked());
             assertNull(text(tiles,"FEX / native"));assertEquals(before,prefs.getAll());
             capture(tiles,"past-experiments-narrow.png");
+            text(tiles,"◇  Graphics & display").performClick();layout(tiles,920);
+            CheckBox borderless=(CheckBox)text(tiles,"Remove game window borders");assertTrue(borderless.isChecked());
+            borderless.performClick();assertFalse(prefs.getBoolean("borderless",true));
+            text(tiles,"◇  New optimization").performClick();layout(tiles,920);
+            CheckBox staged=(CheckBox)text(tiles,"Staged geometry uploads");assertFalse(staged.isChecked());
+            staged.performClick();assertTrue(prefs.getBoolean("dxvk_staged_buffers",false));
+            capture(tiles,"staged-geometry-wide.png");
             android.widget.LinearLayout page=(android.widget.LinearLayout)((android.view.ViewGroup)activity.get().findViewById(android.R.id.content)).getChildAt(0);
             // The exact navigation label is a button; the version subtitle starts similarly.
             java.util.ArrayList<android.widget.Button> tabs=new java.util.ArrayList<>();collectTabs(page,tabs);assertEquals(6,tabs.size());

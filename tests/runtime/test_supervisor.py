@@ -35,7 +35,7 @@ class Contracts(unittest.TestCase):
    for sysmem,workers in [(True,False),(False,True),(True,True)]:
     s=self.tuning_fixture(pathlib.Path(t),{'turnip_sysmem':sysmem,'dxvk_two_compilers':workers},{'LD_PRELOAD':'gamepad upload','DXVK_CONFIG':'d3d9.maxFrameRate = 30'})
     s.configure_graphics_tuning();report=s.status.call_args.kwargs['graphics_tuning']
-    self.assertEqual(report['active'],{'turnip_sysmem':sysmem,'dxvk_two_compilers':workers})
+    self.assertEqual(report['active'],{'turnip_sysmem':sysmem,'dxvk_two_compilers':workers,'dxvk_staged_buffers':False})
     self.assertEqual(s.env.get('TU_DEBUG'), 'sysmem' if sysmem else None)
     self.assertEqual('dxvk.numCompilerThreads = 2' in s.env['DXVK_CONFIG'],workers)
     self.assertTrue(s.env['DXVK_CONFIG'].startswith('d3d9.maxFrameRate = 30'));self.assertEqual(s.env['LD_PRELOAD'],'gamepad upload')
@@ -59,10 +59,30 @@ class Contracts(unittest.TestCase):
    self.assertEqual(s.env,{});s.spawn.assert_not_called()
  def test_tuning_inputs_are_booleans_not_arbitrary_driver_flags(self):
   req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
-  for key in ('turnip_sysmem','dxvk_two_compilers'):
+  for key in ('turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless'):
    self.assertEqual(module.validate_request(dict(req,**{key:True}))[key],True)
    for value in ('sysmem,noconform',1,None):
     with self.assertRaises(ValueError):module.validate_request(dict(req,**{key:value}))
+ def test_staged_buffers_require_configuration_and_both_pixel_modes(self):
+  good='info: d3d9.allowDirectBufferMapping = False\nLSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\nLSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for log,passed in [(good,True),(good.split('\n',1)[1],False),(good.replace('mode=hwvp','mode=swvp'),False),(good+'LSB_D3D8_PIXEL FAIL\n',False)]:
+    env={'DXVK_CONFIG':'d3d9.maxFrameRate = 30','LD_PRELOAD':'gamepad upload'}
+    s=self.tuning_fixture(pathlib.Path(t),{'dxvk_staged_buffers':True},env);s.state['dxvk_selected']='2.7.1'
+    (pathlib.Path(t)/'graphics-tuning.log').write_text(log)
+    s.configure_graphics_tuning();report=s.status.call_args.kwargs['graphics_tuning']
+    self.assertEqual(s.spawn.call_args.args[0][-1],'--pixels')
+    self.assertEqual(report['active']['dxvk_staged_buffers'],passed)
+    if passed:
+     self.assertEqual(s.env['DXVK_CONFIG'],'d3d9.maxFrameRate = 30;d3d9.allowDirectBufferMapping = False')
+     self.assertEqual(report['buffer_upload'],'staged');self.assertNotIn('TU_DEBUG',s.env)
+    else:self.assertEqual(s.env,env);self.assertIn('fallback',report)
+ def test_staged_buffers_skip_older_dxvk_and_software(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for renderer,version in [('turnip26','2.5.3'),('software','2.7.1')]:
+    s=self.tuning_fixture(pathlib.Path(t),{'dxvk_staged_buffers':True});s.req['renderer']=renderer;s.state['dxvk_selected']=version
+    s.configure_graphics_tuning();s.spawn.assert_not_called();self.assertEqual(s.env,{})
+    self.assertFalse(any(s.status.call_args.kwargs['graphics_tuning']['active'].values()))
  def test_graphics_choices_are_closed_and_reversible(self):
   req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
   for version in ('2.5.3','2.7.1'):self.assertEqual(module.validate_request(dict(req,dxvk_version=version,shm_upload=True))['dxvk_version'],version)

@@ -89,7 +89,7 @@ static int check_pixels(IDirect3D8 *api,HWND window,DWORD behavior,const char *m
         for(unsigned half=0;half<2;half++) {
             BYTE *data=NULL;float left=half?0:-1,right=half?1:0;
             PixelWorldVertex vertices[]={{left,1,.5f,solid},{right,1,.5f,solid},{left,-1,.5f,solid},{right,-1,.5f,solid}};
-            WORD indices[]={0,1,2,2,1,3};DWORD flags=half?D3DLOCK_NOOVERWRITE:D3DLOCK_DISCARD;
+            WORD indices[]={0,1,2,2,1,3};DWORD flags=(frame&1)?0:(half?D3DLOCK_NOOVERWRITE:D3DLOCK_DISCARD);
             PIXEL_TRY("vertex_lock",IDirect3DVertexBuffer8_Lock(vb,half*4*sizeof(PixelWorldVertex),sizeof(vertices),&data,flags));
             memcpy(data,vertices,sizeof(vertices));PIXEL_TRY("vertex_unlock",IDirect3DVertexBuffer8_Unlock(vb));
             PIXEL_TRY("index_lock",IDirect3DIndexBuffer8_Lock(ib,half*6*sizeof(WORD),sizeof(indices),&data,flags));
