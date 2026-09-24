@@ -11,6 +11,13 @@ static BOOL WINAPI position_fixture(HWND w,HWND after,int x,int y,int cx,int cy,
 #undef wmain
 #undef SetWindowPos
 #include <assert.h>
+static LRESULT CALLBACK fixture_window(HWND w,UINT message,WPARAM wp,LPARAM lp){
+    LRESULT result=DefWindowProcW(w,message,wp,lp);
+    /* Hosted Windows desktops may be narrower than 1280. Permit the fixture's
+     * requested client size instead of letting creation clamp to that desktop. */
+    if(message==WM_GETMINMAXINFO){MINMAXINFO *limits=(MINMAXINFO*)lp;limits->ptMaxTrackSize.x=limits->ptMaxTrackSize.y=8192;}
+    return result;
+}
 static void reset(void){
     window_adjusted=game_window_seen=FALSE;borderless_requested=TRUE;
     borderless_state="not_observed";borderless_error=borderless_rollback_error=0;
@@ -28,10 +35,14 @@ static void same(GameGeometry a,GameGeometry b){
     assert(a.origin.x==b.origin.x&&a.origin.y==b.origin.y&&a.style==b.style&&a.exstyle==b.exstyle);
 }
 int wmain(void){
-    WNDCLASSW cls={0};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(NULL);cls.lpszClassName=L"FFXiClass";assert(RegisterClassW(&cls));
+    SetProcessDPIAware();
+    WNDCLASSW cls={0};cls.lpfnWndProc=fixture_window;cls.hInstance=GetModuleHandleW(NULL);cls.lpszClassName=L"FFXiClass";assert(RegisterClassW(&cls));
     for(int small=0;small<2;small++){
         reset();int width=small?960:1280,height=small?540:720;HWND w=make(cls.lpszClassName,width,height);
         window_observation(w,0);assert(game_window_seen&&window_adjusted&&!strcmp(borderless_state,"applied"));
+        printf("Geometry requested=%dx%d before=%ldx%ld after=%ldx%ld origin=%ld,%ld\n",width,height,
+            geometry_before.client.right,geometry_before.client.bottom,geometry_after.client.right,geometry_after.client.bottom,geometry_after.origin.x,geometry_after.origin.y);fflush(stdout);
+        assert(geometry_before.client.right==width&&geometry_before.client.bottom==height);
         assert(!borderless_error&&!borderless_rollback_error);
         assert(geometry_before.origin.x>0&&geometry_before.origin.y>0);
         assert(geometry_after.origin.x==0&&geometry_after.origin.y==0);
