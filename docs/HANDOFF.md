@@ -1,3 +1,45 @@
+# 0.5.23 baseline control: reported slowdown in every 0.5.22 combination
+
+User reports all four border/geometry combinations feel slightly slower.
+All four effective states are verified in three new ZIPs (including previous
+session slots). No demonstrated staged-upload benefit; keep it off. No retained
+geometry option, repeated startup scanning, socket-pixel fallback or dominant
+Android copy regression was found. Cause remains unresolved. Full evidence and
+one focused next test: [0.5.23 control report](thor-performance-control-0523.md).
+
+Delivered `LSB-Android-0.5.23-baseline-control.apk` is the exact accepted 0.5.21
+application payload with only install version metadata advanced to 0.5.23/code
+39, then aligned and signed using the original key. **Not a claimed fix.**
+All 52 non-manifest payload entries are identical to the pinned 0.5.21 CI APK;
+only two manifest bytes change. Complete AAPT2 manifest comparison, runtime
+hashes, ZIP, alignment and v2/v3 signature checks pass. Fullscreen and fantasy
+UI remain; border removal and staged geometry are absent for this comparison.
+Install over current app; preserve data, caches, FEX v3 and prepared client.
+
+SHA-256 `ad7719b1a075282894b83817b42e17eb7098bc3c9045ae772f263e3376663b99`,
+18,301,076 bytes. Library ID `libfile_4d1156d21418819193893ba7bfd2ea63`, file ID
+`file_00000000ca30820e85a62e26fd560764`. Reproduce with
+`scripts/build-baseline-control.py` and the exact source artifact in the report.
+**Version code 39 is reserved; next regular APK must be at least code 40.**
+Production branch sources intentionally remain 0.5.22; a routine CI build
+is not the 0.5.23 control. Do not label that APK as this delivery.
+
+Next: one cooled-device run on the same route/power/fan/charging settings,
+3–5 minutes with first/repeat pans; startup capture off. Stop/export one ZIP
+and report whether the prior smoothness returned. The older border is expected.
+Do not repeat four toggle combinations or add another optimization yet.
+
+Separate finding for later: border receipts moved (6,32) to (0,0), preserving
+1280×694, not a full 720-high client. Possible bottom gap needs a sizing fix
+once the performance comparison is settled. No causal link to both-off dips.
+0.5.22 CI is now finished: both Box64 jobs and independent PR FEX pass; primary
+FEX's recorded observed-pixel timeout remains a failure; runtime-release skipped.
+No unchanged reruns or relaxed gates. Repo edits/pushes authorized; no merge.
+
+Earlier entries below are historical.
+
+---
+
 # 0.5.22 delivered for device testing: border removal and staged uploads
 
 Latest user reports camera-pan drops when more buildings/NPCs enter view, and

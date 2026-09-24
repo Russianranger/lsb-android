@@ -162,3 +162,16 @@ removal defaults on with an opt-out; the upload experiment defaults off and
 has a normal pixel-correctness startup gate with baseline fallback. The test
 instructions above compare only the new upload switch and preserve the
 accepted runtime/client setup.
+
+
+## Follow-up: four settings combinations and completed CI
+
+The user reports a small degradation with all four combinations. Effective
+settings, retained-session mapping, timing limits, constrained 1280×694 border
+geometry and a manifest-only previous-baseline control are documented in
+[the 0.5.23 report](thor-performance-control-0523.md). Staged uploads have no
+demonstrated benefit. Do not claim either switch caused the common slowdown.
+
+Final CI: push Box64 107513222031, PR Box64 107513197834 and PR FEX 107513197849
+all pass. The primary FEX failure above remains unresolved and retained. Both
+runtime-release jobs were skipped; neither whole workflow is an all-green release.
