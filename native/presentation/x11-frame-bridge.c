@@ -29,17 +29,17 @@ static int error_handler(Display *d,XErrorEvent *e){(void)d;xerror=e->error_code
 static uint64_t now_ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (uint64_t)t.tv_sec*1000000000+t.tv_nsec;}
 struct frame_stats {
     uint64_t since,frames,capture_ns,send_ns,pace_ns,calls,bytes,requests,captures,idle,duplicates;
-    uint64_t query_ns,max_query_ns,cursor_ns,max_capture_ns,geometry_queries,pointer_queries,cursor_queries,resize_events,cursor_events;
+    uint64_t query_ns,max_query_ns,cursor_ns,max_capture_ns,geometry_queries,pointer_queries,cursor_queries,resize_events,cursor_events,hidden_pointer_skips;
 };
 static void report(struct frame_stats *s,int final){
     uint64_t now=now_ns();if(!s->requests||(!final&&now-s->since<5000000000ull))return;
     double frames=s->frames?(double)s->frames:1,requests=(double)s->requests,captures=s->captures?(double)s->captures:1;
-    fprintf(stderr,"{\"transport\":\"shared-file-v1\",\"frames\":%llu,\"seconds\":%.3f,\"capture_ms_per_frame\":%.3f,\"send_ms_per_frame\":%.3f,\"pacing_ms_per_request\":%.3f,\"send_calls_per_frame\":%.3f,\"mapped_bytes_per_frame\":%.0f,\"requests\":%llu,\"captures\":%llu,\"idle_skips\":%llu,\"duplicate_skips\":%llu,\"metadata_policy\":\"%s\",\"metadata_query_ms_per_request\":%.3f,\"max_metadata_query_ms\":%.3f,\"cursor_fetch_ms\":%.3f,\"max_capture_ms\":%.3f,\"geometry_queries\":%llu,\"pointer_queries\":%llu,\"cursor_queries\":%llu,\"resize_events\":%llu,\"cursor_events\":%llu}\n",
+    fprintf(stderr,"{\"transport\":\"shared-file-v1\",\"frames\":%llu,\"seconds\":%.3f,\"capture_ms_per_frame\":%.3f,\"send_ms_per_frame\":%.3f,\"pacing_ms_per_request\":%.3f,\"send_calls_per_frame\":%.3f,\"mapped_bytes_per_frame\":%.0f,\"requests\":%llu,\"captures\":%llu,\"idle_skips\":%llu,\"duplicate_skips\":%llu,\"metadata_policy\":\"%s\",\"metadata_query_ms_per_request\":%.3f,\"max_metadata_query_ms\":%.3f,\"cursor_fetch_ms\":%.3f,\"max_capture_ms\":%.3f,\"geometry_queries\":%llu,\"pointer_queries\":%llu,\"cursor_queries\":%llu,\"resize_events\":%llu,\"cursor_events\":%llu,\"hidden_pointer_skips\":%llu}\n",
         (unsigned long long)s->frames,(now-s->since)/1e9,s->capture_ns/1e6/captures,s->send_ns/1e6/frames,s->pace_ns/1e6/requests,s->calls/frames,s->bytes/frames,
         (unsigned long long)s->requests,(unsigned long long)s->captures,(unsigned long long)s->idle,(unsigned long long)s->duplicates,
         poll_metadata?"poll":"events",s->query_ns/1e6/requests,s->max_query_ns/1e6,s->cursor_ns/1e6,s->max_capture_ns/1e6,
         (unsigned long long)s->geometry_queries,(unsigned long long)s->pointer_queries,(unsigned long long)s->cursor_queries,
-        (unsigned long long)s->resize_events,(unsigned long long)s->cursor_events);fflush(stderr);
+        (unsigned long long)s->resize_events,(unsigned long long)s->cursor_events,(unsigned long long)s->hidden_pointer_skips);fflush(stderr);
     memset(s,0,sizeof(*s));s->since=now;
 }
 static int unchanged(int fd,uint32_t *header,int shared,struct frame_stats *stats){
@@ -58,6 +58,11 @@ static void cursor(XImage *image,const XFixesCursorImage *c,int x,int y){
         for(unsigned shift=0;shift<24;shift+=8){unsigned value=((p>>shift)&255)+(((v>>shift)&255)*(255-alpha)+127)/255;result|=(value>255?255:value)<<shift;}
         *dst=result;
     }
+}
+static int cursor_visible(const XFixesCursorImage *c){
+    if(!c)return 1; /* Unknown image: retain the conservative live query. */
+    for(size_t i=0;i<(size_t)c->width*c->height;i++)if((uint32_t)c->pixels[i]>>24)return 1;
+    return 0;
 }
 int main(int argc,char **argv){
     signal(SIGPIPE,SIG_IGN);
@@ -92,7 +97,7 @@ int main(int argc,char **argv){
         int fd=accept(listener,NULL,NULL);if(fd<0){if(errno==EINTR)continue;break;}
         struct timeval timeout={.tv_sec=5};setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
         XImage *image=NULL;XShmSegmentInfo shm={.shmid=-1};int shared=0,lastw=0,lasth=0;uint64_t last=0;
-        int published=0,geometry_dirty=1,cursor_dirty=1;
+        int published=0,geometry_dirty=1,cursor_dirty=1,cursor_shown=1;
         XWindowAttributes a={0};XFixesCursorImage *cursor_image=NULL;
         uint64_t last_capture=0;int pointer_x=-1,pointer_y=-1;struct frame_stats stats={.since=now_ns()};
         unsigned char request;
@@ -101,11 +106,13 @@ int main(int argc,char **argv){
             uint64_t pacing=now_ns();if(last&&elapsed<interval){struct timespec wait={.tv_nsec=(long)(interval-elapsed)};while(nanosleep(&wait,&wait)&&errno==EINTR){}}stats.pace_ns+=now_ns()-pacing;last=now_ns();
             stats.requests++;
             uint64_t querying=now_ns();
-            Window root,child;int rx=0,ry=0,wx=0,wy=0;unsigned mask=0;
-            /* This live round trip also brings preceding geometry/cursor events
-             * into Xlib's queue. No extra XSync is needed on an idle poll. */
-            XQueryPointer(d,screen,&root,&child,&rx,&ry,&wx,&wy,&mask);stats.pointer_queries++;
+            Window root,child;int rx=pointer_x,ry=pointer_y,wx=0,wy=0;unsigned mask=0;
+            /* Drain notifications before deciding whether position is needed.
+             * XPending flushes and reads queued events without a round trip.
+             * A transparent cursor cannot change pixels by moving. */
             int event_dirty=0;
+            int queried=0;
+drain_events:
             while(XPending(d)){
                 XEvent event;XNextEvent(d,&event);
                 if(damage_ready&&event.type==damage_event+XDamageNotify)event_dirty=1;
@@ -116,6 +123,12 @@ int main(int argc,char **argv){
                     stats.cursor_events++;
                 }
             }
+            if(!queried&&(poll_metadata||cursor_shown||cursor_dirty)){
+                XQueryPointer(d,screen,&root,&child,&rx,&ry,&wx,&wy,&mask);stats.pointer_queries++;queried=1;
+                /* The reply may bring additional preceding notifications. */
+                goto drain_events;
+            }
+            if(!queried)stats.hidden_pointer_skips++;
             if(geometry_dirty||poll_metadata){
                 stats.geometry_queries++;if(!XGetWindowAttributes(d,screen,&a))break;geometry_dirty=0;
             }
@@ -162,6 +175,7 @@ int main(int argc,char **argv){
                 stats.cursor_ns+=now_ns()-fetching;stats.cursor_queries++;
                 if(cursor_image)XFree(cursor_image);
                 cursor_image=next;cursor_dirty=next==NULL;
+                cursor_shown=cursor_visible(next);
             }
             cursor(image,cursor_image,rx,ry);if(xerror)break;
             uint64_t captured=now_ns();header[4]=(uint32_t)((captured-capture)/1000);header[7]=(uint32_t)shared;

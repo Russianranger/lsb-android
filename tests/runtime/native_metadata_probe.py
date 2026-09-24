@@ -38,6 +38,13 @@ def verify_metadata(x,d,window,gc,frame,mapped,background):
         assert pixel(98,57)==background,'Old cursor hotspot left stale pixels'
         x.XDefineCursor(d,window,cursors[2]);x.XSync(d,0);changed();patch(95,59,background)
         assert frame()[7]&2,'Transparent cursor should leave an idle image'
+        # Motion under an invisible cursor must neither publish pixels nor
+        # cause position queries in the event-driven path. Reappearance below
+        # must query the new position before compositing.
+        for n in range(16):
+            move(150+n,80+n);assert frame()[7]&2,'Hidden pointer movement repainted the screen'
+        x.XDefineCursor(d,window,cursors[0]);x.XSync(d,0);changed();patch(163,92,0xff0000)
+
         x.XDefineCursor(d,window,cursors[0]);move(0,0);changed();patch(0,0,0xff0000,6,5)
         x.XDefineCursor(d,window,cursors[2]);x.XSync(d,0);changed();patch(0,0,background,6,5)
 

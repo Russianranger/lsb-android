@@ -61,18 +61,22 @@ jobs:
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018'
       - name: Android 13 display pixels, timing history and controller lifecycle
         run: python3 scripts/test-android.py --android-jar "$ANDROID_HOME/platforms/android-35/android.jar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-ui-previews
+          path: out/ui-previews/
       - name: Compile, dex, package and verify
         run: |
           python3 scripts/build-apk.py \
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.19.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.20.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.19.apk
+            out/LSB-Android-0.5.20.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/

@@ -1,3 +1,27 @@
+# 0.5.19 FEX world play accepted; 0.5.20 UI and display optimization in qualification
+
+User confirms correct menus/world rendering and best performance so far,
+generally 20–30 FPS in world play. Runtime v3 is verified in the new support
+export. Preserve this FEX/strict64/DXVK 2.7.1/Turnip 26/SHM/60 Hz baseline.
+[Evidence, UI categories, optimization and next test](thor-world-ui-0520.md).
+
+0.5.20 introduces fantasy serif/gold/indigo expandable tiles in two or three
+columns, with full-width panels and preserved field contents/settings. Proven
+fixes, past experiments, new optimization and diagnostics are separate.
+A focused bridge change avoids position round trips for a fully transparent
+cursor, resuming live position queries on reappearance. Device benefit is
+unverified; the next log includes a skipped-query counter.
+
+Code and pushes are authorized. Core and 63 Python runtime checks pass locally;
+Android UI and full CI qualification/APK delivery are pending. Next after
+qualification: APK update only, leave runtime v3/prepared client/loader/Termux
+server intact. Disable startup capture for normal play. One familiar world
+route and support export; no old test matrices or runtime reinstallation.
+
+Earlier entries below are historical.
+
+---
+
 # 0.5.19 delivered: reproduced FEX x87 branch defect corrected
 
 The broader draw test exposed FEX 2510's x87-store NaN helper overwriting

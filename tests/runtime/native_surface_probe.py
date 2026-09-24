@@ -92,12 +92,16 @@ def verify_native_surface(folder,display,x,d,window,gc):
                     for line in log.read_text().splitlines():
                         try:record=json.loads(line)
                         except ValueError:continue
-                        records.append(record)
+                        if 'requests' in record:records.append(record)
                     if sum(r['requests'] for r in records)==requests:break
                     assert time.monotonic()<deadline,'Missing final producer metrics'
                     time.sleep(.01)
                 counts={key:sum(r[key] for r in records) for key in ['requests','captures','geometry_queries','pointer_queries','cursor_queries']}
-                assert counts['pointer_queries']==requests,counts
+                skips=sum(r['hidden_pointer_skips'] for r in records)
+                assert counts['pointer_queries']+skips==requests,counts
+                if poll:assert skips==0 and counts['pointer_queries']==requests,counts
+                else:assert skips>=32 and counts['pointer_queries']<requests-31,(counts,skips)
+                counts['hidden_pointer_skips']=skips
                 assert all(r['metadata_policy']==('poll' if poll else 'events') for r in records)
                 if poll:
                     assert counts['geometry_queries']==requests and counts['cursor_queries']==counts['captures'],counts
