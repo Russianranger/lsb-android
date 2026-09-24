@@ -88,10 +88,19 @@ public class FantasyTilesTest {
             staged.performClick();assertTrue(prefs.getBoolean("dxvk_staged_buffers",false));
             ((CheckBox)text(tiles,"Turnip system-memory rendering")).performClick();assertTrue(prefs.getBoolean("turnip_sysmem",false));
             capture(tiles,"past-experiments-wide.png");
+            text(tiles,"◇  Optimization trials").performClick();layout(tiles,920);
+            Spinner trial=findTrial(tiles);assertNotNull(trial);assertEquals(0,trial.getSelectedItemPosition());
+            String[] values={"none","one_compiler","retain_pipelines","lighter_scene"};
+            for(int i=1;i<4;i++){
+                trial.setSelection(i);org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+                assertEquals(values[i],prefs.getString("performance_trial","none"));
+                org.json.JSONObject selected=new org.json.JSONObject();runtime.applyGraphicsSettings(selected);assertEquals(values[i],selected.getString("performance_trial"));
+            }
+            capture(tiles,"optimization-trials-wide.png");layout(tiles,400);capture(tiles,"optimization-trials-narrow.png");
             text(tiles,"◇  Proven fixes").performClick();layout(tiles,920);
             text(tiles,"Use tested shader settings").performClick();
             assertSame("Applying a profile must preserve the current form",tiles,f.get(activity.get()));layout(tiles,920);
-            assertTrue(prefs.getBoolean("dxvk_two_compilers",false));
+            assertTrue(prefs.getBoolean("dxvk_two_compilers",false));assertEquals("none",prefs.getString("performance_trial",""));assertEquals(0,trial.getSelectedItemPosition());
             assertFalse(prefs.getBoolean("turnip_sysmem",true));assertFalse(prefs.getBoolean("dxvk_staged_buffers",true));
             assertFalse(prefs.getBoolean("borderless",true));assertTrue(prefs.getBoolean("fex",false));
             assertTrue(prefs.getBoolean("fex_x87",false));assertTrue(prefs.getBoolean("dxvk_271",false));assertEquals(60,prefs.getInt("display_fps",0));
@@ -105,6 +114,10 @@ public class FantasyTilesTest {
             for(android.widget.Button tab:tabs)assertTrue(tab.getBackground() instanceof android.graphics.drawable.RippleDrawable);
             page.measure(View.MeasureSpec.makeMeasureSpec(920,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(620,View.MeasureSpec.EXACTLY));page.layout(0,0,920,620);capture(page,"launcher-tabs-wide.png");
         }finally{activity.pause().stop().destroy();Files.deleteIfExists(state.toPath());prefs.edit().clear().commit();instance.set(null,null);}
+    }
+    private static Spinner findTrial(View v){
+        if(v instanceof Spinner&&"Performance trial".contentEquals(v.getContentDescription()))return (Spinner)v;
+        if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++){Spinner found=findTrial(((ViewGroup)v).getChildAt(i));if(found!=null)return found;}return null;
     }
     private static void collectTabs(View v,java.util.List<android.widget.Button> result){
         if(v instanceof android.widget.Button&&java.util.Arrays.asList("Client","Controller","Server","Runtime","Profile","Diagnostics").contains(((android.widget.Button)v).getText().toString()))result.add((android.widget.Button)v);

@@ -264,15 +264,30 @@ public final class MainActivity extends Activity {
         setting(proven,"Native Surface display · shared memory","native_surface",true,"Confirmed working capture and direct Android display; bypasses compressed bitmap delivery.");
         setting(proven,"Shared-memory Vulkan presentation","shm_upload",true,"Verified active in the successful run. Reduces transfer traffic, with automatic fallback if its startup check fails. Its individual FPS benefit is not isolated.");
         CheckBox compilerWorkers=setting(proven,"Two shader compiler workers","dxvk_two_compilers",false,"Improved world-play smoothness on Thor in the latest comparisons. Recommended with Turnip system-memory rendering off. Stop and relaunch after changing this setting.");
-        proven.addView(label("The button enables two compiler workers and turns off Turnip system-memory rendering and staged geometry uploads. Your Turnip driver, display and other settings stay as selected.",13,MUTED));
+        proven.addView(label("The button returns trials to Baseline, enables two compiler workers and turns off Turnip system-memory rendering and staged geometry uploads. Your Turnip driver, display and other settings stay as selected.",13,MUTED));
         proven.addView(label("Always applied: corrected FEX x87 condition flags in runtime v3, Android shared-memory capture, and removal of recurring startup-observer stalls. Stop and relaunch after changing runtime or display options.",13,MUTED));
+        LinearLayout trials=card("Optimization trials");
+        trials.addView(label("Choose one test, then stop and relaunch. Start from the tested shader settings and Windowed 1280×720; keep border removal and startup capture off for comparisons.",15,TEXT));
+        final String[] trialValues={"none","one_compiler","retain_pipelines","lighter_scene"};
+        Spinner trial=new Spinner(this);trial.setContentDescription("Performance trial");
+        trial.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Baseline · no trial","A · One compiler worker","B · Retain shader pipelines","C · Lighter 3D scene (540p)"}));
+        trial.setSelection(Math.max(0,Arrays.asList(trialValues).indexOf(getSharedPreferences("runtime",0).getString("performance_trial","none"))));trials.addView(trial);
+        trial.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+            public void onNothingSelected(AdapterView<?> parent){}
+            public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
+                String value=trialValues[position];
+                if(!value.equals(getSharedPreferences("runtime",0).getString("performance_trial","none")))getSharedPreferences("runtime",0).edit().putString("performance_trial",value).apply();
+            }
+        });
+        trials.addView(label("A tests less CPU competition during compilation; new shaders may take longer. B keeps pipelines for reuse during the session and uses more memory. C reduces 3D pixel count by 44% while keeping the 720p interface; the world may look softer. These are experiments, not proven improvements.",14,MUTED));
+        trials.addView(label("Two workers remain active for B and C. Returning to Baseline restores two workers and the selected display profile. Support ZIPs record the requested trial, configuration checks and any fallback.",13,MUTED));
         LinearLayout past=card("Past experiments");
         past.addView(label("These rendering experiments have no demonstrated benefit in the latest comparisons. Keep them off when using the tested shader settings; saved choices remain available for troubleshooting.",15,TEXT));
         CheckBox turnipSysmem=setting(past,"Turnip system-memory rendering","turnip_sysmem",false,"Changes how the Turnip GPU driver renders; it does not select a different driver. No demonstrated benefit beyond two compiler workers. Recommended off. Stop and relaunch to apply.");
         CheckBox stagedGeometry=setting(past,"Staged geometry uploads","dxvk_staged_buffers",false,"The recent camera-pan comparison found no improvement. Recommended off. Requires DXVK 2.7.1 and retains the startup pixel check and compatibility fallback.");
         button(proven,"Use tested shader settings",()->{
-            getSharedPreferences("runtime",0).edit().putBoolean("dxvk_two_compilers",true).putBoolean("turnip_sysmem",false).putBoolean("dxvk_staged_buffers",false).apply();
-            compilerWorkers.setChecked(true);turnipSysmem.setChecked(false);stagedGeometry.setChecked(false);
+            getSharedPreferences("runtime",0).edit().putBoolean("dxvk_two_compilers",true).putBoolean("turnip_sysmem",false).putBoolean("dxvk_staged_buffers",false).putString("performance_trial","none").apply();
+            trial.setSelection(0);compilerWorkers.setChecked(true);turnipSysmem.setChecked(false);stagedGeometry.setChecked(false);
             toast("Two compiler workers on; rendering experiments off. Stop and relaunch to apply.");
         });
         past.addView(label("Earlier metadata caching, quieter status overlays and hidden-cursor polling did not noticeably improve gameplay. Hidden-cursor polling did remove 85% of position queries in the 0.5.20 run and remains active. Full x87 precision and changing DXVK versions did not fix the old corruption. The CPU-feature correction alone also left it unresolved; it remains part of runtime v3 for correctness.",13,MUTED));

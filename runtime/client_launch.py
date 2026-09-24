@@ -212,6 +212,7 @@ def run(s, display):
             trace['observer_sha256']=hashlib.sha256(Path('/probe/startup-trace.dll').read_bytes()).hexdigest()
             report['startup_trace']=trace
         profile=s.req.get('display_profile','preserve')
+        if s.state.get('performance_trial',{}).get('active')=='lighter_scene':profile='windowed720lite'
         report.update(server=host,status='starting',display_profile=profile);record(s,report)
         s.stopped();s.private_output=True
         result=Path('/session/loader-process.json');result.unlink(missing_ok=True)

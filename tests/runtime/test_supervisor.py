@@ -83,6 +83,65 @@ class Contracts(unittest.TestCase):
     s=self.tuning_fixture(pathlib.Path(t),{'dxvk_staged_buffers':True});s.req['renderer']=renderer;s.state['dxvk_selected']=version
     s.configure_graphics_tuning();s.spawn.assert_not_called();self.assertEqual(s.env,{})
     self.assertFalse(any(s.status.call_args.kwargs['graphics_tuning']['active'].values()))
+ def trial_fixture(self,folder,trial):
+  s=self.tuning_fixture(folder,{'performance_trial':trial,'dxvk_two_compilers':True})
+  s.env={'DXVK_CONFIG':'dxvk.numCompilerThreads = 2','LD_PRELOAD':'gamepad upload'}
+  s.state={'dxvk_selected':'2.7.1','graphics_tuning':{'active':{'dxvk_two_compilers':True}}}
+  workers=1 if trial=='one_compiler' else 2
+  option='dxvk.numCompilerThreads = 1' if workers==1 else 'dxvk.trackPipelineLifetime = False'
+  log='info: '+option+'\ninfo: DXVK: Using '+str(workers)+' compiler threads\ninfo: graphicsPipelineLibrary : 1\nLSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\nLSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'
+  (folder/'performance-trial.log').write_text(log)
+  return s
+ def test_trial_schema_and_no_implicit_activation(self):
+  req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
+  for value in ('none','one_compiler','retain_pipelines','lighter_scene'):
+   module.validate_request(dict(req,performance_trial=value))
+  for value in ('all',None,True,'dxvk.trackPipelineLifetime = False'):
+   with self.assertRaises(ValueError):module.validate_request(dict(req,performance_trial=value))
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for request in ({},{'performance_trial':'none'}):
+    s=self.tuning_fixture(pathlib.Path(t),request);s.configure_performance_trial();s.spawn.assert_not_called();self.assertEqual(s.env,{})
+ def test_trials_are_isolated_and_failure_keeps_validated_baseline(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for trial in ('one_compiler','retain_pipelines'):
+    for failure in ('none','timeout','pixels','workers','config','stop','no_gpl'):
+     if failure=='no_gpl' and trial!='retain_pipelines':continue
+     s=self.trial_fixture(folder,trial);previous=dict(s.env);log=folder/'performance-trial.log'
+     if failure=='timeout':s.wait.side_effect=RuntimeError('timed out')
+     if failure=='pixels':log.write_text(log.read_text().replace('mode=hwvp','mode=swvp'))
+     if failure=='workers':log.write_text(log.read_text().replace('compiler threads','unconfirmed'))
+     if failure=='config':log.write_text(log.read_text().split('\n',1)[1])
+     if failure=='no_gpl':log.write_text(log.read_text().replace('Library : 1','Library : 0'))
+     if failure=='stop':
+      s.wait.side_effect=module.Stopped()
+      with self.assertRaises(module.Stopped):s.configure_performance_trial()
+      continue
+     s.configure_performance_trial();report=s.status.call_args.kwargs['performance_trial']
+     self.assertTrue(s.state['graphics_tuning']['active']['dxvk_two_compilers'])
+     if failure=='none':
+      self.assertEqual(report['active'],trial);self.assertEqual(report['compiler_threads'],1 if trial=='one_compiler' else 2)
+      self.assertEqual(s.env['LD_PRELOAD'],'gamepad upload');self.assertEqual(s.spawn.call_args.args[0][-1],'--pixels')
+      self.assertEqual(s.env['DXVK_CONFIG'].count(';'),1)
+     else:
+      self.assertEqual(report['active'],'none');self.assertIn('fallback',report);self.assertEqual(s.env,previous)
+ def test_trial_guards_and_lighter_scene_do_not_change_other_profiles(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for condition in ('software','older','unconfirmed','sysmem','staged'):
+    s=self.trial_fixture(folder,'one_compiler');previous=dict(s.env)
+    if condition=='software':s.req['renderer']='software'
+    elif condition=='older':s.state['dxvk_selected']='2.5.3'
+    elif condition=='unconfirmed':s.state['graphics_tuning']['active']['dxvk_two_compilers']=False
+    else:s.state['graphics_tuning']['active']['turnip_sysmem' if condition=='sysmem' else 'dxvk_staged_buffers']=True
+    s.configure_performance_trial();s.spawn.assert_not_called();self.assertEqual(s.env,previous)
+    self.assertEqual(s.status.call_args.kwargs['performance_trial']['active'],'none')
+   for action,profile in [('launch','windowed720'),('launch','preserve'),('launch','restore'),('launch','windowed540'),('probe','windowed720')]:
+    s=self.trial_fixture(folder,'lighter_scene');s.req.update(action=action,display_profile=profile);previous=dict(s.env)
+    s.configure_performance_trial();s.spawn.assert_not_called();self.assertEqual(s.env,previous)
+    report=s.status.call_args.kwargs['performance_trial']
+    self.assertEqual(report['active'],'lighter_scene' if action=='launch' and profile=='windowed720' else 'none')
+    self.assertEqual(s.req['display_profile'],profile)
  def test_graphics_choices_are_closed_and_reversible(self):
   req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
   for version in ('2.5.3','2.7.1'):self.assertEqual(module.validate_request(dict(req,dxvk_version=version,shm_upload=True))['dxvk_version'],version)

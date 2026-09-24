@@ -79,7 +79,7 @@ class LaunchContracts(unittest.TestCase):
         writer=SimpleNamespace(events=supervisor.PrivateEvents())
         writer.events.feed(b'0034:warn:module:load_dll Failed to load module L"secret.dll"; status=c0000135\n')
         process=SimpleNamespace(stdin=io.BytesIO(),poll=lambda:None)
-        s=SimpleNamespace(wine_command=lambda *a:supervisor.Supervisor.wine_command(SimpleNamespace(engine='box64'),*a),req={},env={'WINEDLLOVERRIDES':''},logs=[writer],
+        s=SimpleNamespace(wine_command=lambda *a:supervisor.Supervisor.wine_command(SimpleNamespace(engine='box64'),*a),req={},state={},env={'WINEDLLOVERRIDES':''},logs=[writer],
                           stopped=Mock(side_effect=[None,supervisor.Stopped()]),
                           spawn=Mock(return_value=process),status=Mock())
         report={};manifest={'loader':'FINAL FANTASY XI/xiloader.exe','region':'US','game':'FINAL FANTASY XI'}

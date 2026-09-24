@@ -47,7 +47,8 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87','performance_trial'}:raise ValueError('Unexpected runtime request field')
+    if req.get('performance_trial','none') not in ('none','one_compiler','retain_pipelines','lighter_scene'):raise ValueError('Unsupported performance trial')
     if req.get('engine','box64') not in ('box64','fex'):raise ValueError('Unsupported runtime engine')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
     if req.get('dxvk_version','2.5.3') not in ('2.5.3','2.7.1'):raise ValueError('Unsupported DXVK version')
@@ -323,6 +324,51 @@ class Supervisor:
             report['fallback']=str(error)
         self.status(graphics_tuning=report)
 
+    def configure_performance_trial(self):
+        # Run after the existing profile passed. A failed trial restores that
+        # exact environment, including the confirmed two-worker setting.
+        trial=self.req.get('performance_trial','none')
+        report={'requested':trial,'active':'none'}
+        baseline=self.state.get('graphics_tuning',{}).get('active',{})
+        if trial=='none':
+            self.status(performance_trial=report);return
+        if (self.req['renderer']=='software' or self.state.get('dxvk_selected')!='2.7.1'
+                or not baseline.get('dxvk_two_compilers')
+                or baseline.get('turnip_sysmem') or baseline.get('dxvk_staged_buffers')):
+            report['note']='Trials require DXVK 2.7.1, confirmed two-worker baseline and past experiments off'
+            self.status(performance_trial=report);return
+        if trial=='lighter_scene':
+            if self.req.get('action')=='launch' and self.req.get('display_profile')=='windowed720':
+                report.update(active=trial,display_profile='windowed720lite',
+                    check='Registry values are verified by the launch helper before the game starts')
+            else:report['note']='The 540p scene trial requires a game launch with Windowed 1280×720 selected'
+            self.status(performance_trial=report);return
+        option={'one_compiler':'dxvk.numCompilerThreads = 1',
+                'retain_pipelines':'dxvk.trackPipelineLifetime = False'}[trial]
+        previous=self.env.get('DXVK_CONFIG');proc=None
+        try:
+            self.env['DXVK_CONFIG']=';'.join(filter(None,(previous,option)))
+            proc=self.spawn(self.wine_command(r'P:\graphics-check.exe','--pixels'),'performance-trial.log',fixed_output=True)
+            self.wait(proc,60,'Performance trial pixel check')
+            self.logs[-1].thread.join(3)
+            log=(LOGS/'performance-trial.log').read_text(errors='replace')
+            modes=re.findall(r'^LSB_D3D8_PIXELS mode=(swvp|hwvp) frames=4 samples=64 PASS\s*$',log,re.M)
+            workers=1 if trial=='one_compiler' else 2
+            if (option not in log or 'DXVK: Using '+str(workers)+' compiler threads' not in log
+                    or sorted(modes)!=['hwvp','swvp'] or re.search(r'^LSB_D3D8_.* FAIL\s*$',log,re.M)):
+                raise ValueError('Trial configuration, worker count or pixel check not confirmed')
+            if trial=='retain_pipelines' and not re.search(r'^\s*(?:info:\s*)?graphicsPipelineLibrary\s*:\s*1\s*$',log,re.M):
+                raise ValueError('Graphics pipeline library support not confirmed')
+            report.update(active=trial,option=option,compiler_threads=workers,
+                          check='128 texture, geometry and alpha pixels passed in both vertex-processing modes')
+        except (OSError,ValueError,RuntimeError) as error:
+            if proc is not None and proc.poll() is None:
+                os.killpg(proc.pid,signal.SIGKILL);proc.wait()
+            if previous is None:self.env.pop('DXVK_CONFIG',None)
+            else:self.env['DXVK_CONFIG']=previous
+            report['fallback']=str(error)
+        self.status(performance_trial=report)
+
     def check_graphics_pixels(self):
         # Standalone Windows checks only: finite readbacks must not add frame
         # synchronization or recurring observation to the real game launch.
@@ -414,6 +460,7 @@ class Supervisor:
             self.configure_upload()
             self.select_dxvk(bundle)
         self.configure_graphics_tuning()
+        self.configure_performance_trial()
         if self.req.get('action')=='gamepad-config':
             from client_setup import validate_manifest,client_path,windows_path
             manifest=json.loads((SESSION/'client-manifest.json').read_text());validate_manifest(manifest)

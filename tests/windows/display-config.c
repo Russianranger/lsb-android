@@ -40,6 +40,12 @@ int wmain(void){
         DWORD width=960;assert(RegSetValueExW(key,L"0001",0,REG_DWORD,(BYTE*)&width,4)==0);
         assert(display_config(languages[region],L"preserve")==0&&setting_values[0]==960);
         assert(display_config(languages[region],L"windowed720")==0);verify(key,windowed_values,TRUE);
+        /* Scene-only scaling preserves both interface DWORDs; switching back
+         * must remove the trial without overwriting the original backup. */
+        assert(display_config(languages[region],L"windowed720lite")==0&&config_checked);
+        const DWORD lite_expected[]={1280,720,960,540,1};verify(key,lite_expected,TRUE);
+        assert(!setting_changed[0]&&!setting_changed[1]&&setting_changed[2]&&setting_changed[3]&&!setting_changed[4]);
+        assert(display_config(languages[region],L"windowed720")==0);verify(key,windowed_values,TRUE);
         /* Reapplying must not replace the original fullscreen backup. */
         assert(display_config(languages[region],L"restore")==0);verify(key,device_values,TRUE);
         fail_next_display_write=TRUE;

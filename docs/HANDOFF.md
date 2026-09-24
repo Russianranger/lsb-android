@@ -1,3 +1,26 @@
+# 0.5.25: three isolated performance trials (validation in progress)
+
+User confirms two-worker improvement and requests at least three independent
+variables. New **Optimization trials** selector: A one compiler worker,
+B retain shader pipelines, C 540p 3D with 720p interface. Defaults to Baseline;
+no automatic change of saved settings. Baseline button resets trial selection.
+[Evidence, rationale and phone instructions](thor-three-trials-0525.md).
+
+A/B receive real startup pixel/config checks; failure restores the validated
+two-worker environment. C changes only background dimensions and uses existing
+backup/readback/rollback handling. Two workers remains the accepted profile;
+new trials have no phone-performance claim yet. Keep past experiments, border
+adjustment and startup capture off. No FEX/runtime reinstall or cache reset.
+
+0.5.24 gates followed up: both Box64 and PR FEX passed; push FEX had a 45-second
+2.7.1 preflight timeout, correctly fell back, then failed exact-version acceptance.
+Recorded, not retried or relaxed. See new report. Border sizing issue is separate.
+Repo edits/pushes authorized, no merge requested. Version 0.5.25/code 41.
+
+Earlier entries below are historical.
+
+---
+
 # 0.5.24: two shader compiler workers confirmed on Thor
 
 The new four-way comparison supports **two shader compiler workers on** with

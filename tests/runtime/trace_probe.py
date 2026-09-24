@@ -94,5 +94,27 @@ def checked(self):
         'coverage':'Synthetic point-filtered MODULATE2X UP tiles; opaque, alpha-test/blend and additive blending. Not a game or Adreno capture.'},indent=2))
     print('PASS: compressed DXT1/DXT3 and ARGB updates; 1512 UP draws and 144 MODULATE2X/alpha/additive pixels',flush=True)
 
+    # Isolated trials in the already-running real Wine session. Preserve all
+    # existing acceptance checks and restore their environment afterwards.
+    if self.state['dxvk_selected']=='2.7.1' and self.req.get('dxvk_two_compilers'):
+        saved_env=dict(self.env);saved_req=dict(self.req);saved_tuning=self.state['graphics_tuning']
+        try:
+            self.env.pop('TU_DEBUG',None);self.env['DXVK_CONFIG']='dxvk.numCompilerThreads = 2'
+            self.state['graphics_tuning']={'active':{'dxvk_two_compilers':True}}
+            results={}
+            for trial in ('one_compiler','retain_pipelines'):
+                self.req['performance_trial']=trial
+                self.configure_performance_trial()
+                result=self.state['performance_trial'];assert result['active']==trial,result
+                results[trial]=result
+                Path('/logs/performance-trial-'+trial+'.log').write_bytes(Path('/logs/performance-trial.log').read_bytes())
+                # Restore two workers before the next independent trial.
+                self.env['DXVK_CONFIG']='dxvk.numCompilerThreads = 2'
+            Path('/logs/performance-trials.json').write_text(json.dumps(results,indent=2))
+            print('PASS: independent one-worker and pipeline-retention trials, 256 real D3D8 pixels; not device performance measurements',flush=True)
+        finally:
+            self.env=saved_env;self.req=saved_req;self.state['graphics_tuning']=saved_tuning
+            self.state.pop('performance_trial',None)
+
 supervisor.Supervisor.check_graphics_pixels=checked
 supervisor.main()
