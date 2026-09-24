@@ -46,6 +46,8 @@ os.environ['LSB_TEST_AUTOCLOSE']='1'
 s=Supervisor(dict(format=1,engine=os.environ.get('LSB_TEST_ENGINE','box64'),session_id=str(uuid.uuid4()),renderer='software',audio=False,action='probe',gamepad=True))
 try:
     s.start()
+    # Geometry needs the live X display; registry-only setup has no windows.
+    s.wait(s.spawn(s.wine_command(r'Z:\fixtures\game-window.exe'),'game-window.log'),90,'Synthetic borderless game window checks')
     # Both native host preloads must coexist with the actual DirectInput path.
     s.req['shm_upload']=True;s.configure_upload()
     assert s.state['shm_upload_active'],s.state

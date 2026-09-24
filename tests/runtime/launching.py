@@ -31,7 +31,6 @@ def main():
     (SESSION/'stop').unlink(missing_ok=True)
     setup=Supervisor({'format':1,'engine':os.environ.get('LSB_TEST_ENGINE','box64'),'session_id':str(uuid.uuid4()),'renderer':'software','audio':False,'action':'check-launcher'})
     try:
-        setup.wait(setup.spawn(setup.wine_command(r'Z:\fixtures\game-window.exe'),'game-window.log'),90,'Synthetic borderless game window checks')
         setup.wait(setup.spawn(setup.wine_command(r'Z:\fixtures\display-config.exe'),'display-config.log'),90,'Synthetic display configuration checks')
         setup.wait(setup.spawn(setup.wine_command(r'Z:\fixtures\version-registry.exe',r'Z:\session\version-fixture.bin'),'version-registry.log'),90,'Synthetic version registry checks')
     finally:setup.stop()
