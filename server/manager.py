@@ -88,12 +88,26 @@ def stop_children():
             p.wait(timeout=5)
     children.clear()
 
+def validate_snapshot_links(source,excluded):
+    root=source.resolve()
+    def walk(folder,ancestors):
+        cancelled();resolved=folder.resolve()
+        if resolved in ancestors:raise ValueError('Source contains a recursive directory link')
+        ancestors=ancestors|{resolved}
+        for child in folder.iterdir():
+            # Match copytree's ignore rule before inspecting or following links.
+            if child.name in excluded:continue
+            cancelled()
+            if child.is_symlink() and not child.resolve().is_relative_to(root):raise ValueError('Source contains an external symlink')
+            if child.is_dir():walk(child,ancestors)
+    walk(source,set())
+
 def snapshot_source(source, target, recover_build_binaries=True):
     # ZIP imports have already rejected links. Copy only internal links from a
     # managed update; never import .git hooks, old build trees or database files.
-    def ignore(path,names):return {n for n in names if n in ('.git','.venv','venv','build','logs','log','mysql','node_modules')}
-    for p in source.rglob('*'):
-        if p.is_symlink() and not p.resolve().is_relative_to(source.resolve()):raise ValueError('Source contains an external symlink')
+    excluded={'.git','.venv','venv','build','logs','log','mysql','node_modules'}
+    def ignore(path,names):return excluded.intersection(names)
+    validate_snapshot_links(source,excluded)
     shutil.copytree(source,target,ignore=ignore,symlinks=False)
     # Existing Linux server exports may keep their executables under build/.
     # That tree is deliberately not carried into a new build, but its one
@@ -103,7 +117,9 @@ def snapshot_source(source, target, recover_build_binaries=True):
             if not (target/name).exists():
                 found=[p for p in (source/'build').rglob(name) if p.is_file()]
                 if len(found)>1:raise ValueError('Multiple build outputs for '+name+'. Keep one executable or rebuild the imported source.')
-                if found:shutil.copy2(found[0],target/name)
+                if found:
+                    if not found[0].resolve().is_relative_to(source.resolve()):raise ValueError('Source contains an external symlink')
+                    shutil.copy2(found[0],target/name)
     command(['git','init','-q'],cwd=target)
     command(['git','-c','user.name=LSB Android','-c','user.email=local@localhost','add','sql','tools','settings','CMakeLists.txt'],cwd=target)
     command(['git','-c','user.name=LSB Android','-c','user.email=local@localhost','commit','-qm','Imported server snapshot'],cwd=target)
@@ -111,10 +127,9 @@ def snapshot_source(source, target, recover_build_binaries=True):
 def snapshot_deployment(source,target):
     # Restore the SQL against the active server revision, never a newly imported
     # source tree. Keep server assets including data/, custom scripts and meshes.
-    for p in source.rglob('*'):
-        cancelled()
-        if p.is_symlink() and not p.resolve().is_relative_to(source.resolve()):raise ValueError('Active server contains an external symlink')
-    def ignore(path,names):return {n for n in names if n in ('.git','.venv','venv','build','logs','log','node_modules')}
+    excluded={'.git','.venv','venv','build','logs','log','node_modules'}
+    def ignore(path,names):return excluded.intersection(names)
+    validate_snapshot_links(source,excluded)
     def copy(source,target):
         cancelled();return shutil.copy2(source,target)
     shutil.copytree(source,target,ignore=ignore,copy_function=copy,symlinks=False)

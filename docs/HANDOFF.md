@@ -42,6 +42,14 @@ device check requiring the user's archive. Android service lifecycle, source ZIP
 and server UI tests are included. Server operation ownership covers preparation
 through completion so simultaneous starts cannot overwrite maintenance requests; CI/signing/delivery evidence follows when ready.
 
+First .29 CI at05928c6: both verify jobs pass41 Android tests,29 account
+transport checks,82 runtime contracts and21 server unit tests. ARM64 MariaDB
+integration exposed restore rejecting an excluded .venv/bin/python symlink after
+a build; import/full export/update/rollback passed before that failure. Follow-up
+prunes exactly the excluded copy paths, retaining external/recursive link checks
+for copied content and build binary recovery.24 server unit tests now pass. No
+weakened gates or unchanged retry; real integration reruns on this code fix.
+
 Prior .28 CI follow-through complete: push36057571648 and PR36057577993 pass all
 Box64/FEX/presentation/server/Windows/build gates. Do not change client binaries,
 settings or the accepted Trial F default while implementing this server phase.

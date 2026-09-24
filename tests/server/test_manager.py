@@ -97,6 +97,31 @@ class ServerTests(unittest.TestCase):
             self.assertFalse((root/'copy/build').exists());self.assertFalse((root/'copy/.venv').exists())
             (source/'escape').symlink_to(root/'copy/data/asset')
             with self.assertRaises(ValueError):m.snapshot_deployment(source,root/'bad')
+    def test_excluded_environment_links_do_not_block_either_snapshot(self):
+        for snapshot in (m.snapshot_source,m.snapshot_deployment):
+            with self.subTest(snapshot=snapshot.__name__),tempfile.TemporaryDirectory() as d:
+                root=Path(d);m.RUN=root;source=root/'server';(source/'.venv/bin').mkdir(parents=True)
+                outside=root/'python';outside.write_bytes(b'external interpreter')
+                (source/'.venv/bin/python').symlink_to(outside)
+                (source/'asset').write_bytes(b'copied')
+                with mock.patch.object(m,'command'):snapshot(source,root/'copy')
+                self.assertFalse((root/'copy/.venv').exists());self.assertEqual((root/'copy/asset').read_bytes(),b'copied')
+                (source/'copied-external').symlink_to(outside)
+                with mock.patch.object(m,'command'),self.assertRaisesRegex(ValueError,'external symlink'):snapshot(source,root/'bad')
+                self.assertEqual(outside.read_bytes(),b'external interpreter')
+    def test_copied_alias_of_excluded_directory_still_checks_links(self):
+        for snapshot in (m.snapshot_source,m.snapshot_deployment):
+            with self.subTest(snapshot=snapshot.__name__),tempfile.TemporaryDirectory() as d:
+                root=Path(d);m.RUN=root;source=root/'server';(source/'.venv/bin').mkdir(parents=True)
+                outside=root/'python';outside.write_bytes(b'external interpreter')
+                (source/'.venv/bin/python').symlink_to(outside)
+                (source/'runtime-alias').symlink_to(source/'.venv',target_is_directory=True)
+                with mock.patch.object(m,'command'),self.assertRaisesRegex(ValueError,'external symlink'):snapshot(source,root/'bad')
+    def test_recovered_build_binary_cannot_follow_external_link(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);m.RUN=root;source=root/'source';(source/'build').mkdir(parents=True)
+            outside=root/'binary';outside.write_bytes(b'external binary');(source/'build/xi_map').symlink_to(outside)
+            with mock.patch.object(m,'command'),self.assertRaisesRegex(ValueError,'external symlink'):m.snapshot_source(source,root/'bad')
     def test_failed_or_cancelled_dump_keeps_previous_export(self):
         for failure in (RuntimeError('failed dump'),InterruptedError('cancelled')):
             with self.subTest(failure=type(failure).__name__),tempfile.TemporaryDirectory() as d:
