@@ -121,7 +121,11 @@ public final class MainActivity extends Activity {
         FrameLayout hero=new FrameLayout(this);hero.setBackground(background(Color.rgb(15,35,58)));
         try(InputStream in=getAssets().open("art/"+(tab.equals("Server")?"server-background.png":"client-background.png"))){ImageView art=new ImageView(this);art.setImageDrawable(android.graphics.drawable.Drawable.createFromStream(in,null));art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));}catch(IOException ignored){}
         View shade=new View(this);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xe5091526,0x66091526,0x11091526}));hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout title=column();title.setPadding(dp(20),dp(12),dp(16),dp(8));TextView heading=label("LSB",30,TEXT);heading.setTypeface(android.graphics.Typeface.create("serif",Typeface.BOLD));title.addView(heading);title.addView(label("A world of adventure, on your device",13,Color.rgb(175,219,255)));hero.addView(title);page.addView(hero,new LinearLayout.LayoutParams(-1,dp(getResources().getConfiguration().screenHeightDp<500?72:100))));
+        boolean compact=getResources().getConfiguration().screenHeightDp<500;
+        LinearLayout title=column();title.setPadding(dp(20),dp(compact?10:12),dp(16),dp(8));
+        TextView heading=label("LSB",compact?25:30,TEXT);heading.setTypeface(Typeface.create("serif",Typeface.BOLD));heading.setPadding(0,0,0,0);title.addView(heading);
+        TextView subtitle=label("A world of adventure, on your device",compact?11:13,Color.rgb(175,219,255));subtitle.setPadding(0,dp(3),0,0);title.addView(subtitle);
+        hero.addView(title);page.addView(hero,new LinearLayout.LayoutParams(-1,dp(compact?72:100)));
         page.addView(label("Client & server launcher · "+appVersion(this),11,MUTED));
         LinearLayout nav = new LinearLayout(this);nav.setOrientation(LinearLayout.VERTICAL);LinearLayout navRow=null;int navIndex=0;int navColumns=getResources().getConfiguration().screenWidthDp>=600?6:3;
         for (String name : new String[]{"Client", "Controller", "Server", "Runtime", "Profile", "Diagnostics"}) {
