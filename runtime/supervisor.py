@@ -7,6 +7,7 @@ from pathlib import Path
 import secrets
 import shutil
 import signal
+import stat
 import struct
 import subprocess
 import threading
@@ -48,7 +49,7 @@ def verify_bundle(folder):
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
     if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87','performance_trial'}:raise ValueError('Unexpected runtime request field')
-    if req.get('performance_trial','none') not in ('none','one_compiler','retain_pipelines','lighter_scene'):raise ValueError('Unsupported performance trial')
+    if req.get('performance_trial','none') not in ('none','one_compiler','cached_dynamic','gpl_fast','syscall_filter','retain_pipelines','lighter_scene'):raise ValueError('Unsupported performance trial')
     if req.get('engine','box64') not in ('box64','fex'):raise ValueError('Unsupported runtime engine')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
     if req.get('dxvk_version','2.5.3') not in ('2.5.3','2.7.1'):raise ValueError('Unsupported DXVK version')
@@ -314,6 +315,8 @@ class Supervisor:
             report.update(active=active,check='eight D3D8 draw/present frames passed',
                           turnip_debug='sysmem' if active['turnip_sysmem'] else 'unchanged',
                           compiler_threads=2 if active['dxvk_two_compilers'] else 'automatic',
+                          graphics_pipeline_libraries=bool(re.search(r'graphicsPipelineLibrary\s*:\s*1\b',log))
+                              and 'DXVK: Graphics pipeline libraries supported' in log,
                           buffer_upload='staged' if active['dxvk_staged_buffers'] else 'default')
         except (OSError,ValueError,RuntimeError) as error:
             if proc is not None and proc.poll() is None:
@@ -335,12 +338,24 @@ class Supervisor:
             self.status(performance_trial=report);return
         if trial=='none':
             self.status(performance_trial=report);return
+        if trial=='syscall_filter':
+            self.configure_syscall_trial(report);return
         if (self.req['renderer']=='software' or self.state.get('dxvk_selected')!='2.7.1'
                 or not baseline.get('dxvk_two_compilers')
                 or baseline.get('turnip_sysmem') or baseline.get('dxvk_staged_buffers')):
             report['note']='Trials require DXVK 2.7.1, confirmed two-worker baseline and past experiments off'
             self.status(performance_trial=report);return
-        option='dxvk.numCompilerThreads = 1'
+        # True suppresses optimized pipeline compilation, so do not even launch
+        # its probe on a device whose baseline has not confirmed active GPL.
+        if trial=='gpl_fast' and not self.state.get('graphics_tuning',{}).get('graphics_pipeline_libraries'):
+            report['note']='Fast-link trial requires graphics pipeline libraries confirmed by the baseline'
+            self.status(performance_trial=report);return
+        option={
+            'one_compiler':'dxvk.numCompilerThreads = 1',
+            'cached_dynamic':'d3d9.cachedDynamicBuffers = True',
+            'gpl_fast':'dxvk.enableGraphicsPipelineLibrary = True',
+        }[trial]
+        workers=1 if trial=='one_compiler' else 2
         previous=self.env.get('DXVK_CONFIG');proc=None
         try:
             self.env['DXVK_CONFIG']=';'.join(filter(None,(previous,option)))
@@ -349,18 +364,85 @@ class Supervisor:
             self.logs[-1].thread.join(3)
             log=(LOGS/'performance-trial.log').read_text(errors='replace')
             modes=re.findall(r'^LSB_D3D8_PIXELS mode=(swvp|hwvp) frames=4 samples=64 PASS\s*$',log,re.M)
-            workers=1
             if (option not in log or 'DXVK: Using '+str(workers)+' compiler threads' not in log
                     or sorted(modes)!=['hwvp','swvp'] or re.search(r'^LSB_D3D8_.* FAIL\s*$',log,re.M)):
                 raise ValueError('Trial configuration, worker count or pixel check not confirmed')
+            if trial=='gpl_fast' and (not re.search(r'graphicsPipelineLibrary\s*:\s*1\b',log)
+                    or 'DXVK: Graphics pipeline libraries supported' not in log):
+                raise ValueError('Fast-link trial requires active graphics pipeline libraries')
             report.update(active=trial,option=option,compiler_threads=workers,
                           check='128 texture, geometry and alpha pixels passed in both vertex-processing modes')
+            if trial=='cached_dynamic':
+                # Keep D3D9 direct mapping and lock semantics; request CPU-cached
+                # memory for DEFAULT dynamic/WRITEONLY vertex and index buffers.
+                # Software-only vertex buffers already request cached memory.
+                report.update(buffer_mapping='direct with CPU-cached dynamic buffers',
+                              scope='DEFAULT dynamic/WRITEONLY buffers; already cached buffers are unchanged',
+                              tradeoff='CPU buffer reads may improve; GPU throughput may decrease')
+            elif trial=='gpl_fast':
+                # In pinned DXVK 2.7.1, True keeps GPL fast-linked base pipelines
+                # but skips background optimized pipeline variants. Auto builds
+                # both. Lifetime tracking itself retains its normal setting.
+                report.update(pipeline_mode='GPL base pipelines; background optimized variants disabled',
+                              tradeoff='May reduce GPU throughput and retain more base pipelines')
         except (OSError,ValueError,RuntimeError) as error:
             if proc is not None and proc.poll() is None:
                 os.killpg(proc.pid,signal.SIGKILL);proc.wait()
             if previous is None:self.env.pop('DXVK_CONFIG',None)
             else:self.env['DXVK_CONFIG']=previous
             report['fallback']=str(error)
+        self.status(performance_trial=report)
+
+    def configure_syscall_trial(self,report):
+        # PRoot's mode is fixed in the parent process. Read the host's session-
+        # matched receipt; an unsafe baseline must stop this launch, never claim
+        # an in-process fallback that cannot actually disable syscall filtering.
+        deadline=time.monotonic()+2
+        try:
+            while True:
+                self.stopped()
+                # O_NOFOLLOW rejects symlinks atomically; a bounded read also
+                # covers an archive growing after fstat. Never block on a FIFO.
+                fd=os.open(LOGS/'proot-acceleration.json',os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+                with os.fdopen(fd,'rb') as stream:
+                    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                        raise ValueError('Host syscall-filter receipt is not a regular file')
+                    data=stream.read(16385)
+                if len(data)>16384:raise ValueError('Host syscall-filter receipt exceeds the size limit')
+                receipt=json.loads(data)
+                if (not isinstance(receipt,dict) or receipt.get('format')!=1 or receipt.get('session_id')!=self.req['session_id']
+                        or receipt.get('requested')!='syscall_filter'
+                        or type(receipt.get('preflight_passed')) is not bool
+                        or type(receipt.get('launch_observed')) is not bool
+                        or receipt.get('mode') not in ('compatibility','syscall_filter')):
+                    raise ValueError('Host syscall-filter receipt is invalid or belongs to another session')
+                if receipt['preflight_passed'] and not receipt['launch_observed']:
+                    if time.monotonic()>=deadline:raise ValueError('Host syscall-filter activation was not confirmed')
+                    time.sleep(.02);continue
+                break
+            if not receipt['preflight_passed']:
+                if receipt['launch_observed'] or receipt['mode']!='compatibility':
+                    raise ValueError('Host syscall-filter receipt has inconsistent activation state')
+                report['note']='Host preflight declined syscall filtering; compatibility mode retained'
+                self.status(performance_trial=report);return
+            if receipt['mode']!='syscall_filter':
+                raise ValueError('Host syscall-filter receipt has inconsistent launch mode')
+        except (OSError,ValueError,TypeError,KeyError) as error:
+            report.update(active='unconfirmed',launch_blocked=True,note=str(error))
+            self.status(performance_trial=report)
+            raise RuntimeError('Syscall-filter activation unconfirmed; select Baseline and relaunch') from error
+        report.update(active='syscall_filter',host_preflight='passed',host_launch_observed=True,
+                      option='PRoot syscall filtering',
+                      scope='Host syscall translation; graphics configuration unchanged')
+        baseline=self.state.get('graphics_tuning',{}).get('active',{})
+        if (self.req.get('action')!='launch' or self.engine!='fex'
+                or self.req['renderer']=='software' or self.state.get('dxvk_selected')!='2.7.1'
+                or not baseline.get('dxvk_two_compilers')
+                or baseline.get('turnip_sysmem') or baseline.get('dxvk_staged_buffers')):
+            report.update(launch_blocked=True,note='Active host filtering requires the confirmed FEX/DXVK 2.7.1 two-worker baseline and past experiments off')
+            self.status(performance_trial=report)
+            raise RuntimeError('Syscall-filter baseline changed; select Baseline and relaunch')
+        report.update(compiler_threads=2,check='Host preflight and actual launch activation confirmed; two-worker graphics baseline retained')
         self.status(performance_trial=report)
 
     def check_graphics_pixels(self):

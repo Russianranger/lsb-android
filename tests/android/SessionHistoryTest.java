@@ -45,13 +45,16 @@ public class SessionHistoryTest {
         File logs=logs();write(logs,"runtime-state.json.previous",receipt(1));write(logs,"runtime-state.json",receipt(2).put("phase","running"));
         write(logs,"native-display-performance.json.previous",receipt(1));write(logs,"native-display-performance.json",receipt(99));
         write(logs,"native-display-performance.json.new.previous",receipt(98));
-        write(logs,"client-launch.json",receipt(2));SessionHistory.capture(logs);
+        write(logs,"client-launch.json",receipt(2));
+        write(logs,"proot-acceleration.json",receipt(2).put("mode","syscall_filter").put("launch_observed",true));SessionHistory.capture(logs);
         write(logs,"runtime-state.json",receipt(2));write(logs,"native-display-performance.json",receipt(2).put("terminal",true));SessionHistory.capture(logs);
         Map<String,JSONObject> out=exported(logs);JSONArray index=out.get("runtime/sessions/index.json").getJSONArray("sessions");assertEquals(2,index.length());
         JSONObject latest=out.get(index.getJSONObject(1).getString("file"));assertEquals("stopped",latest.getJSONObject("runtime").getString("phase"));
+        assertTrue(latest.getJSONObject("proot_acceleration").getBoolean("launch_observed"));
+        assertEquals("syscall_filter",index.getJSONObject(1).getJSONObject("proot_acceleration").getString("mode"));
         assertTrue(latest.getJSONObject("native_display").getBoolean("terminal"));assertFalse(out.toString().contains(id(99)));assertFalse(out.toString().contains(id(98)));
-        write(logs,"native-display-performance.json",receipt(99));SessionHistory.capture(logs);out=exported(logs);
-        latest=out.get(index.getJSONObject(1).getString("file"));assertFalse(latest.has("native_display"));assertTrue(latest.getJSONArray("omitted").toString().contains("different session"));
+        write(logs,"native-display-performance.json",receipt(99));write(logs,"proot-acceleration.json",receipt(99));SessionHistory.capture(logs);out=exported(logs);
+        latest=out.get(index.getJSONObject(1).getString("file"));assertFalse(latest.has("native_display"));assertFalse(latest.has("proot_acceleration"));assertTrue(latest.getJSONArray("omitted").toString().contains("different session"));
     }
     @Test public void malformedIdsOversizedFilesAndUnfinishedWritesAreExcluded()throws Exception{
         File logs=logs();write(logs,"runtime-state.json",receipt(1));SessionHistory.capture(logs);

@@ -4,13 +4,21 @@
  * Fixed diagnostics contain no client assets, names, paths or credentials. */
 #include <stdio.h>
 #include <string.h>
+/* Finite compatibility checks only. Flush before a driver call so a timeout
+ * identifies its last stage without requiring a game hook or a longer gate. */
+static void graphics_stage(const char *mode,const char *stage,unsigned frame,const char *edge) {
+    DWORD saved=GetLastError();
+    printf("LSB_GRAPHICS_STAGE mode=%s stage=%s frame=%u edge=%s\n",mode,stage,frame,edge);
+    fflush(stdout);SetLastError(saved);
+}
 typedef struct { float x,y,z,rhw; DWORD color; float u,v; } PixelScreenVertex;
 typedef struct { float x,y,z; DWORD color; } PixelWorldVertex;
 #define PIXEL_SCREEN_FVF (D3DFVF_XYZRHW|D3DFVF_DIFFUSE|D3DFVF_TEX1)
 #define PIXEL_WORLD_FVF (D3DFVF_XYZ|D3DFVF_DIFFUSE)
 #define PIXEL_TRY(stage,call) do { hr=(call); if(FAILED(hr)){ \
     printf("LSB_D3D8_API mode=%s stage=%s hr=%08lx FAIL\n",mode,stage,(unsigned long)hr); goto done; } } while(0)
-#define PIXEL_RELEASE(kind,p) do { if(p)kind##_Release(p); } while(0)
+#define PIXEL_RELEASE(kind,p) do { if(p){graphics_stage(mode,"release_" #p,0,"before"); \
+    kind##_Release(p);graphics_stage(mode,"release_" #p,0,"after");} } while(0)
 
 static HRESULT pixel_quad(IDirect3DDevice8 *d,float x,float y,float w,float h,DWORD color) {
     PixelScreenVertex v[]={
@@ -33,7 +41,9 @@ static int check_pixels(IDirect3D8 *api,HWND window,DWORD behavior,const char *m
     DWORD block=0; HRESULT hr=S_OK; unsigned samples=0;
     D3DPRESENT_PARAMETERS p={0};p.Windowed=TRUE;p.SwapEffect=D3DSWAPEFFECT_DISCARD;
     p.BackBufferWidth=320;p.BackBufferHeight=240;p.hDeviceWindow=window;
+    graphics_stage(mode,"device",0,"before");
     PIXEL_TRY("device",IDirect3D8_CreateDevice(api,0,D3DDEVTYPE_HAL,window,behavior,&p,&d));
+    graphics_stage(mode,"device",0,"after");
     PIXEL_TRY("backbuffer",IDirect3DDevice8_GetBackBuffer(d,0,D3DBACKBUFFER_TYPE_MONO,&back));
     D3DSURFACE_DESC desc;
     PIXEL_TRY("description",IDirect3DSurface8_GetDesc(back,&desc));
@@ -61,6 +71,7 @@ static int check_pixels(IDirect3D8 *api,HWND window,DWORD behavior,const char *m
     PIXEL_TRY("stage1",IDirect3DDevice8_SetTextureStageState(d,1,D3DTSS_COLOROP,D3DTOP_DISABLE));
     PIXEL_TRY("stateblock",IDirect3DDevice8_CreateStateBlock(d,D3DSBT_ALL,&block));
     for(unsigned frame=0;frame<4;frame++) {
+        graphics_stage(mode,"frame",frame,"before");
         DWORD solid=(frame&1)?0xff20a060:0xffa04020;
         DWORD tile[4]={0xffff0000,0xff00ff00,0xff0000ff,0xffffffff};
         D3DLOCKED_RECT lock;
@@ -125,8 +136,12 @@ static int check_pixels(IDirect3D8 *api,HWND window,DWORD behavior,const char *m
         PIXEL_TRY("test_ref",IDirect3DDevice8_SetRenderState(d,D3DRS_ALPHAREF,128));
         PIXEL_TRY("test_quad",pixel_quad(d,160,120,160,120,0x00ffffff));
         PIXEL_TRY("back_end",IDirect3DDevice8_EndScene(d));
+        graphics_stage(mode,"copy_readback",frame,"before");
         PIXEL_TRY("copy_readback",IDirect3DDevice8_CopyRects(d,back,NULL,0,pixels,NULL));
+        graphics_stage(mode,"copy_readback",frame,"after");
+        graphics_stage(mode,"pixel_lock",frame,"before");
         PIXEL_TRY("pixel_lock",IDirect3DSurface8_LockRect(pixels,&lock,NULL,D3DLOCK_READONLY));
+        graphics_stage(mode,"pixel_lock",frame,"after");
         int mismatch=0;
         for(unsigned panel=0;panel<4;panel++)for(unsigned sample=0;sample<4;sample++) {
             unsigned x=(panel%2)*160+40+(sample%2)*80,y=(panel/2)*120+30+(sample/2)*60;
@@ -148,12 +163,15 @@ static int check_pixels(IDirect3D8 *api,HWND window,DWORD behavior,const char *m
         }
         PIXEL_TRY("pixel_unlock",IDirect3DSurface8_UnlockRect(pixels));
         if(mismatch){hr=E_FAIL;goto done;}
+        graphics_stage(mode,"present",frame,"before");
         PIXEL_TRY("present",IDirect3DDevice8_Present(d,NULL,NULL,NULL,NULL));
+        graphics_stage(mode,"present",frame,"after");
         MSG message;while(PeekMessageW(&message,NULL,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}
+        graphics_stage(mode,"frame",frame,"after");
     }
     printf("LSB_D3D8_PIXELS mode=%s frames=4 samples=%u PASS\n",mode,samples);
 done:
-    if(block)IDirect3DDevice8_DeleteStateBlock(d,block);
+    if(block){graphics_stage(mode,"release_stateblock",0,"before");IDirect3DDevice8_DeleteStateBlock(d,block);graphics_stage(mode,"release_stateblock",0,"after");}
     PIXEL_RELEASE(IDirect3DIndexBuffer8,ib);PIXEL_RELEASE(IDirect3DVertexBuffer8,vb);
     PIXEL_RELEASE(IDirect3DSurface8,pixels);PIXEL_RELEASE(IDirect3DSurface8,target);PIXEL_RELEASE(IDirect3DSurface8,back);
     PIXEL_RELEASE(IDirect3DTexture8,rendered);PIXEL_RELEASE(IDirect3DTexture8,pattern);PIXEL_RELEASE(IDirect3DDevice8,d);

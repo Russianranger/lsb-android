@@ -250,6 +250,7 @@ final class ClientRuntime {
         File candidate=null;File selectedPrefix=prefix;
         boolean useFex=!initialize&&context.getSharedPreferences("runtime",0).getBoolean("fex",false);
         FexRuntime selectedFex=null;
+        ProotAcceleration acceleration=null;
         synchronized(WorkService.class){synchronized(this){if(alive()||WorkService.busy)throw new IOException("Wait for the current operation");active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();}}
         launchError="";
         try{
@@ -315,8 +316,17 @@ final class ClientRuntime {
             // PRoot may print tracee command lines on a fatal error. Keep its raw
             // wrapper stream out of files for login; structured supervisor receipts remain.
             pb.redirectErrorStream(true);pb.redirectOutput(action.equals("launch")?new File("/dev/null"):new File(logs,"proot.log"));
+            acceleration=new ProotAcceleration(sessionId,run,logs);
+            ProotAcceleration.Check checkStop=()->{interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");};
+            boolean filter=acceleration.prepare(pb,request,checkStop,this::reapOrphans);
+            // This private drain only recognizes a fixed activation marker and
+            // discards everything else. Never persist wrapper argv/login output.
+            if(filter)pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
             interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");
-            process=pb.start();starting=false;preparingThread=null;
+            process=pb.start();
+            if(filter)acceleration.observeLaunch(process,checkStop);
+            checkStop.check();
+            starting=false;preparingThread=null;
             try(OutputStream input=process.getOutputStream()){if(action.equals("launch"))login.send(input);}
             if(stopRequested)write(new File(run,"stop"),"stop\n");status=initialize?"Initializing working client. Open the display for installer prompts.":clientOperation?"Checking the loader and starting the client…":"Starting Windows checks. Open the display to follow progress.";
             while(!process.waitFor(1,TimeUnit.SECONDS)){
@@ -354,7 +364,7 @@ final class ClientRuntime {
             if(login!=null)login.close();
             preparingThread=null;Thread.interrupted();
             if(process!=null&&process.isAlive()){process.destroy();if(!process.waitFor(5,TimeUnit.SECONDS)){process.destroyForcibly();process.waitFor(5,TimeUnit.SECONDS);}}
-            try{reapOrphans();}finally{if(audio!=null){audio.close();audio=null;}process=null;starting=false;active=false;}
+            try{reapOrphans();}finally{if(acceleration!=null)acceleration.close();if(audio!=null){audio.close();audio=null;}process=null;starting=false;active=false;}
         }
     }
     void requestStop()throws Exception {

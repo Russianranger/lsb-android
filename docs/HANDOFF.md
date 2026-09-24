@@ -1,3 +1,32 @@
+# 0.5.27: separate D/E/F optimization candidates
+
+User asks for more potential optimizations and implementation. Added D CPU-cached
+geometry buffers, E GPL fast-link without background optimized variants, F checked
+PRoot syscall filtering. All opt-in, independent and retain two compiler workers.
+No phone gain claimed; A remains available, B/C retired, existing working renderer
+and FEX precision unchanged. [Design, risks and tests](thor-optimization-trials-0527.md).
+
+D/E verify exact settings and 128 startup pixels each; E requires confirmed GPL.
+F requires isolated credential-free preflight plus actual launch activation marker,
+then guest validation of a session-matched receipt. Preflight declines retain
+compatibility; inconsistent real activation/effective graphics baseline stops
+before game launch. No in-process false rollback or credential replay. Raw PRoot
+output is discarded. History includes matching F receipts, still six sessions.
+
+Core/77 runtime contracts/eight host helper JUnit tests/real SysV preflight and
+Windows fixture compile pass. Android and full runtime CI pending. Finite Windows
+stage markers aim to locate intermittent CI pixel stalls; assertions/timeouts
+unchanged. Prior 0.5.26 earlier push FEX and PR Box64 passed, latest push FEX passed;
+latest PR FEX failed a later cancellation fixture after A/2.7.1 passed. Do not claim
+all CI green. No merge/release requested; edits and pushes explicitly authorized.
+
+Build/delivery record will follow. Phone test: in-place update; tested settings,
+same full 720p route, Baseline then D/E/F separately, Stop/export after each. No
+runtime reinstall or cache reset. Failed F activation: return to Baseline. No
+repeat B/C, and do not stack A with the new trials.
+
+---
+
 # 0.5.26 follow-up: fresh Baseline/A logs verified
 
 Before APK delivery the user supplied `lsb-support (9)(2).zip` and `(10)(2).zip`

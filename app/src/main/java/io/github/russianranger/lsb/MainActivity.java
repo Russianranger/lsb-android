@@ -268,19 +268,28 @@ public final class MainActivity extends Activity {
         proven.addView(label("Always applied: corrected FEX x87 condition flags in runtime v3, Android shared-memory capture, and removal of recurring startup-observer stalls. Stop and relaunch after changing runtime or display options.",13,MUTED));
         LinearLayout trials=card("Optimization trials");
         trials.addView(label("Choose one test, then stop and relaunch. Start from the tested shader settings and Windowed 1280×720; keep border removal and startup capture off for comparisons.",15,TEXT));
-        final String[] trialValues={"none","one_compiler"};
+        final String[] trialValues={"none","one_compiler","cached_dynamic","gpl_fast","syscall_filter"};
+        final String[] trialHelp={
+            "The tested baseline uses two shader compiler workers. Each trial changes one variable; new trials D, E and F keep two workers. Stop and relaunch after switching.",
+            "A uses one compiler worker. Your comparison suggests a small improvement, but the timing logs do not establish a consistent win. New shaders may take longer to compile.",
+            "D places dynamic geometry buffers in CPU-cached memory. It may reduce CPU access costs while buildings and characters appear, but can reduce GPU throughput. Rendering checks must pass before it is applied.",
+            "E skips background compilation of optimized shader pipelines. It may reduce CPU competition during camera pans, but can reduce GPU throughput and retain more base pipelines. This is a new experiment; B remains disabled.",
+            "F enables syscall filtering in the compatibility runtime, reducing interception of reads, writes and thread wakeups. A separate startup check must pass first; otherwise compatibility mode is retained. Requires FEX, DXVK 2.7.1, two workers and past experiments off."
+        };
         Spinner trial=new Spinner(this);trial.setContentDescription("Performance trial");
-        trial.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Baseline · no trial","A · One compiler worker"}));
-        trial.setSelection(Math.max(0,Arrays.asList(trialValues).indexOf(getSharedPreferences("runtime",0).getString("performance_trial","none"))));trials.addView(trial);
+        trial.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Baseline · no trial","A · One compiler worker","D · Cached geometry buffers","E · Fewer shader optimization jobs","F · Runtime syscall filtering"}));
+        int selectedTrial=Math.max(0,Arrays.asList(trialValues).indexOf(getSharedPreferences("runtime",0).getString("performance_trial","none")));
+        trial.setSelection(selectedTrial);trials.addView(trial);
+        final TextView trialDescription=label(trialHelp[selectedTrial],14,MUTED);trialDescription.setContentDescription("Performance trial details");trials.addView(trialDescription);
         trial.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
             public void onNothingSelected(AdapterView<?> parent){}
             public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
                 String value=trialValues[position];
+                trialDescription.setText(trialHelp[position]);
                 if(!value.equals(getSharedPreferences("runtime",0).getString("performance_trial","none")))getSharedPreferences("runtime",0).edit().putString("performance_trial",value).apply();
             }
         });
-        trials.addView(label("A uses one compiler worker. Your comparison suggests a small improvement, but the timing logs do not establish a consistent win. Keep A as a promising trial. New shaders may take longer to compile.",14,MUTED));
-        trials.addView(label("Returning to Baseline restores two workers. Use Windowed 1280×720 to restore the full 3D resolution after C. Support ZIPs now retain six sessions; they cannot recover runs already overwritten before this update.",13,MUTED));
+        trials.addView(label("New trials are unproven on Thor. Start with D, then compare E and F separately if needed. Baseline removes the trial; Use tested shader settings restores the two-worker profile. Support ZIPs retain six sessions with their effective settings and timing history.",13,MUTED));
         LinearLayout past=card("Past experiments");
         past.addView(label("These rendering experiments have no demonstrated benefit in the latest comparisons. Keep them off when using the tested shader settings; saved choices remain available for troubleshooting.",15,TEXT));
         past.addView(label("Retired B · Retain shader pipelines: froze before the menu despite passing its startup pixel check. Retired C · Lighter 3D scene: severe camera-pan slowdowns. Both are disabled; do not repeat these tests.",14,MUTED));

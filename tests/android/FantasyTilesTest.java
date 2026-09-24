@@ -90,13 +90,16 @@ public class FantasyTilesTest {
             capture(tiles,"past-experiments-wide.png");
             text(tiles,"◇  Optimization trials").performClick();layout(tiles,920);
             Spinner trial=findTrial(tiles);assertNotNull(trial);assertEquals(0,trial.getSelectedItemPosition());
-            String[] values={"none","one_compiler"};assertEquals(2,trial.getCount());
-            for(int i=1;i<2;i++){
+            String[] values={"none","one_compiler","cached_dynamic","gpl_fast","syscall_filter"};assertEquals(values.length,trial.getCount());
+            for(int i=1;i<values.length;i++){
                 trial.setSelection(i);org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
                 assertEquals(values[i],prefs.getString("performance_trial","none"));
                 org.json.JSONObject selected=new org.json.JSONObject();runtime.applyGraphicsSettings(selected);assertEquals(values[i],selected.getString("performance_trial"));
+                assertNotNull(text(tiles,new String[]{"","A uses one compiler worker.","D places dynamic geometry buffers","E skips background compilation","F enables syscall filtering"}[i]));
+                layout(tiles,920);capture(tiles,"optimization-trial-"+values[i]+"-wide.png");
+                layout(tiles,400);capture(tiles,"optimization-trial-"+values[i]+"-narrow.png");
             }
-            capture(tiles,"optimization-trials-wide.png");layout(tiles,400);capture(tiles,"optimization-trials-narrow.png");
+            layout(tiles,920);capture(tiles,"optimization-trials-wide.png");layout(tiles,400);capture(tiles,"optimization-trials-narrow.png");
             text(tiles,"◇  Proven fixes").performClick();layout(tiles,920);
             text(tiles,"Use tested shader settings").performClick();
             assertSame("Applying a profile must preserve the current form",tiles,f.get(activity.get()));layout(tiles,920);

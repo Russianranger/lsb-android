@@ -86,15 +86,16 @@ class Contracts(unittest.TestCase):
  def trial_fixture(self,folder,trial):
   s=self.tuning_fixture(folder,{'performance_trial':trial,'dxvk_two_compilers':True})
   s.env={'DXVK_CONFIG':'dxvk.numCompilerThreads = 2','LD_PRELOAD':'gamepad upload'}
-  s.state={'dxvk_selected':'2.7.1','graphics_tuning':{'active':{'dxvk_two_compilers':True}}}
+  s.state={'dxvk_selected':'2.7.1','graphics_tuning':{'active':{'dxvk_two_compilers':True},'graphics_pipeline_libraries':True}}
   workers=1 if trial=='one_compiler' else 2
-  option='dxvk.numCompilerThreads = 1' if workers==1 else 'dxvk.trackPipelineLifetime = False'
-  log='info: '+option+'\ninfo: DXVK: Using '+str(workers)+' compiler threads\ninfo: graphicsPipelineLibrary : 1\nLSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\nLSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'
+  option={'one_compiler':'dxvk.numCompilerThreads = 1','cached_dynamic':'d3d9.cachedDynamicBuffers = True',
+          'gpl_fast':'dxvk.enableGraphicsPipelineLibrary = True'}.get(trial,'dxvk.trackPipelineLifetime = False')
+  log='info: '+option+'\ninfo: DXVK: Using '+str(workers)+' compiler threads\ninfo: graphicsPipelineLibrary : 1\ninfo: DXVK: Graphics pipeline libraries supported\nLSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\nLSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'
   (folder/'performance-trial.log').write_text(log)
   return s
  def test_trial_schema_and_no_implicit_activation(self):
   req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
-  for value in ('none','one_compiler','retain_pipelines','lighter_scene'):
+  for value in ('none','one_compiler','cached_dynamic','gpl_fast','syscall_filter','retain_pipelines','lighter_scene'):
    module.validate_request(dict(req,performance_trial=value))
   for value in ('all',None,True,'dxvk.trackPipelineLifetime = False'):
    with self.assertRaises(ValueError):module.validate_request(dict(req,performance_trial=value))
@@ -104,15 +105,17 @@ class Contracts(unittest.TestCase):
  def test_trials_are_isolated_and_failure_keeps_validated_baseline(self):
   with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
    folder=pathlib.Path(t)
-   for trial in ('one_compiler',):
-    for failure in ('none','timeout','pixels','workers','config','stop','no_gpl'):
-     if failure=='no_gpl' and trial!='retain_pipelines':continue
+   for trial in ('one_compiler','cached_dynamic','gpl_fast'):
+    for failure in ('none','timeout','pixels','pixel_failure','workers','config','stop','no_gpl','no_gpl_manager'):
+     if failure in ('no_gpl','no_gpl_manager') and trial!='gpl_fast':continue
      s=self.trial_fixture(folder,trial);previous=dict(s.env);log=folder/'performance-trial.log'
      if failure=='timeout':s.wait.side_effect=RuntimeError('timed out')
      if failure=='pixels':log.write_text(log.read_text().replace('mode=hwvp','mode=swvp'))
+     if failure=='pixel_failure':log.write_text(log.read_text()+'LSB_D3D8_PIXEL mode=hwvp frame=0 FAIL\n')
      if failure=='workers':log.write_text(log.read_text().replace('compiler threads','unconfirmed'))
      if failure=='config':log.write_text(log.read_text().split('\n',1)[1])
      if failure=='no_gpl':log.write_text(log.read_text().replace('Library : 1','Library : 0'))
+     if failure=='no_gpl_manager':log.write_text(log.read_text().replace('libraries supported','libraries not supported'))
      if failure=='stop':
       s.wait.side_effect=module.Stopped()
       with self.assertRaises(module.Stopped):s.configure_performance_trial()
@@ -123,6 +126,13 @@ class Contracts(unittest.TestCase):
       self.assertEqual(report['active'],trial);self.assertEqual(report['compiler_threads'],1 if trial=='one_compiler' else 2)
       self.assertEqual(s.env['LD_PRELOAD'],'gamepad upload');self.assertEqual(s.spawn.call_args.args[0][-1],'--pixels')
       self.assertEqual(s.env['DXVK_CONFIG'].count(';'),1)
+      if trial=='cached_dynamic':
+       self.assertNotIn('allowDirectBufferMapping',s.env['DXVK_CONFIG'])
+       self.assertIn('already cached',report['scope']);self.assertIn('GPU throughput',report['tradeoff'])
+      if trial=='gpl_fast':
+       self.assertNotIn('trackPipelineLifetime',s.env['DXVK_CONFIG'])
+       self.assertIn('background optimized variants disabled',report['pipeline_mode'])
+       self.assertIn('retain more',report['tradeoff'])
      else:
       self.assertEqual(report['active'],'none');self.assertIn('fallback',report);self.assertEqual(s.env,previous)
  def test_retired_trials_cannot_be_reactivated_by_old_saved_requests(self):
@@ -132,17 +142,116 @@ class Contracts(unittest.TestCase):
     previous=dict(s.env);s.configure_performance_trial();s.spawn.assert_not_called()
     report=s.status.call_args.kwargs['performance_trial'];self.assertEqual(report['requested'],trial)
     self.assertEqual(report['active'],'none');self.assertIn('Retired',report['note']);self.assertEqual(s.env,previous)
+ def test_gpl_trial_skips_probe_without_baseline_support(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for support in (None,False):
+    s=self.trial_fixture(pathlib.Path(t),'gpl_fast');previous=dict(s.env)
+    s.state['graphics_tuning'].pop('graphics_pipeline_libraries')
+    if support is not None:s.state['graphics_tuning']['graphics_pipeline_libraries']=support
+    s.configure_performance_trial();s.spawn.assert_not_called();self.assertEqual(s.env,previous)
+    report=s.status.call_args.kwargs['performance_trial']
+    self.assertEqual(report['active'],'none');self.assertIn('confirmed by the baseline',report['note'])
+ def test_baseline_reports_gpl_only_with_capability_and_manager_confirmation(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for capability,manager in ((True,True),(True,False),(False,True),(False,False)):
+    s=self.tuning_fixture(pathlib.Path(t),{'dxvk_two_compilers':True})
+    log='info: DXVK: Using 2 compiler threads\n'
+    if capability:log+='info: graphicsPipelineLibrary : 1\n'
+    if manager:log+='info: DXVK: Graphics pipeline libraries supported\n'
+    (pathlib.Path(t)/'graphics-tuning.log').write_text(log)
+    s.configure_graphics_tuning();report=s.status.call_args.kwargs['graphics_tuning']
+    self.assertEqual(report['graphics_pipeline_libraries'],capability and manager)
+    self.assertTrue(report['active']['dxvk_two_compilers'])
+ def syscall_trial_fixture(self,folder):
+  s=self.trial_fixture(folder,'syscall_filter');s.engine='fex'
+  s.req.update(action='launch',engine='fex',session_id=str(uuid.uuid4()))
+  receipt={'format':1,'session_id':s.req['session_id'],'requested':'syscall_filter',
+           'preflight_passed':True,'launch_observed':True,'mode':'syscall_filter'}
+  (folder/'proot-acceleration.json').write_text(json.dumps(receipt))
+  return s,receipt
+ def test_syscall_trial_requires_host_receipt_and_keeps_graphics_environment(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for mode in ('active','declined','wrong_session','missing','malformed','inconsistent','pending'):
+    s,receipt=self.syscall_trial_fixture(folder);previous=dict(s.env);path=folder/'proot-acceleration.json'
+    if mode=='declined':receipt.update(preflight_passed=False,launch_observed=False,mode='compatibility')
+    if mode=='wrong_session':receipt['session_id']=str(uuid.uuid4())
+    if mode=='inconsistent':receipt['mode']='compatibility'
+    if mode=='pending':receipt['launch_observed']=False
+    path.write_text(json.dumps(receipt))
+    if mode=='missing':path.unlink()
+    if mode=='malformed':path.write_text('{')
+    with patch.object(module.time,'monotonic',side_effect=(1,4)),patch.object(module.time,'sleep'):
+     if mode in ('active','declined'):s.configure_performance_trial()
+     else:
+      with self.assertRaisesRegex(RuntimeError,'activation unconfirmed'):s.configure_performance_trial()
+    s.spawn.assert_not_called();self.assertEqual(s.env,previous)
+    report=s.status.call_args.kwargs['performance_trial']
+    self.assertEqual(report['active'],'syscall_filter' if mode=='active' else 'none' if mode=='declined' else 'unconfirmed')
+    if mode not in ('active','declined'):self.assertTrue(report['launch_blocked'])
+ def test_syscall_trial_waits_for_host_observation_receipt(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t);s,receipt=self.syscall_trial_fixture(folder)
+   pending=dict(receipt,launch_observed=False)
+   (folder/'proot-acceleration.json').write_text(json.dumps(pending))
+   def observed(_): (folder/'proot-acceleration.json').write_text(json.dumps(receipt))
+   with patch.object(module.time,'sleep',side_effect=observed) as wait:s.configure_performance_trial()
+   wait.assert_called_once();self.assertEqual(s.status.call_args.kwargs['performance_trial']['active'],'syscall_filter')
+ def test_syscall_trial_stop_during_host_observation_propagates(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t);s,receipt=self.syscall_trial_fixture(folder);previous=dict(s.env)
+   receipt['launch_observed']=False;(folder/'proot-acceleration.json').write_text(json.dumps(receipt))
+   s.stopped=Mock(side_effect=(None,module.Stopped()))
+   with patch.object(module.time,'sleep'),self.assertRaises(module.Stopped):s.configure_performance_trial()
+   self.assertEqual(s.stopped.call_count,2);self.assertEqual(s.env,previous)
+   s.status.assert_not_called();s.spawn.assert_not_called()
+ def test_syscall_trial_rejects_oversized_symlink_and_non_boolean_receipts(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for corruption in ('oversized','symlink','fifo','preflight_string','preflight_number','observed_string','observed_number','not_object'):
+    path=folder/'proot-acceleration.json'
+    if path.exists() or path.is_symlink():path.unlink()
+    s,receipt=self.syscall_trial_fixture(folder)
+    if corruption=='oversized':receipt['padding']='x'*16384
+    if corruption=='preflight_string':receipt['preflight_passed']='true'
+    if corruption=='preflight_number':receipt['preflight_passed']=1
+    if corruption=='observed_string':receipt['launch_observed']='true'
+    if corruption=='observed_number':receipt['launch_observed']=1
+    path.write_text(json.dumps([] if corruption=='not_object' else receipt))
+    if corruption=='symlink':
+     other=folder/'other.json';other.write_text(path.read_text());path.unlink();path.symlink_to(other)
+    if corruption=='fifo':path.unlink();module.os.mkfifo(path)
+    with self.assertRaisesRegex(RuntimeError,'activation unconfirmed'):s.configure_performance_trial()
+    report=s.status.call_args.kwargs['performance_trial']
+    self.assertEqual(report['active'],'unconfirmed');self.assertTrue(report['launch_blocked'])
+    s.spawn.assert_not_called()
+ def test_active_syscall_trial_blocks_instead_of_faking_host_fallback(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for condition in ('action','engine','software','older','workers','sysmem','staged'):
+    s,_=self.syscall_trial_fixture(folder);previous=dict(s.env)
+    if condition=='action':s.req['action']='probe'
+    elif condition=='engine':s.engine='box64'
+    elif condition=='software':s.req['renderer']='software'
+    elif condition=='older':s.state['dxvk_selected']='2.5.3'
+    elif condition=='workers':s.state['graphics_tuning']['active']['dxvk_two_compilers']=False
+    else:s.state['graphics_tuning']['active']['turnip_sysmem' if condition=='sysmem' else 'dxvk_staged_buffers']=True
+    with self.assertRaisesRegex(RuntimeError,'baseline changed'):s.configure_performance_trial()
+    report=s.status.call_args.kwargs['performance_trial']
+    self.assertEqual(report['active'],'syscall_filter');self.assertTrue(report['launch_blocked'])
+    self.assertEqual(s.env,previous);s.spawn.assert_not_called()
  def test_trial_guards_and_lighter_scene_do_not_change_other_profiles(self):
   with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
    folder=pathlib.Path(t)
-   for condition in ('software','older','unconfirmed','sysmem','staged'):
-    s=self.trial_fixture(folder,'one_compiler');previous=dict(s.env)
-    if condition=='software':s.req['renderer']='software'
-    elif condition=='older':s.state['dxvk_selected']='2.5.3'
-    elif condition=='unconfirmed':s.state['graphics_tuning']['active']['dxvk_two_compilers']=False
-    else:s.state['graphics_tuning']['active']['turnip_sysmem' if condition=='sysmem' else 'dxvk_staged_buffers']=True
-    s.configure_performance_trial();s.spawn.assert_not_called();self.assertEqual(s.env,previous)
-    self.assertEqual(s.status.call_args.kwargs['performance_trial']['active'],'none')
+   for trial in ('one_compiler','cached_dynamic','gpl_fast'):
+    for condition in ('software','older','unconfirmed','sysmem','staged'):
+     s=self.trial_fixture(folder,trial);previous=dict(s.env)
+     if condition=='software':s.req['renderer']='software'
+     elif condition=='older':s.state['dxvk_selected']='2.5.3'
+     elif condition=='unconfirmed':s.state['graphics_tuning']['active']['dxvk_two_compilers']=False
+     else:s.state['graphics_tuning']['active']['turnip_sysmem' if condition=='sysmem' else 'dxvk_staged_buffers']=True
+     s.configure_performance_trial();s.spawn.assert_not_called();self.assertEqual(s.env,previous)
+     self.assertEqual(s.status.call_args.kwargs['performance_trial']['active'],'none')
    for action,profile in [('launch','windowed720'),('launch','preserve'),('launch','restore'),('launch','windowed540'),('probe','windowed720')]:
     s=self.trial_fixture(folder,'lighter_scene');s.req.update(action=action,display_profile=profile);previous=dict(s.env)
     s.configure_performance_trial();s.spawn.assert_not_called();self.assertEqual(s.env,previous)
