@@ -12,8 +12,17 @@ Diagnostics. Fullscreen hides Android bars and the bottom status strip while
 keeping the game menu available. Unchanged/hidden status text no longer causes
 redundant periodic updates. Runtime and game resolution are unchanged.
 
-Local core and 63 runtime checks pass. Android/full CI and signed 0.5.21 APK
-qualification are pending. Do not present the new APK as ready before checks.
+Local core, 63 runtime contracts and all 19 Android checks pass. Native UI
+previews are reviewed. Signed 0.5.21 APK package/alignment/original-signature
+and CI-payload checks pass; FEX/Box64 compatibility gates are still running.
+Do not present the new APK as ready before these checks.
+
+APK SHA-256 `312267378bd71d55c5adc38c195a2cf6d65a05f8da2c4b7e0086dac7ec7f66df`.
+VersionCode 37, 18,305,172 bytes. Library ID
+`libfile_d4c361e239688191847ab80dc3ed3036`; file ID
+`file_00000000ac3481f5ab3019b1553d8713`. Original signer retained; all native
+runtime assets match 0.5.20 exactly. Implementation
+`d52a7542750fe48f45e3fca1b52abab8a91ef3c4`, primary CI run `35945502024`.
 Next phone test after delivery: update APK only, enable fullscreen, check
 edge controls, toggling/reopening, touch/controller alignment, familiar world
 route, then Stop and use Export support ZIP. Keep startup capture off.

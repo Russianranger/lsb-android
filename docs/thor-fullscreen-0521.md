@@ -57,7 +57,20 @@ Local core checks and all 63 runtime Python contracts pass. Android tests now
 exercise real menu toggles, status visibility/update behavior, saved fullscreen
 on reopening, no connection generation change during toggles, unchanged Windows
 resolution selection, and the export tile's actual document intent. Native UI
-previews cover the updated tiles and navigation. CI/APK qualification pending.
+previews cover the updated tiles and navigation and were visually reviewed.
+All 19 Android checks pass, along with the build, native Windows, presentation
+and server-deployment jobs. Primary FEX/Box64 checks are still running in
+[run 35945502024](https://github.com/Russianranger/lsb-android/actions/runs/35945502024)
+on implementation `d52a7542750fe48f45e3fca1b52abab8a91ef3c4`.
+
+Signed APK: 0.5.21, versionCode 37, 18,305,172 bytes. SHA-256
+`312267378bd71d55c5adc38c195a2cf6d65a05f8da2c4b7e0086dac7ec7f66df`.
+Original signer
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Package/version, ZIP integrity, alignment, v2/v3 signatures and exact CI payload
+identity pass. Only AndroidManifest.xml, classes.dex and JSON key ordering in
+the runtime manifest differ from 0.5.20. All native runtime assets, graphics
+binaries, game launcher/observer, audio/input helpers and artwork are identical.
 
 Install the signed APK over 0.5.20; no runtime reinstall or client preparation.
 Keep the accepted settings and startup capture off. Enable fullscreen in
