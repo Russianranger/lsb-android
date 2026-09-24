@@ -67,8 +67,28 @@ runtime choices are changed by reorganizing the screen.
 ## Validation and next device run
 
 Local core/import/recovery/login/display-codec checks and all 63 runtime Python
-contracts pass. Android layout/real-view image checks and existing ARM64/runtime
-qualification are pending at this checkpoint.
+contracts pass. The corrected implementation passes all 18 Android checks,
+including real launcher preference preservation and row expansion/edit retention.
+Native-rendered previews at 920 and 400 pixels were visually reviewed. Package,
+alignment, original v2/v3 signer and exact CI payload identity pass. The first
+candidate was rejected before packaging for a banner syntax error; corrected
+implementation also fixes compact subtitle spacing. Primary FEX job
+107453274711 passes with 138 PASS records, including both precision modes,
+observer/managed-texture/render-target/alpha pixels, live Native Surface at
+60 Hz, audio, controller and prefix preservation. Primary Box64 job
+107453274716 passes with 163 PASS records. Android, presentation, Windows and
+server-deployment jobs also pass on implementation
+`296b758d97eadc104608fcc91cc1b5427cfab457` in
+[run 35942316408](https://github.com/Russianranger/lsb-android/actions/runs/35942316408).
+All seven jobs complete successfully, including immutable runtime release
+identity verification. The parallel failure below remains recorded separately.
+
+Delivered APK: 0.5.20, versionCode 36, 18,305,172 bytes, SHA-256
+`34dd60590aebabedee2468838f3b31ad74875d5f19e603bf84fb42130d7d431d`. Original signer
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Only app code/resources and the native capture helper/manifest change;
+FEX v3, DXVK, Turnip, observer, audio, input, client and server remain intact.
+The Box64 manifest's JSON values are identical (only ordering differs).
 
 Install the 0.5.20 APK update in place. Runtime v3 is unchanged, so no runtime
 reinstall, client reset, reimport or preparation is needed. Keep the accepted
@@ -76,3 +96,20 @@ settings, turn off Capture FFXI startup and graphics, and repeat a familiar
 world route for several minutes. Check menu/cursor movement and expand the new
 Proven fixes / Past experiments panels. Stop and export one support ZIP.
 Do not repeat standalone graphics or the old precision/DXVK/Box64 matrix.
+
+
+### Parallel-run audit
+
+PR run 35942320451, Box64 job 107453314173 times out at the unchanged
+60-second D3D8 pixel fixture. Retained artifact 10785890706, SHA-256
+`725bbb6113b97c1f920a1f6f68ac8f5981a1437a0d609889f76f39ddac8304d1`.
+The full log records the software-vertex-processing 64-pixel PASS, then another
+device/swapchain initialization without a second pixel receipt. The precise
+stall location/cause is unresolved. No assertion or deadline was changed and
+no unchanged retry was requested. This failed run remains part of the audit.
+
+Its preceding standalone display tests pass all five capture/rate/poll modes.
+Each cached mode records 122 requests, 80 position queries and 42 hidden-cursor
+skips; the explicit polling baseline records 122 queries and zero skips.
+Visible reappearance at the new position, hotspot/clipping, resize, ownership
+and exact pixels pass. This synthetic overhead reduction is not a Thor FPS claim.

@@ -1,4 +1,4 @@
-# 0.5.19 FEX world play accepted; 0.5.20 UI and display optimization in qualification
+# 0.5.20 delivered: accepted world play, fantasy tiles and display optimization
 
 User confirms correct menus/world rendering and best performance so far,
 generally 20–30 FPS in world play. Runtime v3 is verified in the new support
@@ -12,11 +12,31 @@ A focused bridge change avoids position round trips for a fully transparent
 cursor, resuming live position queries on reappearance. Device benefit is
 unverified; the next log includes a skipped-query counter.
 
-Code and pushes are authorized. Core and 63 Python runtime checks pass locally;
-Android UI and full CI qualification/APK delivery are pending. Next after
-qualification: APK update only, leave runtime v3/prepared client/loader/Termux
-server intact. Disable startup capture for normal play. One familiar world
-route and support export; no old test matrices or runtime reinstallation.
+Implementation `296b758d97eadc104608fcc91cc1b5427cfab457` passes core checks,
+63 Python runtime contracts, 18 Android checks and native Windows checks.
+Native-rendered wide/narrow tile previews were reviewed. Both ARM64 gates in
+[run 35942316408](https://github.com/Russianranger/lsb-android/actions/runs/35942316408)
+pass: FEX has 138 PASS records, Box64 has 163. All seven jobs, including runtime
+release identity verification, succeed. A parallel PR run passed all new cursor
+checks but timed out in an existing D3D8 pixel fixture; retained evidence is
+documented in the linked report. No assertions/deadlines were weakened or
+unchanged retries requested.
+
+Signed **LSB-Android-0.5.20.apk**, versionCode 36, 18,305,172 bytes.
+SHA-256 `34dd60590aebabedee2468838f3b31ad74875d5f19e603bf84fb42130d7d431d`.
+Original signer `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Library ID `libfile_06361dd636288191ac0b0398bde3a65c`;
+file ID `file_000000000e5481f9aa09f606ecb9f521`. Payload matches passing
+Android CI. The first candidate
+was rejected for a banner compile error before any APK was delivered.
+
+Code and pushes are authorized. Next phone action: APK update only; runtime v3
+is unchanged. Leave the prepared client, original loader and Termux server
+intact. Keep the accepted settings; turn off **Capture FFXI startup and
+graphics** in **Capture & diagnostics**. Expand/collapse the new tiles and run
+a familiar world route for 3–5 minutes, checking menus, cursor, audio and
+controller. Stop and export one support ZIP with FPS/smoothness feedback.
+No old test matrices, reset, reimport, preparation or runtime reinstallation.
 
 Earlier entries below are historical.
 
