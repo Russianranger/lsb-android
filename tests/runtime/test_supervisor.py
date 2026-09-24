@@ -59,8 +59,9 @@ class Contracts(unittest.TestCase):
    self.assertEqual(s.env,{});s.spawn.assert_not_called()
  def test_tuning_inputs_are_booleans_not_arbitrary_driver_flags(self):
   req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4())}
-  for key in ('turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless'):
+  for key in ('turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','proot_acceleration'):
    self.assertEqual(module.validate_request(dict(req,**{key:True}))[key],True)
+   self.assertEqual(module.validate_request(dict(req,**{key:False}))[key],False)
    for value in ('sysmem,noconform',1,None):
     with self.assertRaises(ValueError):module.validate_request(dict(req,**{key:value}))
  def test_staged_buffers_require_configuration_and_both_pixel_modes(self):
@@ -169,6 +170,73 @@ class Contracts(unittest.TestCase):
            'preflight_passed':True,'launch_observed':True,'mode':'syscall_filter'}
   (folder/'proot-acceleration.json').write_text(json.dumps(receipt))
   return s,receipt
+ def test_runtime_acceleration_default_request_is_separate_from_graphics_trials(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t);s,_=self.syscall_trial_fixture(folder);previous=dict(s.env)
+   s.req.update(proot_acceleration=True,performance_trial='none')
+   s.configure_runtime_acceleration()
+   report=s.status.call_args.kwargs['runtime_acceleration']
+   self.assertTrue(report['requested']);self.assertEqual(report['active'],'syscall_filter')
+   self.assertTrue(report['host_launch_observed']);self.assertEqual(report['compiler_threads'],2)
+   self.assertEqual(s.env,previous);s.spawn.assert_not_called()
+   s.configure_performance_trial()
+   self.assertEqual(s.status.call_args.kwargs['performance_trial'],{'requested':'none','active':'none'})
+ def test_runtime_acceleration_off_and_older_baseline_do_not_read_receipts(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for request in ({'proot_acceleration':False,'performance_trial':'none'},
+                   {'proot_acceleration':False,'performance_trial':'syscall_filter'},
+                   {'performance_trial':'none'}):
+    s,_=self.syscall_trial_fixture(folder);s.req.update(request)
+    (folder/'proot-acceleration.json').write_text('malformed')
+    with patch.object(module.os,'open',side_effect=AssertionError('Disabled feature read its receipt')):
+     s.configure_runtime_acceleration()
+     report=s.status.call_args.kwargs['runtime_acceleration']
+     self.assertEqual(report,{'requested':False,'active':'none'})
+     s.configure_performance_trial()
+    self.assertEqual(s.status.call_args.kwargs['performance_trial']['active'],'none');s.spawn.assert_not_called()
+ def test_runtime_acceleration_declined_host_receipt_keeps_compatibility(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for trial in ('none','one_compiler','cached_dynamic','gpl_fast'):
+    s,receipt=self.syscall_trial_fixture(folder);previous=dict(s.env)
+    s.req.update(proot_acceleration=True,performance_trial=trial)
+    receipt.update(preflight_passed=False,launch_observed=False,mode='compatibility')
+    (folder/'proot-acceleration.json').write_text(json.dumps(receipt))
+    s.configure_runtime_acceleration();report=s.status.call_args.kwargs['runtime_acceleration']
+    self.assertTrue(report['requested']);self.assertEqual(report['active'],'none')
+    self.assertNotIn('launch_blocked',report);self.assertIn('compatibility',report['note'])
+    self.assertEqual(s.env,previous);s.spawn.assert_not_called()
+ def test_runtime_acceleration_supports_legacy_f_and_explicit_feature_wins(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for explicit in (False,True):
+    s,_=self.syscall_trial_fixture(folder)
+    if explicit:s.req['proot_acceleration']=True
+    s.configure_runtime_acceleration();feature=s.status.call_args.kwargs['runtime_acceleration']
+    self.assertTrue(feature['requested']);self.assertEqual(feature['active'],'syscall_filter')
+    s.state['runtime_acceleration']=feature
+    with patch.object(module.os,'open',side_effect=AssertionError('Host receipt read twice')):
+     s.configure_performance_trial()
+    trial=s.status.call_args.kwargs['performance_trial']
+    self.assertEqual(trial['active'],'none' if explicit else 'syscall_filter')
+ def test_runtime_acceleration_fails_closed_for_wrong_trial_or_missing_receipt(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for trial in ('one_compiler','cached_dynamic','gpl_fast','retain_pipelines','lighter_scene'):
+    s,_=self.syscall_trial_fixture(folder);previous=dict(s.env)
+    s.req.update(proot_acceleration=True,performance_trial=trial)
+    with self.assertRaisesRegex(RuntimeError,'disable Runtime syscall filtering'):
+     s.configure_runtime_acceleration()
+    report=s.status.call_args.kwargs['runtime_acceleration']
+    self.assertEqual(report['active'],'syscall_filter');self.assertTrue(report['launch_blocked'])
+    self.assertEqual(s.env,previous);s.spawn.assert_not_called()
+   s,_=self.syscall_trial_fixture(folder);s.req.update(proot_acceleration=True,performance_trial='none')
+   (folder/'proot-acceleration.json').unlink()
+   with self.assertRaisesRegex(RuntimeError,'disable Runtime syscall filtering'):
+    s.configure_runtime_acceleration()
+   report=s.status.call_args.kwargs['runtime_acceleration']
+   self.assertEqual(report['active'],'unconfirmed');self.assertTrue(report['launch_blocked'])
  def test_syscall_trial_requires_host_receipt_and_keeps_graphics_environment(self):
   with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
    folder=pathlib.Path(t)

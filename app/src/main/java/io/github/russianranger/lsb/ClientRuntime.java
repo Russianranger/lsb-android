@@ -232,7 +232,15 @@ final class ClientRuntime {
             if(name.equals("x11-upload-check")||name.equals("vulkan-probe")||name.equals("wineserver")||name.equals("x11-frame-bridge"))Os.chmod(dest.getPath(),0700);
         }
     }
+    static void migrateProvenAcceleration(Context context){
+        android.content.SharedPreferences prefs=context.getSharedPreferences("runtime",0);
+        // F is now a proven default, independent of the experimental selector.
+        // An explicitly disabled acceleration preference must remain disabled.
+        if("syscall_filter".equals(prefs.getString("performance_trial","none")))
+            prefs.edit().putString("performance_trial","none").apply();
+    }
     void applyGraphicsSettings(JSONObject request)throws Exception {
+        migrateProvenAcceleration(context);
         request.put("display_fps",context.getSharedPreferences("runtime",0).getInt("display_fps",30));
         request.put("native_surface",context.getSharedPreferences("runtime",0).getBoolean("native_surface",true));
         request.put("shm_upload",context.getSharedPreferences("runtime",0).getBoolean("shm_upload",true));
@@ -241,6 +249,7 @@ final class ClientRuntime {
         request.put("dxvk_two_compilers",context.getSharedPreferences("runtime",0).getBoolean("dxvk_two_compilers",false));
         request.put("dxvk_staged_buffers",context.getSharedPreferences("runtime",0).getBoolean("dxvk_staged_buffers",false));
         request.put("performance_trial",context.getSharedPreferences("runtime",0).getString("performance_trial","none"));
+        request.put("proot_acceleration",context.getSharedPreferences("runtime",0).getBoolean("proot_acceleration",true));
         request.put("borderless",context.getSharedPreferences("runtime",0).getBoolean("borderless",true));
         request.put("dxvk_hud",context.getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));
         request.put("dxvk_diagnostics",context.getSharedPreferences("runtime",0).getBoolean("dxvk_diagnostics",false));

@@ -1,3 +1,31 @@
+# 0.5.28: Trial F promoted to a proven default
+
+User: “Trial F - thats the one. Its perfect. Integrate that as a default function.”
+Fresh exports (11)(1) and (12) confirm actual filtering on device, successful exit
+and smoother display delivery. [Evidence](thor-syscall-filter-results-0528.md).
+Do not ask for another Baseline/D/E/F matrix; normal play confirms this update.
+
+Runtime syscall filtering now lives in **Proven fixes**, default on for the
+validated FEX/Turnip26/DXVK2.7.1/two-worker launch profile, past experiments off.
+Saved F selection migrates to Baseline automatically; new explicit off is preserved.
+**Use tested shader settings** enables filtering and two workers and resets trials.
+A/D/E remain experimental, temporarily decline filtering to avoid new combinations.
+B/C stay retired. Other saved renderer/display settings are preserved.
+
+Host preflight, actual-launch activation proof, bounded private marker drain,
+receipt validation, fail-stop on inconsistent activation and compatibility fallback
+are unchanged. Guest status now separates runtime_acceleration from performance_trial.
+Recovery for a filter activation failure is to turn off Runtime syscall filtering
+in Proven fixes, not merely choose Baseline (which now enables the proven default).
+No driver/renderer/FEX/PRoot/presentation binary change.
+
+Prior .27 full CI now passes in BOTH push36054096976 and PR36054103253: real
+PRoot enabled-filter preflight+FEX graphics/audio/input/stop proof and A/D/E384pixels
+confirmed. Previous pending statuses below are historical. Build .28/code44 and
+its delivery verification are in progress; final APK/CI record will follow.
+
+---
+
 # 0.5.27: separate D/E/F optimization candidates
 
 User asks for more potential optimizations and implementation. Added D CPU-cached

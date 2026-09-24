@@ -70,7 +70,9 @@ public class FantasyTilesTest {
             assertTrue(((CheckBox)text(tiles,"DXVK 2.7.1")).isChecked());
             assertNull(text(tiles,"Turnip system-memory rendering"));
             assertFalse(((CheckBox)text(tiles,"Two shader compiler workers")).isChecked());
+            assertTrue(((CheckBox)text(tiles,"Runtime syscall filtering")).isChecked());
             capture(tiles,"proven-fixes-wide.png");
+            layout(tiles,400);capture(tiles,"proven-fixes-narrow.png");
             text(tiles,"◇  Export support ZIP").performClick();
             android.content.Intent export=org.robolectric.Shadows.shadowOf(activity.get()).getNextStartedActivityForResult().intent;
             assertEquals(android.content.Intent.ACTION_CREATE_DOCUMENT,export.getAction());assertEquals("application/zip",export.getType());assertEquals("lsb-support.zip",export.getStringExtra(android.content.Intent.EXTRA_TITLE));
@@ -90,25 +92,29 @@ public class FantasyTilesTest {
             capture(tiles,"past-experiments-wide.png");
             text(tiles,"◇  Optimization trials").performClick();layout(tiles,920);
             Spinner trial=findTrial(tiles);assertNotNull(trial);assertEquals(0,trial.getSelectedItemPosition());
-            String[] values={"none","one_compiler","cached_dynamic","gpl_fast","syscall_filter"};assertEquals(values.length,trial.getCount());
+            String[] values={"none","one_compiler","cached_dynamic","gpl_fast"};assertEquals(values.length,trial.getCount());
             for(int i=1;i<values.length;i++){
                 trial.setSelection(i);org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
                 assertEquals(values[i],prefs.getString("performance_trial","none"));
                 org.json.JSONObject selected=new org.json.JSONObject();runtime.applyGraphicsSettings(selected);assertEquals(values[i],selected.getString("performance_trial"));
-                assertNotNull(text(tiles,new String[]{"","A uses one compiler worker.","D places dynamic geometry buffers","E skips background compilation","F enables syscall filtering"}[i]));
+                assertNotNull(text(tiles,new String[]{"","A uses one compiler worker.","D places dynamic geometry buffers","E skips background compilation"}[i]));
                 layout(tiles,920);capture(tiles,"optimization-trial-"+values[i]+"-wide.png");
                 layout(tiles,400);capture(tiles,"optimization-trial-"+values[i]+"-narrow.png");
             }
             layout(tiles,920);capture(tiles,"optimization-trials-wide.png");layout(tiles,400);capture(tiles,"optimization-trials-narrow.png");
             text(tiles,"◇  Proven fixes").performClick();layout(tiles,920);
+            CheckBox acceleration=(CheckBox)text(tiles,"Runtime syscall filtering");
+            acceleration.performClick();assertFalse(prefs.getBoolean("proot_acceleration",true));
+            org.json.JSONObject disabled=new org.json.JSONObject();runtime.applyGraphicsSettings(disabled);assertFalse(disabled.getBoolean("proot_acceleration"));
             text(tiles,"Use tested shader settings").performClick();
+            assertTrue(acceleration.isChecked());assertTrue(prefs.getBoolean("proot_acceleration",false));
             assertSame("Applying a profile must preserve the current form",tiles,f.get(activity.get()));layout(tiles,920);
             assertTrue(prefs.getBoolean("dxvk_two_compilers",false));assertEquals("none",prefs.getString("performance_trial",""));assertEquals(0,trial.getSelectedItemPosition());
             assertFalse(prefs.getBoolean("turnip_sysmem",true));assertFalse(prefs.getBoolean("dxvk_staged_buffers",true));
             assertFalse(prefs.getBoolean("borderless",true));assertTrue(prefs.getBoolean("fex",false));
             assertTrue(prefs.getBoolean("fex_x87",false));assertTrue(prefs.getBoolean("dxvk_271",false));assertEquals(60,prefs.getInt("display_fps",0));
             org.json.JSONObject request=new org.json.JSONObject();runtime.applyGraphicsSettings(request);
-            assertTrue(request.getBoolean("dxvk_two_compilers"));assertFalse(request.getBoolean("turnip_sysmem"));assertFalse(request.getBoolean("dxvk_staged_buffers"));
+            assertTrue(request.getBoolean("proot_acceleration"));assertTrue(request.getBoolean("dxvk_two_compilers"));assertFalse(request.getBoolean("turnip_sysmem"));assertFalse(request.getBoolean("dxvk_staged_buffers"));
             assertTrue(((CheckBox)text(tiles,"Two shader compiler workers")).isChecked());
             capture(tiles,"tested-shader-settings-wide.png");
             android.widget.LinearLayout page=(android.widget.LinearLayout)((android.view.ViewGroup)activity.get().findViewById(android.R.id.content)).getChildAt(0);
@@ -117,6 +123,24 @@ public class FantasyTilesTest {
             for(android.widget.Button tab:tabs)assertTrue(tab.getBackground() instanceof android.graphics.drawable.RippleDrawable);
             page.measure(View.MeasureSpec.makeMeasureSpec(920,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(620,View.MeasureSpec.EXACTLY));page.layout(0,0,920,620);capture(page,"launcher-tabs-wide.png");
         }finally{activity.pause().stop().destroy();Files.deleteIfExists(state.toPath());prefs.edit().clear().commit();instance.set(null,null);}
+    }
+    @Test public void provenFilteringDefaultsOnMigratesFAndPreservesExplicitOptOut()throws Exception{
+        Context ctx=RuntimeEnvironment.getApplication();android.content.SharedPreferences prefs=ctx.getSharedPreferences("runtime",0);
+        Field instance=ClientRuntime.class.getDeclaredField("instance");instance.setAccessible(true);instance.set(null,null);
+        prefs.edit().clear().commit();ClientRuntime runtime=ClientRuntime.get(ctx);
+        try{
+            org.json.JSONObject request=new org.json.JSONObject();runtime.applyGraphicsSettings(request);
+            assertTrue(request.getBoolean("proot_acceleration"));assertEquals("none",request.getString("performance_trial"));
+            prefs.edit().putString("performance_trial","syscall_filter").putBoolean("dxvk_two_compilers",true).putBoolean("borderless",false).commit();
+            runtime.applyGraphicsSettings(request);
+            assertEquals("none",prefs.getString("performance_trial",""));assertEquals("none",request.getString("performance_trial"));
+            assertTrue(request.getBoolean("proot_acceleration"));assertTrue(request.getBoolean("dxvk_two_compilers"));assertFalse(request.getBoolean("borderless"));
+            prefs.edit().putBoolean("proot_acceleration",false).putString("performance_trial","syscall_filter").commit();
+            ClientRuntime.migrateProvenAcceleration(ctx);runtime.applyGraphicsSettings(request);
+            assertFalse(request.getBoolean("proot_acceleration"));assertEquals("none",request.getString("performance_trial"));
+            prefs.edit().putString("performance_trial","cached_dynamic").commit();runtime.applyGraphicsSettings(request);
+            assertEquals("cached_dynamic",request.getString("performance_trial"));assertFalse(request.getBoolean("proot_acceleration"));
+        }finally{prefs.edit().clear().commit();instance.set(null,null);}
     }
     private static Spinner findTrial(View v){
         if(v instanceof Spinner&&"Performance trial".contentEquals(v.getContentDescription()))return (Spinner)v;

@@ -48,12 +48,12 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87','performance_trial'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87','performance_trial','proot_acceleration'}:raise ValueError('Unexpected runtime request field')
     if req.get('performance_trial','none') not in ('none','one_compiler','cached_dynamic','gpl_fast','syscall_filter','retain_pipelines','lighter_scene'):raise ValueError('Unsupported performance trial')
     if req.get('engine','box64') not in ('box64','fex'):raise ValueError('Unsupported runtime engine')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
     if req.get('dxvk_version','2.5.3') not in ('2.5.3','2.7.1'):raise ValueError('Unsupported DXVK version')
-    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','fex_x87'):
+    for key in ('gamepad','dxvk_hud','dxvk_diagnostics','native_surface','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','fex_x87','proot_acceleration'):
         if key in req and not isinstance(req[key],bool):raise ValueError('Unsupported '+key+' setting')
     if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
     if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','windowed540','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
@@ -327,6 +327,15 @@ class Supervisor:
             report['fallback']=str(error)
         self.status(graphics_tuning=report)
 
+    def configure_runtime_acceleration(self):
+        # New app requests send the saved proven-feature toggle explicitly.
+        # Older requests only opt in through trial F; an explicit off always wins.
+        requested=self.req.get('proot_acceleration',self.req.get('performance_trial')=='syscall_filter')
+        report={'requested':requested,'active':'none'}
+        if not requested:
+            self.status(runtime_acceleration=report);return
+        self.configure_syscall_trial(report,status_key='runtime_acceleration')
+
     def configure_performance_trial(self):
         # Run after the existing profile passed. A failed trial restores that
         # exact environment, including the confirmed two-worker setting.
@@ -339,6 +348,13 @@ class Supervisor:
         if trial=='none':
             self.status(performance_trial=report);return
         if trial=='syscall_filter':
+            if 'proot_acceleration' in self.req:
+                report['note']='Syscall filtering is controlled by the proven runtime acceleration setting'
+                self.status(performance_trial=report);return
+            # Preserve legacy exports without reading the same host receipt twice.
+            if 'runtime_acceleration' in self.state:
+                report.update({key:value for key,value in self.state['runtime_acceleration'].items() if key!='requested'})
+                self.status(performance_trial=report);return
             self.configure_syscall_trial(report);return
         if (self.req['renderer']=='software' or self.state.get('dxvk_selected')!='2.7.1'
                 or not baseline.get('dxvk_two_compilers')
@@ -393,7 +409,7 @@ class Supervisor:
             report['fallback']=str(error)
         self.status(performance_trial=report)
 
-    def configure_syscall_trial(self,report):
+    def configure_syscall_trial(self,report,status_key='performance_trial'):
         # PRoot's mode is fixed in the parent process. Read the host's session-
         # matched receipt; an unsafe baseline must stop this launch, never claim
         # an in-process fallback that cannot actually disable syscall filtering.
@@ -424,26 +440,27 @@ class Supervisor:
                 if receipt['launch_observed'] or receipt['mode']!='compatibility':
                     raise ValueError('Host syscall-filter receipt has inconsistent activation state')
                 report['note']='Host preflight declined syscall filtering; compatibility mode retained'
-                self.status(performance_trial=report);return
+                self.status(**{status_key:report});return
             if receipt['mode']!='syscall_filter':
                 raise ValueError('Host syscall-filter receipt has inconsistent launch mode')
         except (OSError,ValueError,TypeError,KeyError) as error:
             report.update(active='unconfirmed',launch_blocked=True,note=str(error))
-            self.status(performance_trial=report)
-            raise RuntimeError('Syscall-filter activation unconfirmed; select Baseline and relaunch') from error
+            self.status(**{status_key:report})
+            raise RuntimeError('Syscall-filter activation unconfirmed; disable Runtime syscall filtering and relaunch') from error
         report.update(active='syscall_filter',host_preflight='passed',host_launch_observed=True,
                       option='PRoot syscall filtering',
                       scope='Host syscall translation; graphics configuration unchanged')
         baseline=self.state.get('graphics_tuning',{}).get('active',{})
         if (self.req.get('action')!='launch' or self.engine!='fex'
+                or self.req.get('performance_trial','none') not in ('none','syscall_filter')
                 or self.req['renderer']=='software' or self.state.get('dxvk_selected')!='2.7.1'
                 or not baseline.get('dxvk_two_compilers')
                 or baseline.get('turnip_sysmem') or baseline.get('dxvk_staged_buffers')):
-            report.update(launch_blocked=True,note='Active host filtering requires the confirmed FEX/DXVK 2.7.1 two-worker baseline and past experiments off')
-            self.status(performance_trial=report)
-            raise RuntimeError('Syscall-filter baseline changed; select Baseline and relaunch')
+            report.update(launch_blocked=True,note='Active host filtering requires the confirmed FEX/DXVK 2.7.1 two-worker baseline, no graphics trial and past experiments off')
+            self.status(**{status_key:report})
+            raise RuntimeError('Syscall-filter baseline changed; disable Runtime syscall filtering and relaunch')
         report.update(compiler_threads=2,check='Host preflight and actual launch activation confirmed; two-worker graphics baseline retained')
-        self.status(performance_trial=report)
+        self.status(**{status_key:report})
 
     def check_graphics_pixels(self):
         # Standalone Windows checks only: finite readbacks must not add frame
@@ -536,6 +553,7 @@ class Supervisor:
             self.configure_upload()
             self.select_dxvk(bundle)
         self.configure_graphics_tuning()
+        self.configure_runtime_acceleration()
         self.configure_performance_trial()
         if self.req.get('action')=='gamepad-config':
             from client_setup import validate_manifest,client_path,windows_path

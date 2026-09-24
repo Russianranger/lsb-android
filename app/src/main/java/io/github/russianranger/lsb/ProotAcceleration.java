@@ -6,7 +6,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import org.json.JSONObject;
 
-/** Opt-in syscall filtering. Raw wrapper output is discarded, including on failure. */
+/** Validated syscall filtering. Raw wrapper output is discarded, including on failure. */
 final class ProotAcceleration {
     static final String MARKER="TRASC PRoot: seccomp acceleration observed";
     static final String CHECK="LSB_PROOT_PREFLIGHT_V1 PASS";
@@ -27,7 +27,9 @@ final class ProotAcceleration {
         this.session=session;this.run=run;this.logs=logs;this.starter=starter;this.timeoutMs=timeoutMs;
     }
     static boolean eligible(JSONObject r){
-        return "launch".equals(r.optString("action"))&&"fex".equals(r.optString("engine"))
+        String trial=r.optString("performance_trial","none");
+        return ("none".equals(trial)||"syscall_filter".equals(trial))
+            &&"launch".equals(r.optString("action"))&&"fex".equals(r.optString("engine"))
             &&"turnip26".equals(r.optString("renderer"))&&"2.7.1".equals(r.optString("dxvk_version"))
             &&r.optBoolean("dxvk_two_compilers")&&!r.optBoolean("turnip_sysmem")&&!r.optBoolean("dxvk_staged_buffers");
     }
@@ -44,7 +46,7 @@ final class ProotAcceleration {
         else{builder.environment().put("PROOT_NO_SECCOMP","1");builder.environment().remove("TRASC_PROOT_REPORT");}
     }
     boolean prepare(ProcessBuilder main,JSONObject request,Check stop,Cleanup cleanup)throws Exception{
-        configure(main,false);requested="syscall_filter".equals(request.optString("performance_trial"));
+        configure(main,false);requested=request.optBoolean("proot_acceleration","syscall_filter".equals(request.optString("performance_trial")));
         if(!requested)return false;
         if(!eligible(request)){reason="requires_tested_fex_turnip26_two_worker_profile";save();return false;}
         reason="checking";save();stop.check();
@@ -98,7 +100,7 @@ final class ProotAcceleration {
         try{
             while(!launch.marker){
                 stop.check();
-                if(!child.isAlive()||launch.failed||System.nanoTime()>=deadline){reason="launch_filter_not_observed";save();throw new IOException("Syscall filtering was not confirmed; return to Baseline and export support");}
+                if(!child.isAlive()||launch.failed||System.nanoTime()>=deadline){reason="launch_filter_not_observed";save();throw new IOException("Syscall filtering was not confirmed; turn off Runtime syscall filtering in Proven fixes and export support");}
                 Thread.sleep(10);
             }
             stop.check();

@@ -28,7 +28,7 @@ public class ProotAccelerationTest {
         public void destroy(){alive=false;destroyed=true;exit=143;}
         public Process destroyForcibly(){destroy();return this;}
     }
-    private JSONObject request()throws Exception{return new JSONObject().put("performance_trial","syscall_filter").put("action","launch")
+    private JSONObject request()throws Exception{return new JSONObject().put("performance_trial","none").put("proot_acceleration",true).put("action","launch")
         .put("engine","fex").put("renderer","turnip26").put("dxvk_version","2.7.1").put("dxvk_two_compilers",true);}
     private ProcessBuilder command(){return new ProcessBuilder("proot","--sysvipc","--kill-on-exit","/usr/bin/python3","/opt/lsb/supervisor.py");}
     private ProotAcceleration helper(Child child,File dir,java.util.List<ProcessBuilder> launched)throws Exception{
@@ -55,6 +55,9 @@ public class ProotAccelerationTest {
         JSONObject saved=new JSONObject(new String(Files.readAllBytes(new File(dir,"proot-acceleration.json").toPath()),"UTF-8"));
         assertEquals(ID,saved.getString("session_id"));assertEquals("syscall_filter",saved.getString("mode"));assertTrue(saved.getBoolean("launch_observed"));
         assertFalse(saved.toString().contains("secret"));helper.close();
+        JSONObject legacy=request().put("performance_trial","syscall_filter");legacy.remove("proot_acceleration");
+        helper=helper(new Child(ProotAcceleration.MARKER+"\n"+ProotAcceleration.CHECK+"\n",false),Files.createTempDirectory("proot-legacy").toFile(),new ArrayList<>());
+        assertTrue(helper.prepare(command(),legacy,()->{},()->{}));assertEquals("syscall_filter",helper.receipt().getString("requested"));
     }
     @Test public void missingActivationFailureAndTimeoutKeepCompatibility()throws Exception{
         for(int mode=0;mode<3;mode++){
@@ -80,11 +83,15 @@ public class ProotAccelerationTest {
     }
     @Test public void unsupportedOrUnselectedTrialNeverSpawnsProbe()throws Exception{
         List<ProcessBuilder> launched=new ArrayList<>();Child child=new Child("",false);
-        for(String trial:new String[]{"none","one_compiler","syscall_filter"}){
+        for(String trial:new String[]{"none","syscall_filter","one_compiler","cached_dynamic","gpl_fast"}){
             ProotAcceleration helper=helper(child,Files.createTempDirectory("proot-declined").toFile(),launched);ProcessBuilder main=command();
-            JSONObject request=request().put("performance_trial",trial).put("turnip_sysmem",true);
+            boolean experiment=!"none".equals(trial)&&!"syscall_filter".equals(trial);
+            JSONObject request=request().put("performance_trial",trial).put("proot_acceleration",experiment);
             assertFalse(helper.prepare(main,request,()->{},()->{fail("No probe exists");}));assertEquals("1",main.environment().get("PROOT_NO_SECCOMP"));
+            assertEquals(experiment?"syscall_filter":"none",helper.receipt().getString("requested"));
         }
+        ProotAcceleration helper=helper(child,Files.createTempDirectory("proot-past-experiment").toFile(),launched);
+        assertFalse(helper.prepare(command(),request().put("turnip_sysmem",true),()->{},()->{fail("No probe exists");}));
         assertTrue(launched.isEmpty());
     }
     @Test public void descendantsAreReapedBeforeClosingBlockedOutput()throws Exception{
