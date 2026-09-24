@@ -32,7 +32,8 @@ public final class MainActivity extends Activity {
     private ProgressBar progress;
     private Button cancel;
     private EditText host;
-    private EditText loginPassword;
+    private EditText loginPassword,serverPassword,serverPasswordConfirm;
+    private boolean serverAliveUi;
     private FantasyTiles tiles;
     private final Map<String,String> expandedSections=new HashMap<>();
     private Spinner region, playOnline;
@@ -50,6 +51,7 @@ public final class MainActivity extends Activity {
             }
             if(runtimeStatus!=null)runtimeStatus.setText(ClientRuntime.get(MainActivity.this).status);
             if(serverStatus!=null)serverStatus.setText(ServerRuntime.get(MainActivity.this).status);
+            if(tab.equals("Server")&&serverAliveUi!=ServerRuntime.get(MainActivity.this).alive())draw();
             if (generation != WorkService.generation) { generation = WorkService.generation; draw(); }
             handler.postDelayed(this, 600);
         }
@@ -78,7 +80,8 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume() { super.onResume(); if(tab.equals("Runtime")||tab.equals("Client"))draw(); Fullscreen.apply(this);handler.post(poll); }
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus)Fullscreen.apply(this);}
-    @Override protected void onPause() { if(loginPassword!=null)loginPassword.setText("");handler.removeCallbacks(poll); super.onPause(); }
+    @Override protected void onPause() { if(loginPassword!=null)loginPassword.setText("");clearServerPasswords();handler.removeCallbacks(poll); super.onPause(); }
+    private void clearServerPasswords(){if(serverPassword!=null)serverPassword.setText("");if(serverPasswordConfirm!=null)serverPasswordConfirm.setText("");}
     @Override public void onSaveInstanceState(Bundle out) { out.putString("tab", tab); out.putString("pending", pending); out.putBoolean("preserve", preserveOnImport); Bundle sections=new Bundle();for(Map.Entry<String,String> entry:expandedSections.entrySet())sections.putString(entry.getKey(),entry.getValue());out.putBundle("sections",sections); super.onSaveInstanceState(out); }
     static File storage(Context ctx) throws IOException {
         File root = ctx.getExternalFilesDir(null); if (root == null) root = ctx.getFilesDir();
@@ -118,7 +121,7 @@ public final class MainActivity extends Activity {
         b.setOnClickListener(v -> { if (WorkService.busy) { toast("Wait for the current operation, or cancel it."); return; } try { action.run(); } catch (Exception e) { error(e); } }); return b;
     }
     private void draw() {
-        runtimeStatus=null;serverStatus=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;
+        runtimeStatus=null;serverStatus=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;clearServerPasswords();serverPassword=null;serverPasswordConfirm=null;
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(12), dp(6), dp(12), dp(6));
         FrameLayout hero=new FrameLayout(this);hero.setBackground(background(Color.rgb(15,35,58)));
         try(InputStream in=getAssets().open("art/"+(tab.equals("Server")?"server-background.png":"client-background.png"))){ImageView art=new ImageView(this);art.setImageDrawable(android.graphics.drawable.Drawable.createFromStream(in,null));art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));}catch(IOException ignored){}
@@ -441,40 +444,67 @@ public final class MainActivity extends Activity {
         pad.addView(label("The sticks provide X/Y and Z/Rz axes. Triggers default to buttons 11 and 12. Held inputs are released when the display loses focus. Set movement, camera and actions in FFXI’s gamepad configuration after testing detection.",13,MUTED));
     }
     private void serverPage() throws Exception {
-        ServerRuntime sr=ServerRuntime.get(this);boolean running=sr.alive();
-        LinearLayout live=card("Your LandSandBoat server");serverStatus=label(sr.status,15,ACCENT);live.addView(serverStatus);
+        ServerRuntime sr=ServerRuntime.get(this);boolean running=sr.alive();serverAliveUi=running;
+        boolean idle=!running&&!ClientRuntime.get(this).alive();
+        LinearLayout live=featuredCard("Your LandSandBoat server");serverStatus=label(sr.status,15,ACCENT);live.addView(serverStatus);
         JSONObject active=sr.deployment();
-        if(active.has("generation"))live.addView(label("Active server · "+active.optInt("accounts")+" accounts · "+active.optInt("characters")+" characters\nExpected client: "+active.optString("expected_client"),15,TEXT));
-        else live.addView(label("First deploy the server folder and SQL backup that already work with this client. Client files and xiloader are never updated by these server actions.",15,TEXT));
+        if(active.has("generation"))live.addView(label("Last saved count · "+active.optInt("accounts")+" accounts · "+active.optInt("characters")+" characters\nExpected client: "+active.optString("expected_client"),15,TEXT));
+        else live.addView(label("Start with the server ZIP and database backup that match your working client and xiloader. Install the server runtime, import both files, then deploy that revision.",15,TEXT));
         button(live,"Start managed server",()->startForegroundService(new Intent(this,ServerService.class))).setEnabled(sr.installed()&&active.has("generation")&&!running);
         button(live,"Stop managed server",()->startForegroundService(new Intent(this,ServerService.class).setAction("stop"))).setEnabled(running);
-        live.addView(label("Stop the Termux server before starting this one: they use the same login/map ports. The managed server can keep running while you play. Use 127.0.0.1 in the Client tab.",13,MUTED));
+        live.addView(label("Stop the Termux server before starting this one: they use the same login/map ports. Once running, open the Client tab and connect to 127.0.0.1. Stop the client and managed server before account or database maintenance.",13,MUTED));
+        supportTile();
         LinearLayout existing=card("Import your working server");
-        button(existing,sr.installed()?"Server runtime installed":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(!running&&!sr.installed());
-        button(existing,"Export Termux packaging helper",()->create("server-helper","export-existing-lsb.py"));
-        existing.addView(label("Run the helper inside your existing server’s Linux distro: python3 export-existing-lsb.py /path/to/server. It creates the server ZIP and SQL.gz without updating them.",13,MUTED));
-        button(existing,"Import existing server folder ZIP",()->pick("source")).setEnabled(!running);
-        button(existing,"Import existing database (.sql / .sql.gz)",()->pick("server-sql")).setEnabled(!running);
-        existing.addView(label(sr.hasDatabaseImport()?"SQL backup imported and ready for deployment.":"Use a full SQL dump of your game database, including accounts and characters. Raw MariaDB data folders are not imported.",13,MUTED));
-        EditText database=new EditText(this);database.setTextColor(TEXT);database.setSingleLine(true);database.setHint("Original database name");database.setText(getSharedPreferences("server",0).getString("database","xidb"));existing.addView(database);
+        button(existing,sr.toolsCurrent()?"Server runtime ready":sr.installed()?"Update server account tools":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(idle&&!sr.toolsCurrent());
+        button(existing,"Import existing server folder ZIP",()->pick("source")).setEnabled(idle);
+        File report=new File(storage(this),"server/current/source-report.txt");
+        if(report.exists())existing.addView(label(FilesEx.read(report,8192),13,MUTED));
+        else existing.addView(label("Choose the complete matching server folder, including settings, scripts, sql, tools, modules, meshes and source. Compiled Linux ARM64 binaries can be reused after checks.",13,MUTED));
+        button(existing,"Import existing database (.sql / .sql.gz)",()->pick("server-sql")).setEnabled(idle);
+        existing.addView(label(sr.hasDatabaseImport()?"SQL backup staged. Your active database has not changed.":"A server ZIP alone usually does not contain live accounts or characters. Import a full SQL database dump as well; raw MariaDB data folders are not supported.",13,MUTED));
+        EditText database=loginField(existing,"Original database name",getSharedPreferences("server",0).getString("database","xidb"),android.text.InputType.TYPE_CLASS_TEXT);database.setContentDescription("Server database name");
         CheckBox local=new CheckBox(this);local.setText("Configure all zones for one local map process");local.setTextColor(TEXT);local.setChecked(getSharedPreferences("server",0).getBoolean("local_zones",true));existing.addView(local);
         Runnable save=()->{String name=database.getText().toString().trim();if(!name.matches("[A-Za-z][A-Za-z0-9_]{0,47}"))throw new IllegalArgumentException("Enter a database name using letters, digits and underscores");getSharedPreferences("server",0).edit().putString("database",name).putBoolean("local_zones",local.isChecked()).apply();};
-        button(existing,"Deploy imported Linux ARM64 server + database",()->{save.run();run("Deploying existing server",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",false,p));}).setEnabled(sr.installed()&&sr.hasDatabaseImport()&&!running);
-        button(existing,"Build imported source and deploy database",()->{save.run();run("Building existing server revision",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",true,p));}).setEnabled(sr.installed()&&sr.hasDatabaseImport()&&!running);
-        existing.addView(label("Import the complete server folder: settings, scripts, modules, sql, tools, meshes and matching binaries/source. Linux ARM64 binaries may be reused; Windows or Termux-native binaries must be rebuilt from the same source. Deployment stages an independent database before switching.",13,MUTED));
-        LinearLayout source=card("Source and database updates");
-        File report=new File(storage(this),"server/current/source-report.txt");if(report.exists())source.addView(label(FilesEx.read(report,8192),13,MUTED));
-        EditText repo=new EditText(this);repo.setTextColor(TEXT);repo.setSingleLine(true);repo.setText(getSharedPreferences("server",0).getString("repository","https://github.com/Russianranger/LSB-server"));source.addView(repo);
-        EditText ref=new EditText(this);ref.setTextColor(TEXT);ref.setSingleLine(true);ref.setHint("Branch, tag or exact commit");ref.setText(getSharedPreferences("server",0).getString("ref","base"));source.addView(ref);
-        button(source,"Fetch selected source revision",()->{String repository=repo.getText().toString().trim(),revision=ref.getText().toString().trim();getSharedPreferences("server",0).edit().putString("repository",repository).putString("ref",revision).apply();run("Fetching source snapshot",(ctx,p)->SourceImport.download(new File(storage(ctx),"server"),repository,revision,p));}).setEnabled(!running);
-        button(source,"Inspect selected source",()->run("Inspecting source",(ctx,p)->ServerRuntime.get(ctx).perform("inspect",false,p))).setEnabled(sr.installed()&&!running);
-        button(source,"Build and apply source + database update",()->confirm("Stage a server update","First verify the existing server deployment works. This builds the selected source and runs its database migrations on a separate copy. Your current server/database pair stays available for rollback. Client and loader versions must be compatible with the selected revision.",()->run("Staging server and database update",(ctx,p)->ServerRuntime.get(ctx).perform("update",true,p)))).setEnabled(sr.installed()&&active.has("generation")&&!running);
-        source.addView(label("Fetching source only changes the selected snapshot. It never updates the running deployment. Updates keep a complete previous server/database pair; rolling back also rolls player progress back to that copy.",13,MUTED));
-        LinearLayout recovery=card("Server backups and logs");
-        button(recovery,"Export full database backup",()->create("server-db","lsb-database.sql.gz")).setEnabled(active.has("generation")&&!running);
-        button(recovery,"Restore previous server + database",()->confirm("Restore previous deployment","This switches both server files and player data to the retained previous generation. Progress made after that snapshot remains in the other generation.",()->run("Switching server generation",(ctx,p)->ServerRuntime.get(ctx).perform("rollback",false,p)))).setEnabled(active.has("generation")&&!running);
-        button(recovery,"View server operation log",()->{try{showText("Server log",sr.operationLog());}catch(Exception e){error(e);}});
-        button(recovery,"Probe saved server address",()->run("Checking server TCP ports",(ctx,p)->{String address=store(ctx).config().host;StringBuilder result=new StringBuilder("TCP reachability only: "+address+"\n");for(int port:new int[]{54231,54230,54001})try(Socket socket=new Socket()){socket.connect(new InetSocketAddress(address,port),2500);result.append(port).append(": reachable\n");}catch(IOException e){result.append(port).append(": unavailable\n");}FilesEx.text(new File(ctx.getFilesDir(),"server-probe.txt"),result.toString());return result.toString();}));
+        button(existing,"Deploy matching server + database",()->{save.run();run("Deploying existing server",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",false,p));}).setEnabled(sr.installed()&&report.exists()&&sr.hasDatabaseImport()&&idle);
+        button(existing,"Build imported revision and deploy",()->{save.run();run("Building existing server revision",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",true,p));}).setEnabled(sr.installed()&&report.exists()&&sr.hasDatabaseImport()&&idle);
+        existing.addView(label("Try the matching compiled server first. If its binaries need rebuilding, build this same imported revision. Deployment stages an independent database and retains the previous server/database pair.",13,MUTED));
+        button(existing,"Export Termux packaging helper",()->create("server-helper","export-existing-lsb.py"));
+        existing.addView(label("If you still need the SQL dump, run the helper inside your existing server's Linux distro: python3 export-existing-lsb.py /path/to/server. It creates a server ZIP and SQL.gz without updating them.",13,MUTED));
+        LinearLayout accounts=card("Create account");
+        accounts.addView(label("Create a normal player account in the deployed database. Existing accounts and characters are preserved. Stop the client and server first.",15,TEXT));
+        EditText username=loginField(accounts,"Account name","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);username.setContentDescription("New server account name");
+        EditText password=loginField(accounts,"Password","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);password.setContentDescription("New server account password");serverPassword=password;
+        EditText confirmation=loginField(accounts,"Confirm password","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);confirmation.setContentDescription("Confirm server account password");serverPasswordConfirm=confirmation;
+        accounts.addView(label("Account: 1–16 printable ASCII characters. Password: 1–32. Passwords are used once, never saved in launcher settings or support logs. Account creation checks the imported server's supported login format.",13,MUTED));
+        button(accounts,"Create player account",()->{
+            if(!password.getText().toString().equals(confirmation.getText().toString()))throw new IllegalArgumentException("The passwords do not match");
+            final ServerAccountRequest credentials=new ServerAccountRequest(username.getText().toString(),password.getText().toString());
+            password.setText("");confirmation.setText("");
+            run("Creating player account",new WorkService.Job(){
+                public String run(Context context,SafeZip.Progress progress)throws Exception{return ServerRuntime.get(context).createAccount(credentials,progress);}
+                public void close(){credentials.close();}
+            });
+        }).setEnabled(sr.toolsCurrent()&&active.has("generation")&&idle);
+        if(!active.has("generation"))accounts.addView(label("Deploy your matching server and database first.",13,MUTED));
+        else if(!sr.toolsCurrent())accounts.addView(label("Update server account tools under Import your working server first.",13,MUTED));
+        LinearLayout recovery=card("Database backup & restore");
+        recovery.addView(label("Full database backups include accounts, characters and world data. Keep an exported copy outside the app before making changes.",15,TEXT));
+        button(recovery,"Export full database backup",()->create("server-db","lsb-database.sql.gz")).setEnabled(active.has("generation")&&idle);
+        button(recovery,"Import database backup (.sql / .sql.gz)",()->pick("server-sql")).setEnabled(idle);
+        recovery.addView(label(sr.hasDatabaseImport()?"Imported SQL is staged and ready to restore.":"Import an SQL or SQL.gz backup to enable restore.",13,MUTED));
+        button(recovery,"Restore imported database",()->confirm("Restore imported database","This stages the imported backup with the currently deployed server files. It does not fetch source or run database updates. Accounts and character progress will become those in the backup; the current server/database pair remains available for rollback.",()->run("Restoring database backup",(ctx,p)->ServerRuntime.get(ctx).perform("restore-db",false,p)))).setEnabled(sr.installed()&&active.has("generation")&&sr.hasDatabaseImport()&&idle);
+        button(recovery,"Restore previous server + database",()->confirm("Restore previous deployment","This switches both server files and player data to the retained previous generation. Progress made after that snapshot remains in the other generation.",()->run("Switching server generation",(ctx,p)->ServerRuntime.get(ctx).perform("rollback",false,p)))).setEnabled(active.has("generation")&&idle);
+        LinearLayout source=card("Source updates · later");
+        source.addView(label("First verify your matching imported server. Later, choose an upstream revision here and build it. Newer source may require a matching client and xiloader; nothing updates automatically.",15,TEXT));
+        EditText repo=loginField(source,"GitHub repository",getSharedPreferences("server",0).getString("repository","https://github.com/LandSandBoat/server"),android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        EditText ref=loginField(source,"Branch, tag or exact commit",getSharedPreferences("server",0).getString("ref","base"),android.text.InputType.TYPE_CLASS_TEXT);
+        button(source,"Fetch selected source revision",()->{String repository=repo.getText().toString().trim(),revision=ref.getText().toString().trim();getSharedPreferences("server",0).edit().putString("repository",repository).putString("ref",revision).apply();run("Fetching source snapshot",(ctx,p)->SourceImport.download(new File(storage(ctx),"server"),repository,revision,p));}).setEnabled(idle);
+        button(source,"Inspect selected source",()->run("Inspecting source",(ctx,p)->ServerRuntime.get(ctx).perform("inspect",false,p))).setEnabled(sr.installed()&&report.exists()&&idle);
+        button(source,"Build and apply source + database update",()->confirm("Stage a server update","First verify the existing server deployment works. This builds the selected source and runs its database migrations on a separate copy. Your current server/database pair stays available for rollback. Client and loader versions must be compatible with the selected revision.",()->run("Staging server and database update",(ctx,p)->ServerRuntime.get(ctx).perform("update",true,p)))).setEnabled(sr.installed()&&active.has("generation")&&idle);
+        source.addView(label("Fetching selects a snapshot only. Restoring an imported database always uses the currently deployed server, even if a newer source snapshot has been selected here.",13,MUTED));
+        LinearLayout diagnostics=card("Server logs");
+        button(diagnostics,"View server operation log",()->{try{showText("Server log",sr.operationLog());}catch(Exception e){error(e);}});
+        button(diagnostics,"Probe saved server address",()->run("Checking server TCP ports",(ctx,p)->{String address=store(ctx).config().host;StringBuilder result=new StringBuilder("TCP reachability only: "+address+"\n");for(int port:new int[]{54231,54230,54001})try(Socket socket=new Socket()){socket.connect(new InetSocketAddress(address,port),2500);result.append(port).append(": reachable\n");}catch(IOException e){result.append(port).append(": unavailable\n");}FilesEx.text(new File(ctx.getFilesDir(),"server-probe.txt"),result.toString());return result.toString();}));
     }
     private void diagnosticsPage() throws IOException {
         supportTile();
@@ -546,7 +576,7 @@ public final class MainActivity extends Activity {
             File report = new File(storage(ctx), "server/current/source-report.txt"); if (report.exists()) SafeZip.entry(zip, "source-report.txt", FilesEx.read(report, 8192));
         }
     }
-    private void run(String title, WorkService.Job job) { if(ClientRuntime.get(this).alive()){toast("Stop the runtime before file operations or exports.");return;} if (!WorkService.submit(getApplicationContext(), title, job)) toast("An operation is already running or could not start."); draw(); }
+    private void run(String title, WorkService.Job job) { if(ClientRuntime.get(this).alive()){try{job.close();}catch(Exception ignored){}toast("Stop the runtime before file operations or exports.");return;} if (!WorkService.submit(getApplicationContext(), title, job)) toast("An operation is already running or could not start."); draw(); }
     private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_LONG).show(); }
     private void error(Exception e) { new AlertDialog.Builder(this).setTitle("Unable to continue").setMessage(e.getMessage()).setPositiveButton("OK", null).show(); }
     private void confirm(String title, String message, Runnable action) { new AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton("Cancel", null).setPositiveButton("Continue", (d, w) -> action.run()).show(); }

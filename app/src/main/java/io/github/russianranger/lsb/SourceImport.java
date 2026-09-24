@@ -48,7 +48,10 @@ final class SourceImport {
             SafeZip.extract(in, incoming, progress);
             File source = unwrap(incoming);
             if (!new File(source, "CMakeLists.txt").isFile() || !new File(source, "src").isDirectory() || !new File(source, "sql").isDirectory()) throw new IOException("Expected a LandSandBoat source ZIP containing CMakeLists.txt, src/ and sql/");
-            String report = "Source: " + origin + "\nStatus: source snapshot selected; active deployment is unchanged.\n";
+            String report = "Source: " + origin + "\nStatus: matching server snapshot selected; active deployment is unchanged.\n";
+            report += "Expected client: " + expectedClient(source) + "\n";
+            int binaries=0;for(String name:new String[]{"xi_connect","xi_map","xi_search","xi_world"})if(new File(source,name).isFile())binaries++;
+            report += "Server-root binaries: " + binaries + "/4. Deployment also checks build/ for a unique missing binary and verifies Linux ARM64 dependencies.\n";
             for (String mesh : Arrays.asList("navmeshes", "ximeshes")) {
                 File dir = new File(source, mesh); report += mesh + ": " + (dir.isDirectory() && FilesEx.children(dir).length > 0 ? "directory present (content not verified)" : "missing; GitHub source ZIPs do not include submodule contents") + "\n";
             }
@@ -60,12 +63,22 @@ final class SourceImport {
         } finally { FilesEx.delete(incoming); }
     }
     private static File unwrap(File dir) throws IOException {
-        for (int i = 0; i < 8; i++) {
-            if (new File(dir, "CMakeLists.txt").isFile()) return dir;
-            File[] children = FilesEx.children(dir);
-            if (children.length != 1 || !children[0].isDirectory()) break;
-            dir = children[0];
+        List<File> candidates=new ArrayList<>();findSources(dir,8,candidates);
+        if(candidates.size()!=1)throw new IOException("Choose a ZIP with exactly one complete server folder containing CMakeLists.txt, src/ and sql/");
+        return candidates.get(0);
+    }
+    private static void findSources(File dir,int depth,List<File> candidates)throws IOException {
+        SafeZip.checkCancelled();
+        if(new File(dir,"CMakeLists.txt").isFile()&&new File(dir,"src").isDirectory()&&new File(dir,"sql").isDirectory()){candidates.add(dir);return;}
+        if(depth>0)for(File child:FilesEx.children(dir))if(child.isDirectory()&&!Arrays.asList(".git","build","ext").contains(child.getName()))findSources(child,depth-1,candidates);
+    }
+    private static String expectedClient(File source)throws IOException {
+        String version="unknown; inspect the imported settings before updating";
+        java.util.regex.Pattern field=java.util.regex.Pattern.compile("(?m)^\\s*CLIENT_VER\\s*=\\s*['\"]([0-9]{8}_[0-9]+)['\"]");
+        for(String name:new String[]{"settings/default/login.lua","settings/login.lua"}){
+            File file=new File(source,name);if(!file.isFile())continue;
+            java.util.regex.Matcher match=field.matcher(FilesEx.read(file,131072));if(match.find())version=match.group(1);
         }
-        return dir;
+        return version;
     }
 }

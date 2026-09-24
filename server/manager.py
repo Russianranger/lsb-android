@@ -47,7 +47,7 @@ def source_root(root):
         if depth:
             for child in p.iterdir():
                 if child.is_dir() and not child.is_symlink() and child.name not in ('.git','build','ext'):walk(child,depth-1)
-    walk(root,3)
+    walk(root,8)
     if len(candidates)!=1:raise ValueError('Import exactly one server folder with CMakeLists.txt, src/ and sql/')
     return candidates[0]
 
@@ -88,16 +88,36 @@ def stop_children():
             p.wait(timeout=5)
     children.clear()
 
-def snapshot_source(source, target):
+def snapshot_source(source, target, recover_build_binaries=True):
     # ZIP imports have already rejected links. Copy only internal links from a
     # managed update; never import .git hooks, old build trees or database files.
-    def ignore(path,names):return {n for n in names if n in ('.git','.venv','venv','build','logs','log','mysql','data','node_modules')}
+    def ignore(path,names):return {n for n in names if n in ('.git','.venv','venv','build','logs','log','mysql','node_modules')}
     for p in source.rglob('*'):
         if p.is_symlink() and not p.resolve().is_relative_to(source.resolve()):raise ValueError('Source contains an external symlink')
     shutil.copytree(source,target,ignore=ignore,symlinks=False)
+    # Existing Linux server exports may keep their executables under build/.
+    # That tree is deliberately not carried into a new build, but its one
+    # unambiguous executable per process can be used for a prebuilt deployment.
+    if recover_build_binaries:
+        for name in PROCESSES:
+            if not (target/name).exists():
+                found=[p for p in (source/'build').rglob(name) if p.is_file()]
+                if len(found)>1:raise ValueError('Multiple build outputs for '+name+'. Keep one executable or rebuild the imported source.')
+                if found:shutil.copy2(found[0],target/name)
     command(['git','init','-q'],cwd=target)
     command(['git','-c','user.name=LSB Android','-c','user.email=local@localhost','add','sql','tools','settings','CMakeLists.txt'],cwd=target)
     command(['git','-c','user.name=LSB Android','-c','user.email=local@localhost','commit','-qm','Imported server snapshot'],cwd=target)
+
+def snapshot_deployment(source,target):
+    # Restore the SQL against the active server revision, never a newly imported
+    # source tree. Keep server assets including data/, custom scripts and meshes.
+    for p in source.rglob('*'):
+        cancelled()
+        if p.is_symlink() and not p.resolve().is_relative_to(source.resolve()):raise ValueError('Active server contains an external symlink')
+    def ignore(path,names):return {n for n in names if n in ('.git','.venv','venv','build','logs','log','node_modules')}
+    def copy(source,target):
+        cancelled();return shutil.copy2(source,target)
+    shutil.copytree(source,target,ignore=ignore,copy_function=copy,symlinks=False)
 
 def configure_tools(root):
     # Preserve a supplied schema revision, disable dbtool's client auto-update.
@@ -115,11 +135,14 @@ def build(root, jobs):
     requirements=root/'tools/requirements.txt'
     command(['/usr/bin/python3','-m','venv',str(root/'.venv')],timeout=120)
     if requirements.is_file():command([root/'.venv/bin/pip','install','-r',requirements],cwd=root,timeout=1800)
+    # This is an isolated staging tree. A requested build must never retain an
+    # older imported executable just because CMake emits the new one in build/.
+    for name in PROCESSES:(root/name).unlink(missing_ok=True)
     command(['cmake','-S',root,'-B',root/'build','-DCMAKE_BUILD_TYPE=Release','-DCMAKE_C_COMPILER=gcc-15','-DCMAKE_CXX_COMPILER=g++-15','-DPCH_ENABLE=OFF'],cwd=root)
     command(['cmake','--build',root/'build','--parallel',str(jobs)],cwd=root,timeout=7200)
     for name in PROCESSES:
         if not (root/name).is_file():
-            found=list((root/'build').rglob(name))
+            found=[p for p in (root/'build').rglob(name) if p.is_file()]
             if len(found)!=1:raise RuntimeError('Build did not produce '+name)
             shutil.copy2(found[0],root/name)
 
@@ -176,8 +199,11 @@ def start_database(generation, network=False):
     return creds
 
 def stop_database(creds):
-    subprocess.run(['mariadb-admin',cnf('root',creds['root']),'shutdown'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
-    stop_children()
+    try:
+        result=subprocess.run(['mariadb-admin',cnf('root',creds['root']),'shutdown'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
+        if result.returncode:raise RuntimeError('MariaDB did not shut down cleanly. Check the Server database log.')
+    except subprocess.TimeoutExpired:raise RuntimeError('MariaDB did not finish shutting down. Check the Server database log.') from None
+    finally:stop_children()
 
 def clean_dump(source, target):
     # Strip dump-generated DEFINER ownership only from executable comment lines;
@@ -200,7 +226,7 @@ def import_database(generation, dump, name):
 
 def account_counts(name,creds):
     tables=set(sql('SHOW TABLES;',creds['game'],'lsb',name).splitlines())
-    if not {'accounts','chars','zone_settings'}.issubset(tables):raise ValueError('The imported SQL is missing accounts, chars or zone_settings; active deployment kept')
+    if not {'accounts','chars','zone_settings'}.issubset(tables):raise ValueError('The database is missing accounts, chars or zone_settings')
     return {t:int(sql('SELECT COUNT(*) FROM `'+t+'`;',creds['game'],'lsb',name)) for t in ('accounts','chars')}
 
 def write_network(root,name,creds):
@@ -220,10 +246,46 @@ def current():
     value=json.loads(p.read_text());return STATE/'generations'/value['current']
 
 def dump_database(generation,target):
-    meta=json.loads((generation/'deployment.json').read_text());creds=start_database(generation)
+    meta=json.loads((generation/'deployment.json').read_text());creds=None
+    temporary=target.with_name(target.name+'.'+str(uuid.uuid4())+'.part')
     try:
-        with target.open('wb') as out:command(['mariadb-dump',cnf('root',creds['root']),'--single-transaction','--routines','--triggers','--events','--hex-blob',meta['database']],stdout=out)
-    finally:stop_database(creds)
+        try:
+            creds=start_database(generation)
+            with temporary.open('xb') as out:
+                os.chmod(temporary,0o600)
+                command(['mariadb-dump',cnf('root',creds['root']),'--single-transaction','--routines','--triggers','--events','--hex-blob',meta['database']],stdout=out)
+                out.flush();os.fsync(out.fileno())
+        finally:
+            if creds is not None:stop_database(creds)
+            else:stop_children()
+        cancelled();temporary.replace(target)
+    finally:temporary.unlink(missing_ok=True)
+
+def restore_database(req):
+    previous=current();meta=json.loads((previous/'deployment.json').read_text())
+    name=checked_name(meta['database']);dump=STATE/'import.sql'
+    if not dump.is_file():raise ValueError('Import the existing server database as SQL or SQL.gz first')
+    generation=STATE/'generations'/str(uuid.uuid4());generation.mkdir(parents=True)
+    root=generation/'server';creds=None
+    status('copying','Copying the current server revision for database restore…')
+    snapshot_deployment(previous/'server',root);validate_binaries(root)
+    binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in PROCESSES}
+    if binaries!=meta.get('binaries'):raise ValueError('Current server binaries do not match the deployment record; active deployment kept')
+    status('importing_database','Restoring SQL into a separate database generation…')
+    try:
+        creds=import_database(generation,dump,name)
+        counts=account_counts(name,creds);write_network(root,name,creds)
+        local_zones=meta.get('local_zones',req.get('local_zones',True))
+        if local_zones:sql("UPDATE zone_settings SET zoneip='127.0.0.1',zoneport=54230;",creds['game'],'lsb',name)
+        info=dict(meta)
+        info.update(generation=generation.name,accounts=counts['accounts'],characters=counts['chars'],created_at=time.time(),updated=False,local_zones=local_zones,restored_from_generation=previous.name)
+        atomic(generation/'deployment.json',info)
+    finally:
+        if creds is not None:stop_database(creds)
+        else:stop_children()
+    cancelled()
+    atomic(STATE/'active.json',dict(current=generation.name,previous=previous.name))
+    status('ready','Database restored with the same server revision. The previous server and database are retained.',deployment=info)
 
 def deploy(req):
     source=source_root(INPUT);name=checked_name(req.get('database','xidb'));updating=req['action']=='update'
@@ -235,7 +297,7 @@ def deploy(req):
     if not dump.is_file():raise ValueError('Import the existing server database as SQL or SQL.gz first')
     generation=STATE/'generations'/str(uuid.uuid4());generation.mkdir(parents=True)
     root=generation/'server'
-    status('copying','Staging an independent server copy…');snapshot_source(source,root)
+    status('copying','Staging an independent server copy…');snapshot_source(source,root,recover_build_binaries=not req.get('build',False))
     if updating:
         for f in (previous/'server/settings').glob('*.lua'):shutil.copy2(f,root/'settings'/f.name)
     if req.get('build',False):build(root,int(req.get('jobs',2)))
@@ -260,7 +322,7 @@ def deploy(req):
             after=account_counts(name,creds)
             if after!=before:raise RuntimeError('Account or character counts changed during the update; active deployment kept')
         info=source_info(root)
-        info.update(format=1,generation=generation.name,database=name,accounts=before['accounts'],characters=before['chars'],created_at=time.time(),updated=updating,client_pair=req.get('client_pair',{}),binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in PROCESSES})
+        info.update(format=1,generation=generation.name,database=name,accounts=before['accounts'],characters=before['chars'],created_at=time.time(),updated=updating,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in PROCESSES})
         atomic(generation/'deployment.json',info)
     finally:stop_database(creds)
     old=json.loads((STATE/'active.json').read_text()).get('current') if (STATE/'active.json').exists() else None
@@ -310,11 +372,23 @@ def serve():
 def main():
     for p in (STATE,RUN,LOGS):p.mkdir(parents=True,exist_ok=True)
     req=json.loads((RUN/'request.json').read_text());action=req.get('action')
-    if action not in ('deploy','update','start','backup','rollback','inspect'):raise ValueError('Unknown server action')
+    if action not in ('deploy','update','start','backup','rollback','inspect','restore-db','create-account'):raise ValueError('Unknown server action')
     if req.get('jobs',2) not in (1,2,4):raise ValueError('Use 1, 2 or 4 build workers')
     if action=='inspect':
         info=source_info(source_root(INPUT));status('inspected','Selected source expects client '+info['expected_client']+'. Meshes: '+', '.join(k+(' present' if v else ' missing') for k,v in info['meshes'].items()),source=info)
     elif action in ('deploy','update'):deploy(req)
+    elif action=='restore-db':restore_database(req)
+    elif action=='create-account':
+        from accounts import create_account
+        generation=current()
+        try:result=create_account(sys.modules[__name__],generation,sys.stdin.buffer)
+        except InterruptedError:
+            status('stopped','Account operation stopped. Check whether the account exists before retrying.');return
+        except Exception as error:
+            # Insertion can commit before a metadata write or database shutdown
+            # fails. The caller must not mistake this error for an SQL rollback.
+            raise RuntimeError(str(error)+' Check whether the account exists before retrying.') from None
+        status('ready','Account created. Use it to sign in to the managed server.',**result)
     elif action=='start':serve()
     elif action=='backup':
         dump_database(current(),STATE/'export.sql')

@@ -1,12 +1,10 @@
 # LSB Android
 
-Current development: **0.5.17 delivers a qualified FEX CPU-feature correction.** Exact-client inspection found that FEX's Windows 3DNow report disagreed with CPUID and could prevent FFXI's math dispatcher from reaching SSE2. The patched runtime passes the before/after ARM64 regression in both precision modes. Full FEX and Box64 compatibility suites pass; immutable [runtime v2](https://github.com/Russianranger/lsb-android/releases/tag/runtime-fex-v2) is published and the signed APK is delivered. Actual Thor rendering remains to be checked. See [the investigation](docs/ffxi-cpu-dispatch-0517.md) and [handoff](docs/HANDOFF.md).
+Current development: **0.5.29 starts the server setup phase.** The client now renders correctly and the user accepted Trial F's checked runtime syscall filtering as a default in 0.5.28. Preserve prepared client `30251204_1`, original xiloader, the accepted FEX v3/Turnip 26/DXVK 2.7.1/two-worker profile, and the Box64 fallback. See [handoff](docs/HANDOFF.md).
 
-The next device check is one FEX run of the previously broken agreement and character-selection screens after installing the new FEX runtime. The automatic preflight records matching Windows/CPUID features in parent and child. The working Box64 comparison and requested client-DLL inspection are complete. Preserve prepared client `30251204_1`, original xiloader, Box64 fallback and the working Termux server.
+The Server tab imports an existing source/binary ZIP plus its logical SQL dump, deploys an independent server/database pair, creates normal player accounts, and exports or restores database backups. Imported binaries are checked for ARM64/dependency compatibility; an explicit fallback builds the same imported revision. Restores reuse the deployed server files and retain the previous pair for rollback. Source updates remain a separate later action. The user's matching server archive is still required for the first real deployment.
 
-The server workflow imports an existing source/binary folder plus a logical SQL dump, deploys them as an independent generation, and can build the same imported source when existing binaries are incompatible. Source/database updates stage a clone and retain the prior pair for rollback. Client and xiloader updating are deliberately separate, future work. A new source snapshot does not update the deployed server automatically.
-
-The accepted client foundation remains Wine 10 / Box64 0.4.4, Turnip 26, DXVK D3D8/D3D9 and embedded display/audio/input. The server uses a separate Ubuntu 26.04 ARM64 environment; it does not modify the client runtime or Termux installation.
+Follow [the server setup and verification guide](docs/server-first-0529.md). The server uses a separate Ubuntu 26.04 ARM64 environment; it does not modify the client runtime or the working Termux installation.
 
 ## Available in 0.1.3
 

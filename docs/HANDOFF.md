@@ -1,3 +1,53 @@
+# 0.5.29: matching server import, player accounts and database recovery
+
+User has accepted the client and now wants to run their matching server ZIP,
+create accounts easily, import/export the database, and later compile official
+LandSandBoat source. Repository edits/pushes remain authorized. **No server ZIP
+or SQL dump is attached yet.** Finish app delivery, then request those files;
+do not claim their actual server has been deployed. The existing Termux server
+and accepted client/xiloader remain the reference pair.
+
+Server tab now groups matching-server setup, player accounts, full database
+backup/restore, explicit later source updates, logs and its own support tile.
+New repository defaults point to LandSandBoat/server base; saved choices persist.
+[Exact setup instructions and scope](server-first-0529.md).
+
+Imported ZIPs allow one complete source tree under wrapper folders with sibling
+notes. Source reports show the expected client version, preferring local settings.
+Prebuilt deployment recovers unique missing xi_* binaries from build/; a requested
+rebuild discards old outputs and accepts newly built executables. Ambiguous build
+outputs only block prebuilt deployment, not a fresh build of the same source.
+Initial deployment and restore preserve server data/ runtime assets.
+
+Accounts require stopped processes, current account tools, the deployed source's
+reviewed bcrypt login contract and matching InnoDB schema. Printable ASCII login
+1–16/password1–32 bytes, spaces retained, normal status/privilege1, max-ID allocation
+at least1000, database-collation duplicate check under a table write lock. Credentials
+use a bounded one-use stdin frame and never enter arguments, intents, settings,
+request/status/support logs. Interrupted/late failure does not imply rollback of
+an account that may already have committed. bootstrap adds python3-bcrypt and a
+v2 tools marker; existing installations update tools without replacing databases.
+
+SQL restore clones the currently deployed server files, not selected new source;
+verifies binary hashes, preserves client pairing and local-zone policy, imports
+into a new database, closes MariaDB, then atomically activates. No source fetch,
+compilation or migration on restore. Previous server/database pair is retained.
+Database exports use a completed temporary file before replacing the last export.
+
+Local core/credential transport and server unit tests pass. Real ARM64
+MariaDB integration covers complete SQL objects, private bcrypt account creation,
+duplicates, restore from a mismatched selected source, failure and rollback. It
+uses synthetic xi_* server processes: exact LandSandBoat world play remains a
+device check requiring the user's archive. Android service lifecycle, source ZIP
+and server UI tests are included. Server operation ownership covers preparation
+through completion so simultaneous starts cannot overwrite maintenance requests; CI/signing/delivery evidence follows when ready.
+
+Prior .28 CI follow-through complete: push36057571648 and PR36057577993 pass all
+Box64/FEX/presentation/server/Windows/build gates. Do not change client binaries,
+settings or the accepted Trial F default while implementing this server phase.
+
+---
+
 # 0.5.28: Trial F promoted to a proven default
 
 User: “Trial F - thats the one. Its perfect. Integrate that as a default function.”
