@@ -13,17 +13,37 @@ compatibility; inconsistent real activation/effective graphics baseline stops
 before game launch. No in-process false rollback or credential replay. Raw PRoot
 output is discarded. History includes matching F receipts, still six sessions.
 
-Core/77 runtime contracts/eight host helper JUnit tests/real SysV preflight and
-Windows fixture compile pass. Android and full runtime CI pending. Finite Windows
-stage markers aim to locate intermittent CI pixel stalls; assertions/timeouts
-unchanged. Prior 0.5.26 earlier push FEX and PR Box64 passed, latest push FEX passed;
-latest PR FEX failed a later cancellation fixture after A/2.7.1 passed. Do not claim
-all CI green. No merge/release requested; edits and pushes explicitly authorized.
+Delivered **LSB-Android-0.5.27.apk**, 18,313,443 bytes, SHA-256
+`42b66980e973fe0fba1560b915ad501f61565d1b27d2af8e42d02c13f82308de`.
+Library `libfile_5b4bca94f6d0819181694945c334fa46`, version 0,
+file `file_00000000da04822f8da1ebf3655d09d1`. Original signer retained;
+package version/code43, v2/v3 signatures, alignment and signing payload identity
+verified. Against 0.5.26 only supervisor.py and graphics-check.exe changed in the
+runtime/native payload, with new proot_preflight.py. All renderer/Wine/FEX/PRoot/
+presentation binaries are byte-identical. Wide/narrow trial previews reviewed.
 
-Build/delivery record will follow. Phone test: in-place update; tested settings,
-same full 720p route, Baseline then D/E/F separately, Stop/export after each. No
-runtime reinstall or cache reset. Failed F activation: return to Baseline. No
-repeat B/C, and do not stack A with the new trials.
+Source **61e51b5baac1af8e2d4a02c6cdfd378264f4d6e6**. Push run **36054096976**,
+APK artifact **10831483400**. Core/77 runtime contracts/eight host helper JUnit
+tests/real SysV preflight and Windows fixture compile pass. Both CI verify jobs
+pass **30 Android tests** and APK build; server/presentation/Windows gates pass.
+Full .27 runtime jobs remain running at delivery: push Box64 **107817584243**,
+FEX **107817584316**; PR run **36054103253**, Box64 **107817968483**,
+FEX **107817968603**. Follow through next turn: confirm new enabled-filter
+preflight/integration and A/D/E 384-pixel result. Do not claim full CI green or
+native F proof yet. Finite stage markers aim to locate intermittent CI pixel
+stalls; assertions/timeouts unchanged. No retries or relaxed checks.
+
+Prior .26 latest push 36051583691 now passes all runtime gates; latest PR Box64
+also passes, but PR FEX retains later cancellation timeout after A/2.7.1 passed.
+Earlier .26 push FEX and PR Box64 also passed. These previous passes do not
+substitute for .27's new trial gates. No merge/release requested; edits and pushes
+explicitly authorized.
+
+Phone test: in-place update; Use tested shader settings, same full 720p route,
+Baseline then D/E/F separately, Stop/export after each. No runtime reinstall or
+cache reset. Failed F activation: return to Baseline. No repeat B/C, and do not
+stack A with the new trials. No phone gain claimed; inspect actual activation
+receipts before comparing F. Final response explicitly notes full CI pending.
 
 ---
 

@@ -54,7 +54,8 @@ and state blocks. A failed check restores the exact prior environment. These
 synthetic checks do not establish real FFXI correctness or smoothness.
 
 F additionally requires FEX and Turnip 26. Before the login tree starts, a separate
-credential-free tree checks file/mmap/socket/thread/fork and SysV shared memory.
+credential-free tree checks file/mmap/socket/thread/fork and, when Native Surface
+uses `--sysvipc`, SysV shared memory.
 An exact PRoot activation marker and successful exit are mandatory. Unsupported
 or failed preflight retains compatibility mode. Cleanup failure stops launch.
 The actual login tree must emit its own activation marker before credentials are
@@ -94,9 +95,24 @@ host file sink; full Android/Robolectric validation remains a separate CI gate.
 New Windows stage markers are confined to the finite check executable, with
 unchanged pixel assertions and timeouts. CI exercises A/D/E independently and a
 separate enabled-filter real FEX run; all prior compatibility gates remain mandatory.
+That desktop Linux run does not establish Android-kernel or Adreno compatibility.
 
 Prior 0.5.26 follow-through: earlier push FEX and PR Box64 passed their complete
 gates; latest push FEX also passed. Other jobs intermittently timed out in existing
 pixel/cancellation fixtures. The exact blocked call remains unresolved. No
-unchanged retries or relaxed acceptance criteria. Final 0.5.27 CI and APK details
-will be added after the build.
+unchanged retries or relaxed acceptance criteria. The latest 0.5.26 push subsequently passed all runtime gates; the PR retains
+its later cancellation fixture failure.
+
+0.5.27 source `61e51b5baac1af8e2d4a02c6cdfd378264f4d6e6`, push run
+36054096976 / APK artifact 10831483400. Both push and PR verify pass all **30
+Android tests**, core/runtime contracts and APK build. Server, native presentation
+and Windows gates pass; wide/narrow UI previews inspected. Full FEX/Box64 jobs
+are still running at delivery; their new native F proof and A/D/E pixel results
+are not yet claimed. Job IDs and follow-through are recorded in HANDOFF.md.
+
+Delivered APK: 18,313,443 bytes, SHA-256
+`42b66980e973fe0fba1560b915ad501f61565d1b27d2af8e42d02c13f82308de`.
+Original update signer, package/code43, v2/v3 signatures, alignment and unchanged
+payload after signing verified. Working renderer/FEX/PRoot/presentation binaries
+are byte-identical to 0.5.26; only supervisor and finite graphics-check fixture
+changed, plus the new credential-free Python preflight.
