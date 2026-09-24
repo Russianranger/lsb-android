@@ -57,7 +57,7 @@ public class FantasyTilesTest {
         ClientRuntime runtime=ClientRuntime.get(ctx);File state=new File(runtime.home,"clients/state.properties");state.getParentFile().mkdirs();
         Files.write(state.toPath(),"current=12345678-1234-1234-1234-123456789abc\n".getBytes("UTF-8"));
         android.content.SharedPreferences prefs=ctx.getSharedPreferences("runtime",0);
-        prefs.edit().putBoolean("fex",true).putBoolean("fex_x87",true).putBoolean("dxvk_271",true).putBoolean("turnip_sysmem",false).putInt("display_fps",60).commit();
+        prefs.edit().putBoolean("fex",true).putBoolean("fex_x87",true).putBoolean("dxvk_271",true).putBoolean("turnip_sysmem",false).putBoolean("dxvk_two_compilers",false).putInt("display_fps",60).commit();
         java.util.Map<String,?> before=prefs.getAll();
         org.robolectric.android.controller.ActivityController<MainActivity> activity=Robolectric.buildActivity(MainActivity.class).setup();
         try{
@@ -69,6 +69,7 @@ public class FantasyTilesTest {
             assertTrue(((CheckBox)text(tiles,"FEX / native")).isChecked());
             assertTrue(((CheckBox)text(tiles,"DXVK 2.7.1")).isChecked());
             assertNull(text(tiles,"Turnip system-memory rendering"));
+            assertFalse(((CheckBox)text(tiles,"Two shader compiler workers")).isChecked());
             capture(tiles,"proven-fixes-wide.png");
             text(tiles,"◇  Export support ZIP").performClick();
             android.content.Intent export=org.robolectric.Shadows.shadowOf(activity.get()).getNextStartedActivityForResult().intent;
@@ -76,15 +77,28 @@ public class FantasyTilesTest {
             assertNotNull(text(tiles,"FEX / native"));
             text(tiles,"◇  Past experiments").performClick();layout(tiles,400);
             assertFalse(((CheckBox)text(tiles,"Turnip system-memory rendering")).isChecked());
+            assertNull(text(tiles,"Two shader compiler workers"));
             assertNull(text(tiles,"FEX / native"));assertEquals(before,prefs.getAll());
             capture(tiles,"past-experiments-narrow.png");
             text(tiles,"◇  Graphics & display").performClick();layout(tiles,920);
             CheckBox borderless=(CheckBox)text(tiles,"Remove game window borders");assertTrue(borderless.isChecked());
             borderless.performClick();assertFalse(prefs.getBoolean("borderless",true));
-            text(tiles,"◇  New optimization").performClick();layout(tiles,920);
+            text(tiles,"◇  Past experiments").performClick();layout(tiles,920);
             CheckBox staged=(CheckBox)text(tiles,"Staged geometry uploads");assertFalse(staged.isChecked());
             staged.performClick();assertTrue(prefs.getBoolean("dxvk_staged_buffers",false));
-            capture(tiles,"staged-geometry-wide.png");
+            ((CheckBox)text(tiles,"Turnip system-memory rendering")).performClick();assertTrue(prefs.getBoolean("turnip_sysmem",false));
+            capture(tiles,"past-experiments-wide.png");
+            text(tiles,"◇  Proven fixes").performClick();layout(tiles,920);
+            text(tiles,"Use tested shader settings").performClick();
+            assertSame("Applying a profile must preserve the current form",tiles,f.get(activity.get()));layout(tiles,920);
+            assertTrue(prefs.getBoolean("dxvk_two_compilers",false));
+            assertFalse(prefs.getBoolean("turnip_sysmem",true));assertFalse(prefs.getBoolean("dxvk_staged_buffers",true));
+            assertFalse(prefs.getBoolean("borderless",true));assertTrue(prefs.getBoolean("fex",false));
+            assertTrue(prefs.getBoolean("fex_x87",false));assertTrue(prefs.getBoolean("dxvk_271",false));assertEquals(60,prefs.getInt("display_fps",0));
+            org.json.JSONObject request=new org.json.JSONObject();runtime.applyGraphicsSettings(request);
+            assertTrue(request.getBoolean("dxvk_two_compilers"));assertFalse(request.getBoolean("turnip_sysmem"));assertFalse(request.getBoolean("dxvk_staged_buffers"));
+            assertTrue(((CheckBox)text(tiles,"Two shader compiler workers")).isChecked());
+            capture(tiles,"tested-shader-settings-wide.png");
             android.widget.LinearLayout page=(android.widget.LinearLayout)((android.view.ViewGroup)activity.get().findViewById(android.R.id.content)).getChildAt(0);
             // The exact navigation label is a button; the version subtitle starts similarly.
             java.util.ArrayList<android.widget.Button> tabs=new java.util.ArrayList<>();collectTabs(page,tabs);assertEquals(6,tabs.size());
