@@ -29,6 +29,13 @@ final class ServerRuntime {
     private ServerRuntime(Context c){this(c,ProcessBuilder::start);}
     ServerRuntime(Context c,ProcessStarter starter){context=c;processStarter=starter;home=new File(c.getFilesDir(),"server-runtime");root=new File(home,"rootfs");state=new File(home,"state");run=new File(home,"run");logs=new File(home,"logs");backend=new File(home,"backend");tmp=new File(home,"tmp");}
     boolean alive(){Process child=process;return active||(child!=null&&child.isAlive());}
+    boolean ready(){try{Process child=process;return child!=null&&child.isAlive()&&"running".equals(new JSONObject(FilesEx.read(new File(run,"status.json"),65536)).optString("phase"));}catch(Exception e){return false;}}
+    String startupLog(){try{
+        JSONObject startup=new JSONObject(FilesEx.read(new File(run,"status.json"),65536)).optJSONObject("startup");
+        JSONArray lines=startup==null?null:startup.optJSONArray("recent_lines");StringBuilder out=new StringBuilder();
+        if(lines!=null)for(int i=0;i<lines.length();i++)out.append(lines.getString(i)).append('\n');
+        return out.toString().trim();
+    }catch(Exception e){return "";}}
     boolean installed(){return new File(root,"lsb-server-ready").isFile();}
     boolean toolsCurrent(){return new File(root,"lsb-server-tools-v4").isFile();}
     boolean hasDatabaseImport(){return new File(state,"import.sql").isFile();}
@@ -45,6 +52,18 @@ final class ServerRuntime {
     private synchronized Operation beginOperation()throws IOException {
         idle();Operation reserved=new Operation();operation=reserved;active=true;return reserved;
     }
+    // Hold the same reservation as deploy/start for the entire filesystem snapshot.
+    AutoCloseable reserveSession(boolean export,SafeZip.Progress progress)throws Exception {
+        Operation reserved=beginOperation();
+        try {
+            if(export&&new File(state,"active.json").isFile()) {
+                progress.update("Saving the database and waiting for a clean shutdown…");
+                performReserved("backup",false,progress,null);
+            }
+            return reserved;
+        } catch(Exception error){reserved.close();throw error;}
+    }
+    static synchronized void resetAfterRestore(){instance=null;}
     private void assets()throws Exception {
         for(File f:new File[]{home,state,run,logs,backend,tmp})FilesEx.mkdir(f);
         for(String name:context.getAssets().list("server"))try(InputStream in=context.getAssets().open("server/"+name);OutputStream out=new FileOutputStream(new File(backend,name))){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}

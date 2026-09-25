@@ -21,6 +21,7 @@ final class ClientRuntime {
     static final long ARCHIVE_BYTES=353710639L;
     private static ClientRuntime instance;
     static synchronized ClientRuntime get(Context c){if(instance==null)instance=new ClientRuntime(c.getApplicationContext());return instance;}
+    static synchronized void resetAfterRestore(){instance=null;}
     final Context context;
     final File home,root,prefix,run,tmp,logs,backend,probes;
     volatile String status="Install the runtime, then start the Windows checks.";
@@ -265,6 +266,10 @@ final class ClientRuntime {
         try{
             if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher","gamepad-config").contains(action))throw new IOException("Unsupported runtime action");
             if(action.equals("launch")&&login==null)throw new IOException("Enter account and password again to launch");
+            if(action.equals("launch")&&context.getPackageName().endsWith(".restoretest")) {
+                if(!ServerRuntime.get(context).ready())throw new IOException("Restore Test: start this app’s restored server and wait for Ready before connecting. Stop the working app’s server first.");
+                if(!"127.0.0.1".equals(login.host))throw new IOException("Restore Test connects only to its own local server. Set the server address to 127.0.0.1.");
+            }
             if(action.equals("launch")&&!Arrays.asList("windowed720","windowed540","preserve","restore").contains(displayProfile))throw new IOException("Choose a supported FFXI display setting");
             if(!installed()||!read(new File(root,"lsb-runtime.sha256"),128).equals(RUNTIME_SHA))throw new IOException("Install the pinned runtime first");
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");

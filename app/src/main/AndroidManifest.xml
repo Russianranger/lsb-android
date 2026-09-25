@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.github.russianranger.lsb" android:versionCode="49" android:versionName="0.5.33">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.github.russianranger.lsb" android:versionCode="50" android:versionName="0.5.34">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -7,16 +7,16 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <application android:extractNativeLibs="true" android:label="LSB Android" android:icon="@mipmap/lsb_launcher" android:roundIcon="@mipmap/lsb_launcher" android:theme="@style/LsbTheme" android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="false">
-        <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+        <activity android:name="io.github.russianranger.lsb.MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
-        <activity android:name=".RuntimeActivity" android:exported="false" android:screenOrientation="sensorLandscape" android:configChanges="orientation|screenSize|keyboardHidden" />
-        <service android:name=".RuntimeService" android:exported="false" android:foregroundServiceType="specialUse">
+        <activity android:name="io.github.russianranger.lsb.RuntimeActivity" android:exported="false" android:screenOrientation="sensorLandscape" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <service android:name="io.github.russianranger.lsb.RuntimeService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started local Windows runtime with embedded display and audio" />
         </service>
-        <service android:name=".ServerService" android:exported="false" android:foregroundServiceType="specialUse">
+        <service android:name="io.github.russianranger.lsb.ServerService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started local LandSandBoat game server and MariaDB" />
         </service>
-        <service android:name=".WorkService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name="io.github.russianranger.lsb.WorkService" android:exported="false" android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

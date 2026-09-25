@@ -20,6 +20,7 @@ LOGS=Path('/server-logs')
 INPUT=Path('/input')
 PROCESSES=('xi_world','xi_search','xi_map','xi_connect')
 DB_PORT=13306
+STARTUP_TIMEOUT_SECONDS=30*60
 children=[]
 secret_values=[]
 
@@ -391,7 +392,62 @@ def ensure_ports():
     for port,kind in [(13306,socket.SOCK_STREAM),(54231,socket.SOCK_STREAM),(54230,socket.SOCK_STREAM),(54001,socket.SOCK_STREAM),(54002,socket.SOCK_STREAM),(54003,socket.SOCK_STREAM),(54230,socket.SOCK_DGRAM)]:
         with socket.socket(socket.AF_INET,kind) as s:
             try:s.bind(('127.0.0.1',port))
-            except OSError:raise RuntimeError('Port '+str(port)+' is in use. Stop the Termux server before starting the in-app server.')
+            except OSError:raise RuntimeError('Port '+str(port)+' is in use. Stop the other server app or Termux server before starting this server.')
+
+class StartupProgress:
+    """Read only this start's log bytes; an open login socket is not world readiness."""
+    def __init__(self, logs):
+        self.logs=logs;self.ready=set();self.stages={};self.recent=[]
+        self.offsets={};self.identities={};self.fragments={};self.oversized=set()
+        for name in PROCESSES:
+            path=logs/(name+'.log')
+            try:
+                info=path.stat();self.offsets[name]=info.st_size;self.identities[name]=(info.st_dev,info.st_ino)
+            except FileNotFoundError:self.offsets[name]=0
+
+    def _line(self, name, raw):
+        line=re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]','',raw.decode('utf-8',errors='replace')).strip()
+        # The four LSB processes report this only after markLoaded, including
+        # xi_map after all NPC/mob scripts. Accept each process's own marker.
+        role=name.removeprefix('xi_')
+        if re.search(r'(?:^|\]\s*)The '+role+r'-server is ready to work\.\.\.(?:\s|$)',line):
+            self.ready.add(name);message=role+': Ready'
+        else:
+            # Only startup progress belongs in the live summary; leave arbitrary
+            # game output (including character/account details) in its normal log.
+            found=re.search(r'(?:^|\]\s*)(?:do_init: |luautils: )?((?:[Ll]oading |Initializing engine|Lua initializing|Waiting for |Finished waiting for |Removing expired database variables)[^\r\n]*)',line)
+            if not found:return
+            stage=re.sub(r'\s+\([A-Za-z_][A-Za-z_0-9]*:\d+\)$','',found[1])[:200]
+            self.stages[name]=stage;message=role+': '+stage
+        if not self.recent or self.recent[-1]!=message:self.recent=(self.recent+[message])[-12:]
+
+    def poll(self):
+        for name in PROCESSES:
+            path=self.logs/(name+'.log')
+            try:
+                with path.open('rb') as log:
+                    info=os.fstat(log.fileno());identity=(info.st_dev,info.st_ino)
+                    if identity!=self.identities.get(name,identity) or info.st_size<self.offsets[name]:
+                        self.offsets[name]=0;self.fragments.pop(name,None);self.oversized.discard(name)
+                        self.ready.discard(name);self.stages.pop(name,None)
+                    self.identities[name]=identity;log.seek(self.offsets[name])
+                    data=log.read(256*1024);self.offsets[name]=log.tell()
+            except FileNotFoundError:continue
+            parts=(self.fragments.get(name,b'')+data).split(b'\n')
+            for line in parts[:-1]:
+                if name not in self.oversized and len(line)<=8192:self._line(name,line)
+                self.oversized.discard(name)
+            tail=parts[-1]
+            if len(tail)>8192:self.oversized.add(name)
+            self.fragments[name]=b'' if name in self.oversized else tail
+
+    def snapshot(self, elapsed, port_ready):
+        pending=[name for name in PROCESSES if name not in self.ready]
+        focus='xi_map' if 'xi_map' in pending else next(iter(pending),None)
+        stage=(self.stages.get(focus,'Waiting for '+focus.removeprefix('xi_')+' readiness') if focus else
+               'Waiting for the login port' if not port_ready else 'All server scripts loaded')
+        return dict(elapsed_seconds=int(elapsed),ready_processes=[name for name in PROCESSES if name in self.ready],
+                    pending_processes=pending,stage=stage,recent_lines=self.recent[:],login_port_reachable=port_ready)
 
 def serve():
     generation=current();root=generation/'server';validate_binaries(root);ensure_ports()
@@ -399,21 +455,35 @@ def serve():
     creds=start_database(generation,True)
     workers=[]
     try:
+        progress=StartupProgress(LOGS)
         for name in PROCESSES:
             log=(LOGS/(name+'.log')).open('ab')
             p=subprocess.Popen([str(root/name)],cwd=root,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
             log.close();children.append(p);workers.append((name,p))
-        ready=False;started=time.monotonic()
+        ready=False;started=time.monotonic();last_report=None;last_report_at=0
         while True:
             cancelled()
             for name,p in workers:
                 if p.poll() is not None:raise RuntimeError(name+' exited with code '+str(p.returncode)+'. See Server logs.')
             if not ready:
+                progress.poll();port_ready=False
                 try:
                     with socket.create_connection(('127.0.0.1',54231),timeout=.3):pass
-                    ready=True;status('running','Server processes running; login port reachable. World entry still needs a client test.',deployment=meta)
-                except OSError:
-                    if time.monotonic()-started>180:raise RuntimeError('Server login port did not become ready within three minutes')
+                    port_ready=True
+                except OSError:pass
+                now=time.monotonic();elapsed=now-started;report=progress.snapshot(elapsed,port_ready)
+                ready=not report['pending_processes'] and port_ready
+                if ready:status('running','Server ready — all scripts loaded. You can connect now.',deployment=meta,startup=report)
+                elif elapsed>STARTUP_TIMEOUT_SECONDS:
+                    waiting=', '.join(report['pending_processes']) or 'the login port'
+                    raise RuntimeError('Server startup was not confirmed within 30 minutes; waiting for '+waiting+'. Last stage: '+report['stage']+'. See Server operation log.')
+                else:
+                    # Refresh elapsed time while a large script-loading stage is
+                    # quiet, but avoid rewriting status on every supervisor tick.
+                    signature=(report['stage'],tuple(report['ready_processes']),tuple(report['recent_lines']),port_ready)
+                    if signature!=last_report or now-last_report_at>=2:
+                        message='Starting server: '+report['stage']+' ('+str(int(elapsed))+'s). Wait for “Server ready” before connecting.'
+                        status('starting',message,deployment=meta,startup=report);last_report=signature;last_report_at=now
             time.sleep(.5)
     finally:
         # Stop game writers before shutting down their database.

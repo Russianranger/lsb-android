@@ -27,11 +27,15 @@ program=Path('/tmp/server-stub.c');program.write_text('''#include <signal.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <jemalloc/jemalloc.h>
 #include <bfd.h>
 static volatile sig_atomic_t done;static void stop(int s){(void)s;done=1;}
-int main(int argc,char**argv){(void)argc;bfd_init();bfd* input=bfd_openr(argv[0],NULL);if(!input||!bfd_check_format(input,bfd_object)||!bfd_close(input))return 10;puts("bfd=2.45 object verified");const char* version=NULL;size_t length=sizeof(version);if(mallctl("version",&version,&length,NULL,0))return 9;printf("allocator=jemalloc %s\\n",version);fflush(stdout);signal(SIGTERM,stop);int fd=-1;if(strstr(argv[0],"xi_connect")){fd=socket(AF_INET,SOCK_STREAM,0);int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(54231);a.sin_addr.s_addr=htonl(0x7f000001);if(bind(fd,(void*)&a,sizeof(a))||listen(fd,4))return 8;}while(!done)sleep(1);if(fd>=0)close(fd);return 0;}
+int main(int argc,char**argv){(void)argc;bfd_init();bfd* input=bfd_openr(argv[0],NULL);if(!input||!bfd_check_format(input,bfd_object)||!bfd_close(input))return 10;puts("bfd=2.45 object verified");const char* version=NULL;size_t length=sizeof(version);if(mallctl("version",&version,&length,NULL,0))return 9;printf("allocator=jemalloc %s\\n",version);fflush(stdout);signal(SIGTERM,stop);int fd=-1;if(strstr(argv[0],"xi_connect")){fd=socket(AF_INET,SOCK_STREAM,0);int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(54231);a.sin_addr.s_addr=htonl(0x7f000001);if(bind(fd,(void*)&a,sizeof(a))||listen(fd,4)||fcntl(fd,F_SETFL,O_NONBLOCK)<0)return 8;}const char* role=strrchr(argv[0],'/');role=role?role+1:argv[0];role+=3;
+if(!strcmp(role,"map")){puts("[map][info] Loading Mob scripts (LoadMOBList:662)");fflush(stdout);sleep(4);}
+printf("The %s-server is ready to work... (markLoaded:228)\\n",role);fflush(stdout);
+while(!done){if(fd>=0){int client=accept(fd,NULL,NULL);if(client>=0)close(client);}usleep(100000);}if(fd>=0)close(fd);return 0;}
 ''')
 dump=ACCOUNT_SCHEMA_SQL.encode()+b"\nINSERT INTO accounts(id,login) VALUES(1,'fixture'); CREATE TABLE chars(charid INT PRIMARY KEY,charname VARCHAR(32)); INSERT INTO chars VALUES(1,'Fixture'); CREATE TABLE zone_settings(zoneid INT,zoneip VARCHAR(32),zoneport INT); INSERT INTO zone_settings VALUES(1,'192.0.2.5',54231);\n"+b"""
 CREATE TABLE fixture_blobs(id INT PRIMARY KEY, content BLOB);
@@ -199,11 +203,17 @@ print('PASS: private bcrypt account creation, ordinary privileges, duplicate pro
 (run/'stop').unlink(missing_ok=True);(run/'request.json').write_text(json.dumps(dict(action='start')))
 process=subprocess.Popen([sys.executable,manager])
 try:
- deadline=time.monotonic()+120
+ deadline=time.monotonic()+120;observed_script_loading=False
  while time.monotonic()<deadline:
   if process.poll() is not None:raise AssertionError((run/'status.json').read_text())
   try:
-   if json.loads((run/'status.json').read_text()).get('phase')=='running':break
+   report=json.loads((run/'status.json').read_text());startup=report.get('startup',{})
+   if report.get('phase')=='starting' and startup.get('login_port_reachable') and startup.get('stage')=='Loading Mob scripts':
+    assert 'xi_map' in startup['pending_processes'];observed_script_loading=True
+   if report.get('phase')=='running':
+    assert observed_script_loading,'Login port must remain starting while map scripts load'
+    assert startup['pending_processes']==[] and set(startup['ready_processes'])==set(backend.PROCESSES)
+    break
   except (OSError,ValueError):pass
   time.sleep(.2)
  else:raise AssertionError('Server readiness timeout')
@@ -215,4 +225,64 @@ assert (Path('/client')/'sentinel').read_bytes()==b'accepted client kept'
 for name in ('xi_connect','xi_map','xi_search','xi_world'):
  assert 'allocator=jemalloc ' in (logs/(name+'.log')).read_text(),name
  assert 'bfd=2.45 object verified' in (logs/(name+'.log')).read_text(),name
-print('PASS: managed database + four server processes start, report readiness and stop without changing client data',flush=True)
+print('PASS: managed database + four server processes wait for script readiness after login port opens and stop without changing client data',flush=True)
+
+# Exercise the complete Android session transport with a real, cleanly stopped
+# MariaDB directory. A copy models the exporting app; a distinct destination
+# models the restore-test package. No SQL re-import or database migration may
+# hide a broken physical database restore.
+invoke('backup')
+original_state=tree_hashes(state);original_source=tree_hashes(source)
+session=Path('/tmp/lsb-session-roundtrip');session.mkdir()
+session_source=session/'source';session_target=session/'restore-test'
+files=session_source/'files';managed=session_source/'managed'
+files.mkdir(parents=True);managed.mkdir()
+shutil.copytree(state,files/'server-runtime/state',symlinks=True)
+shutil.copytree(source,managed/'server/current',symlinks=True)
+shutil.copytree(Path('/client'),managed/'session/current/client',symlinks=True)
+
+def archived_objects(root):
+ result={}
+ for path in root.rglob('*'):
+  info=path.lstat();name=str(path.relative_to(root))
+  if path.is_symlink():result[name]=('link',os.readlink(path))
+  elif path.is_file():result[name]=('file',info.st_mode&0o777,hashlib.sha256(path.read_bytes()).hexdigest())
+  elif path.is_dir():result[name]=('directory',info.st_mode&0o777)
+  else:raise AssertionError('Unexpected live object in stopped session: '+name)
+ return result
+
+snapshot=archived_objects(session_source)
+classes=session/'classes';classes.mkdir()
+core=repo/'app/src/main/java/io/github/russianranger/lsb/core'
+subprocess.run(['javac','--release','8','-d',classes,*sorted(core.glob('*.java')),repo/'tests/server/SessionArchiveRoundTrip.java'],check=True,timeout=120)
+subprocess.run(['java','-ea','-cp',classes,'SessionArchiveRoundTrip',session_source,session_target,session/'complete-session.zip'],check=True,timeout=300)
+assert archived_objects(session_target)==snapshot,'Full session changed file contents, modes or links'
+assert archived_objects(session_source)==snapshot,'Archive modified its exporting app'
+
+previous_paths=(backend.STATE,backend.RUN,backend.LOGS)
+backend.STATE=session_target/'files/server-runtime/state'
+# Keep Unix socket paths short; on Android these guest paths remain /server-run.
+backend.RUN=session/'restored-run';backend.LOGS=session/'restored-logs'
+backend.RUN.mkdir();backend.LOGS.mkdir()
+creds=None
+try:
+ generation=backend.current()
+ assert generation.name==restored['generation']
+ meta=json.loads((generation/'deployment.json').read_text())
+ assert meta['accounts']==2 and meta['characters']==2
+ backend.validate_binaries(generation/'server')
+ creds=backend.start_database(generation)
+ values=backend.sql("SELECT COUNT(*) FROM accounts; SELECT COUNT(*) FROM chars; SELECT HEX(content) FROM fixture_blobs WHERE id=1; SELECT COUNT(*) FROM fixture_view; CALL fixture_proc(); SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA=DATABASE() AND EVENT_NAME='fixture_event'; INSERT INTO fixture_blobs VALUES(3,0xAABB); SELECT COUNT(*) FROM fixture_audit WHERE id=3; SELECT COUNT(*) FROM fixture_blobs;",creds['game'],'lsb',meta['database'])
+ assert values.splitlines()==['2','2','000A0DFF275C','2','000A0DFF275C','0102','1','1','3'],values
+ restored_record=backend.sql("SELECT password FROM accounts WHERE login='NewPlayer';",creds['game'],'lsb',meta['database']).strip()
+ assert restored_record==record[1] and bcrypt.checkpw(password,restored_record.encode('ascii'))
+finally:
+ try:
+  if creds is not None:backend.stop_database(creds)
+  else:backend.stop_children()
+ finally:backend.STATE,backend.RUN,backend.LOGS=previous_paths
+assert tree_hashes(state)==original_state and tree_hashes(source)==original_source
+assert archived_objects(session_source)==snapshot
+assert (session_target/'managed/session/current/client/sentinel').read_bytes()==b'accepted client kept'
+assert b'NewPlayer' in (session_target/'files/server-runtime/state/export.sql').read_bytes()
+print('PASS: complete-session restore boots physical MariaDB at a new app path, preserves accounts/passwords/characters/blobs/routines/events/triggers/client/server, and restored-only writes leave the original app unchanged',flush=True)

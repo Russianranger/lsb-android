@@ -246,4 +246,72 @@ class DependencyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Linux ARM64'):self.check(run)
         self.assertIn('xi_world',(self.logs/'dependencies.log').read_text())
 
+class StartupTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name)
+    def append(self,name,line):
+        with (self.root/(name+'.log')).open('ab') as output:output.write(line)
+    def marker(self,name):
+        return ('[09/25/26 10:47:30:131]['+name[3:]+'][info] The '+name[3:]+'-server is ready to work... (markLoaded:228)\n').encode()
+    def test_old_markers_do_not_confirm_new_start_and_map_must_finish(self):
+        for name in m.PROCESSES:self.append(name,self.marker(name))
+        progress=m.StartupProgress(self.root);progress.poll()
+        self.assertEqual(progress.snapshot(0,True)['pending_processes'],list(m.PROCESSES))
+        for name in m.PROCESSES:
+            if name!='xi_map':self.append(name,self.marker(name))
+        self.append('xi_map',b'[map][info] Loading Mob scripts (LoadMOBList:662)\n')
+        progress.poll();report=progress.snapshot(117,True)
+        self.assertEqual(report['pending_processes'],['xi_map'])
+        self.assertEqual(report['stage'],'Loading Mob scripts')
+        self.assertTrue(report['login_port_reachable'])
+        self.append('xi_map',self.marker('xi_map'));progress.poll()
+        self.assertEqual(progress.snapshot(118,True)['pending_processes'],[])
+        self.assertEqual(progress.snapshot(118,True)['stage'],'All server scripts loaded')
+        self.assertEqual(progress.snapshot(118,False)['stage'],'Waiting for the login port')
+    def test_partial_markers_other_roles_and_unrelated_log_text(self):
+        progress=m.StartupProgress(self.root)
+        self.append('xi_map',b'[map][info] Login player=private-account\n'+self.marker('xi_world'))
+        marker=b'\x1b[32m'+self.marker('xi_map').rstrip(b'\n')+b'\x1b[0m\n'
+        self.append('xi_map',marker[:55]);progress.poll()
+        self.assertEqual(progress.ready,set());self.assertEqual(progress.recent,[])
+        self.append('xi_map',marker[55:]);progress.poll()
+        self.assertEqual(progress.ready,{'xi_map'});self.assertEqual(progress.recent,['map: Ready'])
+    def test_oversized_lines_are_bounded_and_truncation_clears_readiness(self):
+        progress=m.StartupProgress(self.root)
+        self.append('xi_map',b'x'*(256*1024)+self.marker('xi_map'))
+        progress.poll();self.assertEqual(progress.fragments['xi_map'],b'')
+        progress.poll();self.assertEqual(progress.ready,set())
+        self.append('xi_map',self.marker('xi_map'));progress.poll();self.assertIn('xi_map',progress.ready)
+        (self.root/'xi_map.log').write_bytes(b'[map][info] Loading NPC scripts\n')
+        progress.poll();self.assertNotIn('xi_map',progress.ready)
+        self.assertEqual(progress.snapshot(3,True)['stage'],'Loading NPC scripts')
+    def test_supervisor_does_not_announce_ready_from_login_socket(self):
+        generation=self.root/'generation';generation.mkdir();(generation/'deployment.json').write_text('{}')
+        for name in m.PROCESSES:self.append(name,self.marker(name))
+        tick=[0];reports=[]
+        def cancelled():
+            if tick[0]>=3:raise InterruptedError('stopped')
+        def sleep(_):
+            tick[0]+=1
+            if tick[0]==1:
+                for name in m.PROCESSES:
+                    if name!='xi_map':self.append(name,self.marker(name))
+                self.append('xi_map',b'[map][info] Loading Mob scripts (LoadMOBList:662)\n')
+            if tick[0]==2:self.append('xi_map',self.marker('xi_map'))
+        worker=mock.Mock(pid=99999,returncode=None);worker.poll.return_value=None
+        with mock.patch.multiple(m,LOGS=self.root),mock.patch.object(m,'current',return_value=generation),mock.patch.object(m,'validate_binaries'),mock.patch.object(m,'ensure_ports'),mock.patch.object(m,'start_database',return_value={}),mock.patch.object(m,'stop_database'),mock.patch.object(m,'cancelled',side_effect=cancelled),mock.patch.object(m,'status',side_effect=lambda phase,message,**fields:reports.append((phase,message,fields))),mock.patch.object(m.subprocess,'Popen',return_value=worker),mock.patch.object(m.socket,'create_connection'),mock.patch.object(m.os,'killpg'),mock.patch.object(m.time,'sleep',side_effect=sleep),mock.patch.object(m.time,'monotonic',side_effect=lambda:tick[0]*300),mock.patch.object(m,'children',[]):
+            with self.assertRaises(InterruptedError):m.serve()
+        self.assertEqual([r[0] for r in reports],['starting','starting','starting','running'])
+        loading=reports[-2][2]['startup']
+        self.assertEqual(loading['stage'],'Loading Mob scripts');self.assertEqual(loading['pending_processes'],['xi_map'])
+        self.assertTrue(loading['login_port_reachable']);self.assertEqual(loading['elapsed_seconds'],300)
+        self.assertIn('You can connect now',reports[-1][1]);self.assertEqual(reports[-1][2]['startup']['elapsed_seconds'],600)
+    def test_dead_worker_never_announces_ready(self):
+        generation=self.root/'generation';generation.mkdir();(generation/'deployment.json').write_text('{}')
+        worker=mock.Mock(pid=99999,returncode=7);worker.poll.return_value=7
+        with mock.patch.multiple(m,LOGS=self.root),mock.patch.object(m,'current',return_value=generation),mock.patch.object(m,'validate_binaries'),mock.patch.object(m,'ensure_ports'),mock.patch.object(m,'start_database',return_value={}),mock.patch.object(m,'stop_database'),mock.patch.object(m,'cancelled'),mock.patch.object(m,'status') as report,mock.patch.object(m.subprocess,'Popen',return_value=worker),mock.patch.object(m,'children',[]):
+            with self.assertRaisesRegex(RuntimeError,'xi_world exited with code 7'):m.serve()
+        self.assertEqual([call.args[0] for call in report.call_args_list],['starting'])
+
 if __name__=='__main__':unittest.main()

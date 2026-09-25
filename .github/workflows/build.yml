@@ -71,13 +71,15 @@ jobs:
           python3 scripts/build-apk.py \
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
-            --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.33.apk
+            --keystore "$RUNNER_TEMP/ci-only.jks" \
+            --with-restore-test
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.34.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-Restore-Test-0.5.34.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.33.apk
+            out/LSB-Android-0.5.34.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/
@@ -98,6 +100,12 @@ jobs:
             out/windows-tests/dependency-detach.dll
             out/windows-tests/dependency-attach.dll
             out/windows-tests/dependency-cycle.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: restore-test-device-build
+          path: |
+            out/LSB-Android-Restore-Test-0.5.34.apk
+            out/LSB-Android-Restore-Test-0.5.34.apk.sha256
       - name: Preserve APK verification tools
         run: |
           mkdir -p out/apk-tools/lib out/apk-tools/lib64

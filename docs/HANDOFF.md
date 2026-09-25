@@ -1,3 +1,25 @@
+# 0.5.34 work in progress: accepted baseline, full session restore test
+
+The user confirmed successful world connection on .33 on 2026-09-25 and accepted
+it as the baseline. The previous apparent startup problem was an early login:
+world/search/connect were ready at 10:45:33 UTC, but map only reached markLoaded
+at 10:47:30 after mob scripts. New readiness must wait for all four fresh markers.
+Latest support archive reports a clean stopped state. Untimestamped assertions
+at the end of xi_map.log are retained as evidence; their cause is unconfirmed.
+
+Current task: complete installation backup/restore and TWO APKs, one updating
+io.github.russianranger.lsb and one isolated io.github.russianranger.lsb.restoretest.
+See docs/complete-session-backup.md for coverage and phone test instructions.
+After that phone restore test, investigate staged in-app PlayOnline client updates;
+only then test newer LSB source compilation and its database tool. Do not update
+the working client/server revision now. No allocator change requested.
+
+.33 CI follow-through: both Box64 jobs passed; PR FEX108037110708 passed. Push
+FEX108037283382 failed an observed D3D8 pixel fixture timeout. Android, native
+server, presentation and Windows jobs passed. No unchanged reruns or weakened gates.
+
+---
+
 # 0.5.33: MariaDB localhost resolution in the server guest
 
 Phone support ZIP `lsb-support (3)(8).zip` on .32 proves BFD/SFrame repair works:

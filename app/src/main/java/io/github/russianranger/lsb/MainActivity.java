@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
     private static final int BG = Color.rgb(12, 20, 31), CARD = Color.rgb(24, 36, 49), TEXT = Color.rgb(244, 234, 213), MUTED = Color.rgb(163, 182, 198), ACCENT = Color.rgb(217, 184, 117);
     private String tab = "Client", pending = "";
     private LinearLayout content;
-    private TextView operation, runtimeStatus,serverStatus;
+    private TextView operation, runtimeStatus,serverStatus,serverStartup;
     private ProgressBar progress;
     private Button cancel;
     private EditText host;
@@ -49,16 +49,20 @@ public final class MainActivity extends Activity {
                 progress.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE);
                 cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE);
             }
-            if(runtimeStatus!=null)runtimeStatus.setText(ClientRuntime.get(MainActivity.this).status);
-            if(serverStatus!=null)serverStatus.setText(ServerRuntime.get(MainActivity.this).status);
-            if(tab.equals("Server")&&serverAliveUi!=ServerRuntime.get(MainActivity.this).alive())draw();
+            if(!SessionBackup.active&&SessionBackup.recoveryError.isEmpty()){
+                if(runtimeStatus!=null)runtimeStatus.setText(ClientRuntime.get(MainActivity.this).status);
+                if(serverStatus!=null)serverStatus.setText(ServerRuntime.get(MainActivity.this).status);
+                if(serverStartup!=null)serverStartup.setText(ServerRuntime.get(MainActivity.this).startupLog());
+                if(tab.equals("Server")&&serverAliveUi!=ServerRuntime.get(MainActivity.this).alive())draw();
+            }
             if (generation != WorkService.generation) { generation = WorkService.generation; draw(); }
             handler.postDelayed(this, 600);
         }
     };
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
-        ClientRuntime.migrateProvenAcceleration(this);
+        if(!WorkService.busy)try{SessionBackup.recover(this);}catch(Exception e){SessionBackup.recoveryError=e.getMessage();WorkService.message="Recovery needs attention";WorkService.result=e.getMessage();}
+        if(!SessionBackup.active&&SessionBackup.recoveryError.isEmpty())ClientRuntime.migrateProvenAcceleration(this);
         getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
         if (Build.VERSION.SDK_INT >= 35) {
             getWindow().getDecorView().setOnApplyWindowInsetsListener((v, insets) -> { v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom()); return insets; });
@@ -67,7 +71,7 @@ public final class MainActivity extends Activity {
         else if(getIntent().hasExtra("tab"))tab=getIntent().getStringExtra("tab");
         if(saved!=null){Bundle sections=saved.getBundle("sections");if(sections!=null)for(String key:sections.keySet())expandedSections.put(key,sections.getString(key,""));}
         generation = WorkService.generation;
-        if (!WorkService.busy) { try {
+        if (!WorkService.busy&&SessionBackup.recoveryError.isEmpty()) { try {
             store(this).recover();
             SharedPreferences prefs = getSharedPreferences("preparation", MODE_PRIVATE);
             if (prefs.getInt("repairFormat", 0) != 3) {
@@ -92,6 +96,10 @@ public final class MainActivity extends Activity {
         try (InputStream in = ctx.getAssets().open("working-profile.json")) { ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] b = new byte[4096]; int n; while ((n = in.read(b)) != -1) out.write(b, 0, n); return out.toString("UTF-8"); }
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    private void disableControls(View view){
+        if(view instanceof Button||view instanceof EditText||view instanceof Spinner||view instanceof SeekBar)view.setEnabled(false);
+        if(view instanceof ViewGroup){ViewGroup group=(ViewGroup)view;for(int i=0;i<group.getChildCount();i++)disableControls(group.getChildAt(i));}
+    }
     private TextView label(String text, int size, int color) {
         TextView v = new TextView(this); v.setText(text); v.setTextColor(color); v.setTextSize(size); v.setPadding(0, dp(6), 0, dp(8)); v.setTextIsSelectable(true); return v;
     }
@@ -121,7 +129,7 @@ public final class MainActivity extends Activity {
         b.setOnClickListener(v -> { if (WorkService.busy) { toast("Wait for the current operation, or cancel it."); return; } try { action.run(); } catch (Exception e) { error(e); } }); return b;
     }
     private void draw() {
-        runtimeStatus=null;serverStatus=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;clearServerPasswords();serverPassword=null;serverPasswordConfirm=null;
+        runtimeStatus=null;serverStatus=null;serverStartup=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;clearServerPasswords();serverPassword=null;serverPasswordConfirm=null;
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(12), dp(6), dp(12), dp(6));
         FrameLayout hero=new FrameLayout(this);hero.setBackground(background(Color.rgb(15,35,58)));
         try(InputStream in=getAssets().open("art/"+(tab.equals("Server")?"server-background.png":"client-background.png"))){ImageView art=new ImageView(this);art.setImageDrawable(android.graphics.drawable.Drawable.createFromStream(in,null));art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));}catch(IOException ignored){}
@@ -131,7 +139,7 @@ public final class MainActivity extends Activity {
         TextView heading=label("LSB",compact?25:30,TEXT);heading.setTypeface(Typeface.create("serif",Typeface.BOLD));heading.setPadding(0,0,0,0);title.addView(heading);
         TextView subtitle=label("A world of adventure, on your device",compact?11:13,Color.rgb(175,219,255));subtitle.setPadding(0,dp(3),0,0);title.addView(subtitle);
         hero.addView(title);page.addView(hero,new LinearLayout.LayoutParams(-1,dp(compact?72:100)));
-        page.addView(label("Client & server launcher · "+appVersion(this),11,MUTED));
+        page.addView(label((getPackageName().endsWith(".restoretest")?"LSB Restore Test · separate installation":"Client & server launcher")+" · "+appVersion(this),11,MUTED));
         LinearLayout nav = new LinearLayout(this);nav.setOrientation(LinearLayout.VERTICAL);LinearLayout navRow=null;int navIndex=0;int navColumns=getResources().getConfiguration().screenWidthDp>=600?6:3;
         for (String name : new String[]{"Client", "Controller", "Server", "Runtime", "Profile", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12);b.setTypeface(Typeface.create("serif",Typeface.BOLD)); b.setPadding(dp(4),dp(8),dp(4),dp(8)); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));b.setSelected(name.equals(tab));
@@ -145,10 +153,16 @@ public final class MainActivity extends Activity {
         cancel = new Button(this); cancel.setText("Cancel operation"); cancel.setAllCaps(false); cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE); cancel.setOnClickListener(v -> { WorkService.cancel(); toast("Cancelling; waiting for the current file operation to stop."); }); page.addView(cancel);
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); content = column(); scroll.addView(content); page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(page);
+        if(!SessionBackup.recoveryError.isEmpty()){
+            content.addView(label(SessionBackup.recoveryError,15,TEXT));
+            button(content,"Retry restore recovery",()->run("Recovering restored session",(ctx,p)->{SessionBackup.recover(ctx);return "Restored session recovered.";}));return;
+        }
+        if(SessionBackup.active){content.addView(label("Complete session transfer in progress. Keep LSB open while files and settings are verified.",15,TEXT));return;}
         final String currentTab=tab;tiles=new FantasyTiles(this,expandedSections.getOrDefault(tab,""),value->expandedSections.put(currentTab,value));
         try { switch (tab) { case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Controller": controllerPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
         catch (Exception e) { content.addView(label("Cannot read app state: " + e.getMessage(), 16, TEXT)); }
         content.addView(tiles);
+        if(WorkService.busy)disableControls(content);
         Fullscreen.apply(this);
     }
     private void supportTile(){tiles.addAction("Export support ZIP","Save ZIP",()->{
@@ -191,7 +205,7 @@ public final class MainActivity extends Activity {
         panel=card("Runtime recovery");
         button(panel,"View runtime details",()->{try{showText("Runtime details",rt.state().toString(2));}catch(Exception e){error(e);}});
         button(panel,"Create fresh Box64 test prefix",()->confirm("Fresh Box64 test environment","The current Box64 test prefix will be preserved in a separate backup. Your prepared client stays in place.",()->run("Preserving Windows prefix",(ctx,p)->ClientRuntime.get(ctx).freshPrefix()))).setEnabled(rt.installed()&&!rt.alive()&&!getSharedPreferences("runtime",0).getBoolean("fex",false));
-        panel.addView(label("Current session backups contain your imported client, not this experimental runtime. A fresh-prefix action preserves its previous folder. Keep at least 3 GiB free for first setup.",14,MUTED));
+        panel.addView(label("Complete session backups include this runtime and all Windows environments. Stop the client and server before exporting from Client → Backup and recovery.",14,MUTED));
     }
     private void clientPage() throws Exception {
         ClientStore s = store(this);
@@ -230,10 +244,12 @@ public final class MainActivity extends Activity {
         launch.addView(label("Legacy external export tools remain available. They are not required for the new in-app runtime checks.", 13, MUTED));
 
         LinearLayout backup = card("Backup and recovery");
-        button(backup, "Export session backup", () -> create("backup", "lsb-session.zip")).setEnabled(s.hasClient());
-        button(backup, "Restore session backup", () -> confirm("Restore session", "The backup is validated before activation. Your current client becomes the rollback copy.", () -> pick("restore"))).setEnabled(!s.hasPendingImport());
+        boolean backupIdle=!ClientRuntime.get(this).alive()&&!ServerRuntime.get(this).alive();
+        button(backup, "Export complete session backup", () -> create("backup", "lsb-complete-session.zip")).setEnabled(backupIdle);
+        button(backup, "Restore complete session backup", () -> confirm("Restore complete session", "This replaces this app’s settings, clients, runtimes, server and databases after the backup passes verification. Stop both runtimes first. Use LSB Restore Test to test your backup separately from your working installation.", () -> pick("restore"))).setEnabled(backupIdle);
+        button(backup, "Restore legacy client backup", () -> confirm("Restore legacy client backup", "Older session backups contain only the imported client and connection settings. This restores that client and keeps a rollback copy.", () -> pick("restore-legacy"))).setEnabled(backupIdle&&!s.hasPendingImport());
         button(backup, "Switch to previous client", () -> confirm("Switch client", "Validate the previous client, then swap it with the current client?", () -> run("Validating previous client", (ctx, p) -> { store(ctx).rollback(p); return "Previous client restored. The other copy remains available for rollback."; }))).setEnabled(s.hasPrevious());
-        backup.addView(label("A session backup includes imported game files and saved connection settings. Windows runtime prefixes are separate and are not included. Uninstalling this app removes its managed copies.", 13, MUTED));
+        backup.addView(label("Includes app settings, imported and prepared clients, all Windows environments, both runtimes, server source and deployments, databases and a fresh SQL dump. Temporary process files are recreated. The backup contains private server credentials and account data; keep it private. Restoring needs room for the complete unpacked installation alongside any existing data.", 13, MUTED));
     }
     private EditText loginField(LinearLayout card,String title,String value,int type){
         card.addView(label(title,14,MUTED));EditText field=new EditText(this);field.setSingleLine(true);field.setTextColor(TEXT);field.setInputType(type);field.setText(value);
@@ -366,7 +382,7 @@ public final class MainActivity extends Activity {
         }
         button(card,"Discard staged preparation",()->confirm("Discard staged copy","Remove the unsuccessful working copy and its Windows environment? The original import and validated preparations are kept.",()->run("Discarding staged preparation",(ctx,p)->ClientRuntime.get(ctx).discardPreparation()))).setEnabled(candidate&&!rt.alive());
         button(card,"Restore previous preparation",()->run("Restoring previous preparation",(ctx,p)->ClientRuntime.get(ctx).rollbackPreparation())).setEnabled(prepared.has("previous")&&!rt.alive());
-        card.addView(label("Session backups currently contain the original import, not prepared Windows environments. The existing Termux server is not needed for these checks.",13,MUTED));
+        card.addView(label("Complete session backups include prepared clients and their Windows environments, including FEX. Export from Backup and recovery after stopping both runtimes.",13,MUTED));
     }
     private void startInitialization(String action){
         String renderer=getSharedPreferences("runtime",MODE_PRIVATE).getString("renderer","turnip26");
@@ -447,12 +463,13 @@ public final class MainActivity extends Activity {
         ServerRuntime sr=ServerRuntime.get(this);boolean running=sr.alive();serverAliveUi=running;
         boolean idle=!running&&!ClientRuntime.get(this).alive();
         LinearLayout live=featuredCard("Your LandSandBoat server");serverStatus=label(sr.status,15,ACCENT);live.addView(serverStatus);
+        serverStartup=label(sr.startupLog(),12,MUTED);live.addView(serverStartup);
         JSONObject active=sr.deployment();
         if(active.has("generation"))live.addView(label("Last saved count · "+active.optInt("accounts")+" accounts · "+active.optInt("characters")+" characters\nExpected client: "+active.optString("expected_client"),15,TEXT));
         else live.addView(label("Start with the server ZIP and database backup that match your working client and xiloader. Install the server runtime, import both files, then deploy that revision.",15,TEXT));
         button(live,"Start managed server",()->startForegroundService(new Intent(this,ServerService.class))).setEnabled(sr.installed()&&active.has("generation")&&!running);
         button(live,"Stop managed server",()->startForegroundService(new Intent(this,ServerService.class).setAction("stop"))).setEnabled(running);
-        live.addView(label("Stop the Termux server before starting this one: they use the same login/map ports. Once running, open the Client tab and connect to 127.0.0.1. Stop the client and managed server before account or database maintenance.",13,MUTED));
+        live.addView(label("Wait for Ready before connecting: mob scripts can take several minutes to load after login opens. Stop any server in Termux or the other LSB app first; they share login/map ports. Then connect to 127.0.0.1. Stop the client and server before backups or maintenance.",13,MUTED));
         supportTile();
         LinearLayout existing=card("Import your working server");
         button(existing,sr.toolsCurrent()?"Server runtime ready":sr.installed()?"Update server runtime and build tools":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(idle&&!sr.toolsCurrent());
@@ -532,7 +549,8 @@ public final class MainActivity extends Activity {
                     if (in == null) throw new IOException("Cannot open the selected document");
                     switch (kind) {
                         case "client": store(ctx).importClient(in, false, preserveFiles, p); return store(ctx).hasPendingImport() ? "Extraction complete. Choose the PlayOnline version on the Client tab to finish import." : "Client imported and validated. The previous copy, if any, is retained.";
-                        case "restore": store(ctx).importClient(in, true, false, p); return store(ctx).hasPendingImport() ? "Backup extracted. Choose the PlayOnline version on the Client tab to finish restore." : "Session restored and validated.";
+                        case "restore": return SessionBackup.restore(ctx,in,p);
+                        case "restore-legacy": store(ctx).importClient(in, true, false, p); return store(ctx).hasPendingImport() ? "Backup extracted. Choose the PlayOnline version on the Client tab to finish restore." : "Legacy client backup restored and validated.";
                         case "prerequisite": return ClientRuntime.get(ctx).importPrerequisite(in);
                         case "loader": store(ctx).importLoader(in, p); return "32-bit xiloader imported. Its runtime compatibility still needs a launch test.";
                         case "server-sql": return ServerRuntime.get(ctx).importDatabase(in,p);
@@ -546,7 +564,7 @@ public final class MainActivity extends Activity {
                 switch (kind) {
                     case "server-helper": try(InputStream helper=ctx.getAssets().open("server/export_existing.py")){byte[] b=new byte[8192];int n;while((n=helper.read(b))!=-1)out.write(b,0,n);} break;
                     case "server-db": ServerRuntime.get(ctx).exportDatabase(out,p); break;
-                    case "backup": store(ctx).exportBackup(out, p); break;
+                    case "backup": SessionBackup.export(ctx,out,p); break;
                     case "prepared": case "launcher": store(ctx).exportPrepared(out, profile(ctx), windowsLauncher(ctx), kind.equals("prepared"), p); break;
                     case "profile": out.write(profile(ctx).getBytes(StandardCharsets.UTF_8)); break;
                     case "support": support(ctx, out); break;
