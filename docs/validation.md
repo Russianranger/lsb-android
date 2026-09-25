@@ -12,9 +12,21 @@ The parser handles bounded PAX headers with byte-counted records and validates
 UTF-8 and supported data layout. Path/link/size overrides use normal extraction
 validation. Tests exercise GNU/USTAR compatibility, PAX scopes and malformed data.
 Archive download hash, all extracted regular bytes, executable modes and links are
-checked against independent Python tar reading. Local regression results:43 tar checks and full pinned archive comparison pass;
-24 server unit tests and core/credential transport checks pass. Android build/sign
-results follow after CI; physical-device runtime installation remains unverified. No change to accepted client settings or server schema.
+checked against independent Python tar reading. Local regression results: 43 tar
+checks and the full pinned archive comparison pass. CI also passes 41 Android
+tests, 82 runtime contracts, 24 server unit tests, core/credential transport checks,
+the APK build and real ARM64 MariaDB deployment/recovery with synthetic processes.
+These results apply to source `e7c52599efeb3c2cd5f306ff171022c34d75a0e7`, push run
+`36085869588` and PR run `36085872176`. Full Box64/FEX client jobs remain running
+at delivery; see the current handoff for job IDs. No claim that all CI is green.
+
+Signed device APK: `LSB-Android-0.5.30.apk`, versionCode 46, 18,329,898 bytes,
+SHA-256 `828c32ad1bcbb3662195224ba73a1c6d2fc779bede7baf125a7582f87cf1874b`.
+The original update certificate, v2/v3 signatures, alignment, ZIP integrity,
+package/version and non-signature payload identity with artifact `10844170202`
+verify. All 37 client runtime/native entries match 0.5.29; all five bundled server
+assets match source. Physical-device runtime installation remains unverified.
+No change to accepted client settings or server schema.
 
 ---
 

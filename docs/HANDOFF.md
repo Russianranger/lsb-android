@@ -15,8 +15,41 @@ Build gate now extracts the exact pinned download using the production Java pars
 and verifies its file contents, normalized executable modes, hardlinks and symlinks.
 Synthetic regressions cover metadata scopes, overrides and malformed archives.
 Client settings and all native/runtime assets remain unchanged; extraction is shared,
-so GNU/USTAR compatibility must also pass. Version0.5.30/code46. Delivery evidence
-will be recorded after build/sign verification; no physical-device install claimed.
+so GNU/USTAR compatibility must also pass. Version 0.5.30/code 46. No physical-device
+runtime installation has been claimed; retry on Thor is the next device check.
+
+Continuation recovered the exact pushed fix **e7c52599efeb3c2cd5f306ff171022c34d75a0e7**
+after the previous conversation reached its length limit. The saved local files
+match that commit. A fresh local check passes all 43 tar regressions and verifies
+5,407 files, 755 directories, 287 symlinks and 115 hardlinks against the pinned
+Ubuntu archive; all 110,784,659 regular-file bytes and executable modes match.
+
+Delivered **LSB-Android-0.5.30.apk**, 18,329,898 bytes, SHA-256
+`828c32ad1bcbb3662195224ba73a1c6d2fc779bede7baf125a7582f87cf1874b`.
+Library `libfile_bbe00fa4f2e88191b553be6fdb6eb396`, version 0,
+file `file_0000000000f081f9b1cfccb71cc3ecf5`. The original update signer is retained;
+package/version, v2/v3 signatures, alignment and ZIP integrity verify. All
+non-signature payload entries match CI artifact **10844170202** from push run
+**36085869588**. All 37 client runtime/native entries are byte-identical to .29,
+and all five server assets match committed source. APK changes are limited to
+the Android manifest, classes.dex and signature metadata.
+
+Both push **36085869588** and PR **36085872176** pass the Android build/41 Android
+tests, 43 archive checks, 82 runtime contracts, 24 server unit tests, presentation,
+Windows launcher and real ARM64 MariaDB deployment/recovery gates. The latter
+passes all nine integration markers using synthetic server processes; this does
+not establish deployment or gameplay with the user's actual server archive.
+At delivery the full client jobs remain running: push Box64 **107918076729**,
+FEX **107918076905**; PR Box64 **107918076822**, FEX **107918076921**. Check them
+next turn; do not claim all CI green. No unchanged retries or weakened checks.
+
+Phone retry: install .30 over .29 without uninstalling or clearing app data.
+Stop the client and old Termux server, then choose Server → Import your working
+server → Install server runtime and build tools. Existing source and SQL imports
+are retained; do not reimport for this error. Once installation completes, choose
+Deploy matching server + database, then Start managed server and use 127.0.0.1 in
+the client. If a step fails, export a fresh support ZIP and report the failed step.
+No source update, client runtime reinstall, merge or public release was requested.
 
 Prior0.5.29 push36066678276 and PR36066682077 now completed **success**, including
 both Box64/FEX runtime gates. The older pending notes below are historical.
