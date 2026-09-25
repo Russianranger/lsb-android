@@ -1,7 +1,7 @@
 # Staged client updates and storage management
 
 The owner confirmed that 0.5.35 full-session restore works. Keep the regular app
-and LSB Restore Test installed separately. Version 0.5.37 updates each in place;
+and LSB Restore Test installed separately. Version 0.5.38 updates each in place;
 never uninstall the regular app to install an update.
 
 ## Manage copies stored in the app
@@ -21,7 +21,7 @@ arbitrary device folders.
 
 ## First PlayOnline update test
 
-1. Install both 0.5.37 APK updates and use **LSB Restore Test** for this test.
+1. Install both 0.5.38 APK updates and use **LSB Restore Test** for this test.
    Keep the original app's server stopped. Stop the test app's client/server too.
 2. Open **Client → Client update · PlayOnline → Prepare update and open
    PlayOnline**. Confirm creation of a separate full client and Windows copy.
@@ -93,3 +93,20 @@ DLL check, full process result and startup diagnostics instead of just exit 1.
 
 - [Wine bug 56462 and its upstream resolution](https://list.winehq.org/hyperkitty/list/wine-bugs@list.winehq.org/thread/YEO7G4Z53QPOJWXWFWNIBJHHNTHGHI7G/)
 - [Upstream codec import fix](https://github.com/wine-mirror/wine/commit/c0779ad492b2b0f6f4b0bdb1a7d20dc5674dcf97)
+
+## Retrying Unknown error 0x80040154
+
+Version 0.5.38 registers PlayOnline's application and regional contents modules
+in the staged Windows environment before opening the viewer. These are separate
+from the core component already used by the game launcher. Their DLL registration
+and class factories are checked, and any failure is recorded with a component
+name and numeric error code.
+
+Install the matching APK update without uninstalling. In **LSB Restore Test**,
+select **Client → Client update · PlayOnline → Open or resume PlayOnline update**.
+The retained client copy is reused; another restore, import or runtime download
+is not needed. After the viewer opens, continue the official Check Files/File
+Repair steps above. If another error appears, export a fresh support ZIP.
+
+See [component registration evidence](playonline-com-0538.md) for the official
+installer mapping, reproduced failure and verification limits.

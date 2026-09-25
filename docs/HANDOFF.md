@@ -1,3 +1,101 @@
+# 0.5.38: PlayOnline application/contents registration repair
+
+The .37 phone report `lsb-support (2)(8).zip` (SHA256
+`efa924f03a3246964e50605cbf2ce2ccc60a283db30e9eec1d560fbe968758bc`)
+reached a rendered PlayOnline splash then `Unknown error 0x80040154`. All eleven
+normal DLL imports passed. The old sanitizer omitted the failing CLSID; do not
+claim that the phone ZIP alone identified the specific class.
+
+The exact public official viewer installer reproduced that dialog after core
+registration. The missing application class was
+`{40555aae-53ad-4abc-ae65-8441755e7d69}` in `viewer/com/app.dll`. MSI tables and
+executable class IDs also establish the regional contents registration. See
+[component evidence](playonline-com-0538.md) for the pinned installer identities.
+
+Production fix commit `27560c7b2c4102374779f1efeb98e273b1f226a1` (tree
+`f0d2fe1f83cc1931fdf0715abadaa2c38aec6729`) introduces version 0.5.38/code 54.
+Before viewer launch, the updater validates/hashes the exact live regional core,
+app and contents DLLs, invokes each DLL's DllRegisterServer and verifies its
+32-bit registry path and COM availability. App/contents verification requests
+and releases IClassFactory without constructing the viewer or invoking login.
+All required files are validated before the first native operation. Six helper
+receipts must have the right operation, architecture, loaded path, and success.
+Failures retain the update stage for retry. Numeric CLSID/IID/HRESULT diagnostics
+now survive sanitization; arbitrary raw Wine output and account text do not.
+
+Test-only commit `6ba9720d06996ee2fe9ca2731172af935692684b` (tree
+`9528f5d77e9e9e33fc8a3917e7630a73104a6f8d`) corrects UTF-8 decoding of native
+Windows fixture receipts and captures the official viewer at its advertised
+RFB resolution. It changes no packaged production code. Initial tests exposed
+these fixture problems; the first production official-viewer run already passed
+all six component operations but lacked a screenshot, so that run alone was
+not accepted as proof of usable viewer UI.
+
+The confirmed working client/server, active registry, backups and runtime
+engines are unchanged. No new runtime download, import, restore or full client
+copy is required. Keep both packages and the retained signing certificate.
+Test Restore Test first: Client → Client update · PlayOnline → Open or resume
+PlayOnline update. The active generation remains
+`768f3a6d-8dfb-462f-8b9d-46cdd7101505`; candidate
+`05d8856e-7a99-46c1-a9da-07cc4e8b3ec6` is reused. Never uninstall the working app.
+If the phone reports another failure, request a fresh support ZIP containing the
+new registration/component diagnostics. Online Check Files/File Repair and an
+updated-client connection still require the user's phone test. Defer newest
+LandSandBoat source/database experiments until the client-update path is accepted.
+
+Local verification passed 102 runtime unit test methods, all core/archive/restore
+checks, and native helper compilation. Final push 36194023305 and PR 36194026874
+pass Android build/packaging and native server deployment. Native Windows jobs
+108266633099 and 108266568171 each pass 143 checks, including real 32-bit factory
+availability, expected failure HRESULTs, exact non-ASCII paths, and factory
+release without viewer object creation.
+
+Both APKs were built from 6ba9720. Their nonsignature ZIP entry contents are
+identical to production 27560 APK contents. Original certificate SHA256:
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+The signed pair passes v2/v3 signature checks, alignment, ZIP integrity,
+version 0.5.38/code 54, package isolation and 57 identical shared code/resource/runtime
+entries. Every packaged runtime Python module and all 7 server assets match source.
+
+- LSB-Android-0.5.38.apk: 18412112 bytes; SHA256 `13f1fe322e6a6ebf76b40f26359da9d8b61ffd8ac7b9e298a59e76e85302eb35`; package `io.github.russianranger.lsb`.
+- LSB-Android-Restore-Test-0.5.38.apk: 18408016 bytes; SHA256 `8bd7e243fb02be3554f981bfda68289581d635368818d1a75582e86d86a27549`; package `io.github.russianranger.lsb.restoretest`.
+
+CI archives from push 36194023305: runtime-device-build10888574913
+(SHA256 0d6480efff07dadd373d0f7efc688f0e12a6cd3d650abb552b6c9affbbeae26a) and
+restore-test-device-build10889850030
+(SHA256 2770476673f5aeb797a4b16120da1695b3bd4421a4c976c243f99ebe5339f68a).
+
+The focused official-viewer jobs 108266633283 (push) and 108266568240 (PR)
+passed. Root reviewed production.png: actual Setup → Version Update page,
+“Update to the Latest Version”, Network/Next/Cancel controls, no unknown-error
+modal. The viewer changes to 640×480. All six operations return HRESULT 0 and
+Win32 error 0; capture_failures is empty, known_missing_class_errors=false and
+no diagnostic records were dropped. Generic Wine warnings still exist; do not
+claim a clean log. Offline testing did not click Next or perform File Repair.
+Evidence artifact 10889034624 has SHA256
+b29ba479d74c999ba75e040f0c787b38fec68ad8061fb5c00d145471e6207178;
+production.png SHA256
+bba30c7edb9b20cd915ac896713fe52c3bb441f90f1111cea17a0ca34215bd50.
+
+Both signed APKs saved successfully (version 0, local metadata applied):
+- Regular: libfile_758b5a2d71208191bfb798f075e89905 /
+  file_000000003acc81f9b39480eed4944107.
+- Restore Test: libfile_749555d89ddc8191814b6f4cb967bf6d /
+  file_00000000603481f98cd2ba710b972229.
+
+Full graphics regression status is separate from the passed focused startup
+checks. Original PR Box64 job108263689971 failed in the unchanged compressed
+texture/UP submission timeout before reaching updater fixtures. Original PR
+FEX job108263689972 failed its performance-trial pixel timeout (gpl_fast request,
+active none). Latest PR Box64 job108266568173 failed the unchanged early D3D8
+texture/geometry/render-target pixel check with exit -11, again before updater.
+These failures were not ignored, weakened or rerun unchanged to obtain green.
+Push Box64/FEX runs were still running when this handoff was prepared; actual
+three-case updater supervision in Docker/PRoot is not yet confirmed for .38.
+No current claim of all-green workflows or full phone/online update acceptance.
+
+---
+
 # 0.5.37 delivered: PlayOnline startup repair and diagnostics
 
 The .36 phone test (`lsb-support (1)(6).zip`, SHA256
