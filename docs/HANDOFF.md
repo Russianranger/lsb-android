@@ -1,22 +1,90 @@
-# 0.5.34 work in progress: accepted baseline, full session restore test
+# 0.5.34 delivered: complete session backup and isolated restore test
 
 The user confirmed successful world connection on .33 on 2026-09-25 and accepted
-it as the baseline. The previous apparent startup problem was an early login:
-world/search/connect were ready at 10:45:33 UTC, but map only reached markLoaded
-at 10:47:30 after mob scripts. New readiness must wait for all four fresh markers.
-Latest support archive reports a clean stopped state. Untimestamped assertions
-at the end of xi_map.log are retained as evidence; their cause is unconfirmed.
+it as the baseline. The apparent startup problem was early login: world/search/
+connect were ready at 10:45:33 UTC, but map only reached markLoaded at 10:47:30
+following mob scripts. Latest support archive reports stopped; untimestamped
+assertions at the end of xi_map.log remain unconfirmed shutdown-context evidence.
 
-Current task: complete installation backup/restore and TWO APKs, one updating
-io.github.russianranger.lsb and one isolated io.github.russianranger.lsb.restoretest.
-See docs/complete-session-backup.md for coverage and phone test instructions.
-After that phone restore test, investigate staged in-app PlayOnline client updates;
-only then test newer LSB source compilation and its database tool. Do not update
-the working client/server revision now. No allocator change requested.
+Implementation source **68a2a21ef89000d477ba07125eb86325d00fa233**, tree
+**5e3e7ec462bfcb3f3958dedecdba3752982fd05d**, version .34/code50. Initial source
+b64973de75dc25cc72df86eb604c6381bfc46725 already passed native restoration, but
+Android integration caught fresh managed storage being created after transaction
+begin. Final source creates destination roots before recording existence and
+also disables readiness as soon as server shutdown starts. No weakened test.
 
-.33 CI follow-through: both Box64 jobs passed; PR FEX108037110708 passed. Push
-FEX108037283382 failed an observed D3D8 pixel fixture timeout. Android, native
-server, presentation and Windows jobs passed. No unchanged reruns or weakened gates.
+Complete backups now preserve all files/rt and server-runtime persistent state,
+managed client/source imports, previous generations, both runtime installations,
+all Box64/FEX prefixes and prepared clients, credentials/raw MariaDB files plus a
+fresh logical SQL dump, and typed SharedPreferences (including future groups).
+Client and server must be stopped; orphan detection and server reservation prevent
+snapshotting live database writers. Process run/tmp files are recreated. Archives
+stream directly through SAF, preserve modes/hardlinks/symlinks, hash each file and
+the complete payload/metadata, and relocate exact host-root links to the receiving
+app. Guest paths remain unchanged; source/SQL/registry data is not rewritten.
+
+Restore verifies separate staging roots before activation, uses a durable
+cross-storage recovery journal, restores original roots after interrupted
+uncommitted swaps, and replays settings after committed interruption. Android-created
+empty placeholders and read-only directory cleanup are covered. Recovery failures
+block normal UI. Legacy client-only backups keep a separate restore action.
+Server startup now shows live loading stages, elapsed time and recent startup lines;
+Ready requires fresh markers from all four xi processes and reachable login port.
+
+Two APKs were built from identical code/runtime assets. Standard updates
+io.github.russianranger.lsb; **LSB Restore Test** uses
+io.github.russianranger.lsb.restoretest with separate UID/storage, explicit private
+components and no shared UID/provider. Test client requires its OWN live, ready
+server and actual LoginRequest host127.0.0.1. The two apps share network ports;
+stop the working app server before starting the test server.
+
+Validation: both push **36129692117** and PR **36129725510** Android build jobs
+**108053958301 / 108054073959** pass all **53 Android tests**, **32 archive** and
+**353 transaction recovery** checks, **43 tar** checks, **82 runtime contracts**,
+**39 server units** and existing core/display checks. Both native ARM64 server jobs
+**108053857294 / 108053960884** pass all 15 markers, including actual 731 MiB
+complete-session archive/activation with 2,443 files and five symlinks. Restored
+MariaDB starts at a new app path; account hashes/passwords, characters, blobs,
+views, routines, events and triggers work. Writes to the restored database leave
+original source/state hashes unchanged. These are synthetic fixtures; phone-scale
+backup/restore of the owner's private installation is the next required test.
+
+Both presentation and Windows jobs pass. Long Box64/FEX jobs are still running at
+delivery: push **108054625277 / 108054625185** and PR
+**108054909695 / 108054909744**. Check their results next turn; do not claim all CI
+green. .33 follow-through: both Box64 and PR FEX108037110708 passed; push
+FEX108037283382 failed an observed D3D8 pixel fixture timeout. No unchanged reruns.
+
+Delivered APKs, both signed by retained certificate SHA256
+f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e:
+
+- **LSB-Android-0.5.34.apk**: 18,346,420 bytes; SHA256
+  f5eef1114149c8af6c3c33ad7e49eff1638f3219afbfbae15f86fb2864aa2078.
+  Library libfile_25f8dc7af9f0819187420bf32cc84dd8, version0,
+  file_00000000925081f5b4f98316b312cd62.
+- **LSB-Android-Restore-Test-0.5.34.apk**: 18,350,516 bytes; SHA256
+  d7c9c2bf0ea3ff715088a893cb291c5005ba45ae1c4935d4a600e632b6d8e775.
+  Library libfile_0e27a637cc2881918aafe44aa2dba5f2, version0,
+  file_000000004b8c81f58c0eaf5331faa736.
+
+v2/v3 signatures, package IDs/version, alignment and ZIP integrity pass. Final
+non-signature payload matches CI; APK pair verifier confirms identical 55 code/
+resource/runtime entries outside manifest/resources table. All 37 client runtime/
+native entries remain byte-identical to .33; all seven server assets match source.
+CI source artifacts **10860823245** (standard) and **10861192959** (test), archive
+SHA256 053b5e5d84bc175daf41da2f3eeb8c1704ce0bf40a99c6826a79abeaf56d7b8c and
+118fc509aeb4e4b305d4e4839c986a08d0752cef7715c2853647c2e0f3b68090.
+
+Next phone test: install standard APK over current app (do not uninstall), stop
+client+server, Client → Backup and recovery → Export complete session backup to
+Downloads/external storage. Install Restore Test, import that backup, check saved
+settings and prepared client/server, start only the test server and wait for
+Server ready before connecting. See docs/complete-session-backup.md.
+
+After the owner confirms this restore test, investigate staged in-app PlayOnline
+repair/client updating. Only after that, test fetching/compiling a pinned newest
+LSB source revision and its database tool in the test installation. Do not update
+the accepted working client/server now. No allocator change requested.
 
 ---
 
