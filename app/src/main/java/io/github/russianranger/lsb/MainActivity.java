@@ -211,6 +211,7 @@ public final class MainActivity extends Activity {
         ClientStore s = store(this);
         boolean ready=ClientRuntime.get(this).preparationState().has("current");
         if(ready)loginCard(s);else supportTile();
+        clientUpdateCard();
         initializationCard(s);
         if (s.hasPendingImport() && !WorkService.busy) pendingImportCard(s);
         LinearLayout status = card(s.hasClient() ? "Imported client" : "Bring your FFXI installation");
@@ -245,11 +246,36 @@ public final class MainActivity extends Activity {
 
         LinearLayout backup = card("Backup and recovery");
         boolean backupIdle=!ClientRuntime.get(this).alive()&&!ServerRuntime.get(this).alive();
+        button(backup, "Manage backups and storage", () -> startActivity(new Intent(this,BackupBrowserActivity.class)));
         button(backup, "Export complete session backup", () -> create("backup", "lsb-complete-session.zip")).setEnabled(backupIdle);
         button(backup, "Restore complete session backup", () -> confirm("Restore complete session", "This replaces this app’s settings, clients, runtimes, server and databases after the backup passes verification. Stop both runtimes first. Use LSB Restore Test to test your backup separately from your working installation.", () -> pick("restore"))).setEnabled(backupIdle);
         button(backup, "Restore legacy client backup", () -> confirm("Restore legacy client backup", "Older session backups contain only the imported client and connection settings. This restores that client and keeps a rollback copy.", () -> pick("restore-legacy"))).setEnabled(backupIdle&&!s.hasPendingImport());
         button(backup, "Switch to previous client", () -> confirm("Switch client", "Validate the previous client, then swap it with the current client?", () -> run("Validating previous client", (ctx, p) -> { store(ctx).rollback(p); return "Previous client restored. The other copy remains available for rollback."; }))).setEnabled(s.hasPrevious());
         backup.addView(label("Includes app settings, imported and prepared clients, all Windows environments, both runtimes, server source and deployments, databases and a fresh SQL dump. Temporary process files are recreated. The backup contains private server credentials and account data; keep it private. Restoring needs room for the complete unpacked installation alongside any existing data.", 13, MUTED));
+    }
+    private void clientUpdateCard() throws Exception {
+        ClientRuntime rt=ClientRuntime.get(this);JSONObject state=rt.preparationState();
+        JSONObject candidate=state.optJSONObject("candidate");
+        boolean staged=candidate!=null&&candidate.has("update_of");
+        String phase=staged?candidate.optString("update_phase"):"";
+        boolean verified="verified".equals(phase);
+        boolean idle=!rt.alive()&&!ServerRuntime.get(this).alive();
+        LinearLayout update=card("Client update · PlayOnline");
+        update.addView(label(getPackageName().endsWith(".restoretest")?"Test client updates here while your regular LSB installation stays separate.":"Use LSB Restore Test for the first update test, keeping this working installation available.",15,TEXT));
+        update.addView(label("The updater copies your prepared client and Windows environment, then opens PlayOnline in that staged copy. Your active client stays available until you verify and activate the update. Stop the client and managed server first.",14,MUTED));
+        if(staged){
+            update.addView(label(verified?"Updated copy verified and ready for activation.":"An update copy is staged. Resume PlayOnline to continue downloading or checking files.",15,ACCENT));
+            String version=candidate.optString("client_version","");if(!version.isEmpty())update.addView(label("Staged client: "+version,14,MUTED));
+        }else if(candidate!=null)update.addView(label("Finish or discard the existing staged preparation before starting a client update.",14,ACCENT));
+        button(update,staged?"Open or resume PlayOnline update":"Prepare update and open PlayOnline",()->confirm(staged?"Resume client update":"Prepare a client update",staged?"Open PlayOnline in the staged copy? Reopening it requires verification again before activation.":"Create a full update copy, then move ROM/0/0.dat aside in that copy to trigger PlayOnline file repair? Your active client and its Windows environment are retained. This needs space for another complete client.",()->startInitialization("update-client"))).setEnabled(idle&&rt.installed()&&state.has("current")&&(candidate==null||staged));
+        update.addView(label("In PlayOnline: Check Files → FINAL FANTASY XI → Check Files → File Repair → Yes. Wait for repair to finish, then choose Exit Viewer. If the viewer updates and closes, reopen it here. Download progress appears in the client display.",14,TEXT));
+        update.addView(label("FINAL FANTASY XI must appear in PlayOnline’s Check Files list. If it is missing, the installation needs the official retail registration/login setup first. LSB does not bypass that step. Updating uses the same Box64 environment as client preparation; your gameplay runtime choice is retained.",13,MUTED));
+        button(update,"Open updater display",()->startActivity(new Intent(this,RuntimeActivity.class))).setEnabled(rt.alive());
+        button(update,"Stop updater",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());
+        button(update,"Verify completed update",()->confirm("Verify updated client","Only continue after PlayOnline reports file repair complete and you have exited the viewer. This checks the updated copy before activation.",()->startInitialization("verify-client-update"))).setEnabled(staged&&idle);
+        button(update,"Activate verified update",()->confirm("Activate updated client","Switch this app to the verified update? Your previous prepared client remains available for rollback. The new client may need a matching server revision and xiloader; this does not update either of them.",()->run("Activating client update",(ctx,p)->ClientRuntime.get(ctx).activateClientUpdate()))).setEnabled(verified&&idle);
+        button(update,"Discard staged update",()->confirm("Discard staged update","Delete the update copy and its Windows environment? Downloaded changes in that copy will be lost. Your active prepared client is retained.",()->run("Discarding client update",(ctx,p)->ClientRuntime.get(ctx).discardPreparation()))).setEnabled(staged&&idle);
+        button(update,"Restore previous prepared client",()->confirm("Restore previous prepared client","Switch back to the retained client and matching Windows environment? Stop the managed server before switching client versions.",()->run("Restoring previous prepared client",(ctx,p)->ClientRuntime.get(ctx).rollbackPreparation()))).setEnabled(!staged&&state.has("previous")&&idle);
     }
     private EditText loginField(LinearLayout card,String title,String value,int type){
         card.addView(label(title,14,MUTED));EditText field=new EditText(this);field.setSingleLine(true);field.setTextColor(TEXT);field.setInputType(type);field.setText(value);
@@ -259,6 +285,7 @@ public final class MainActivity extends Activity {
     }
     private void loginCard(ClientStore source)throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);JSONObject state=rt.preparationState();
+        JSONObject stagedClient=state.optJSONObject("candidate");boolean updateStaged=stagedClient!=null&&stagedClient.has("update_of");
         LinearLayout card=featuredCard("Play FINAL FANTASY XI");runtimeStatus=label(rt.status,15,ACCENT);card.addView(runtimeStatus);
         card.addView(label("Start your Termux or managed server, then log in. Your working client and loader are kept together.",15,TEXT));
         LinearLayout graphics=card("Graphics & display");
@@ -354,34 +381,35 @@ public final class MainActivity extends Activity {
         button(diagnostics,"View launch results",()->{try{JSONObject current=rt.preparationState().getJSONObject("current");showText("Launch results",current.has("last_launch")?current.getJSONObject("last_launch").toString(2):"No launch check has run yet.");}catch(Exception e){error(e);}});
         {
             diagnostics.addView(label("If launch diagnostics identify a missing dependency, select its official x86 installer. Repair makes a full recovery copy, runs the installer, and activates it only after client and loader checks pass.",14,MUTED));
-            button(diagnostics,"Select launcher prerequisite (.exe)",()->pick("prerequisite")).setEnabled(!rt.alive());
-            button(diagnostics,"Repair launcher prerequisites",()->startInitialization("repair-launcher")).setEnabled(!rt.alive()&&state.optBoolean("prerequisite_selected"));
+            button(diagnostics,"Select launcher prerequisite (.exe)",()->pick("prerequisite")).setEnabled(!updateStaged&&!rt.alive());
+            button(diagnostics,"Repair launcher prerequisites",()->startInitialization("repair-launcher")).setEnabled(!updateStaged&&!rt.alive()&&state.optBoolean("prerequisite_selected"));
         }
     }
     private void initializationCard(ClientStore source)throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);JSONObject prepared=rt.preparationState();
         boolean candidate=prepared.has("candidate"), copied=candidate&&prepared.getJSONObject("candidate").optBoolean("copy_complete");
         boolean repair=candidate&&prepared.getJSONObject("candidate").has("repair_of");
+        boolean update=candidate&&prepared.getJSONObject("candidate").has("update_of");
         LinearLayout card=card("Prepare PlayOnline and FFXI");
         if(runtimeStatus==null){runtimeStatus=label(rt.status,15,ACCENT);card.addView(runtimeStatus);}
         card.addView(label("Create a separate working copy and Windows environment, register the selected client, then test its PlayOnline and FFXI interfaces. Successful checks activate both copies together. This step does not log in or start the game.",15,TEXT));
         card.addView(label("Free runtime storage: "+rt.home.getUsableSpace()/1073741824L+" GiB. Preparation needs room for another full client and Windows copy; space is checked before copying. This may take several minutes.",14,MUTED));
         if(prepared.has("current"))card.addView(label("A validated preparation is available. A new attempt preserves it until checks pass.",14,ACCENT));
-        if(candidate)card.addView(label(copied?"A staged working copy is available. Retry uses its captured region and files without copying the full import again.":"The previous copy was interrupted. Preparation will replace only that incomplete candidate.",14,MUTED));
+        if(candidate)card.addView(label(update?"A client update is staged. Continue it from Client update · PlayOnline.":copied?"A staged working copy is available. Retry uses its captured region and files without copying the full import again.":"The previous copy was interrupted. Preparation will replace only that incomplete candidate.",14,MUTED));
         if(!rt.installed())card.addView(label("Install the Windows runtime on the Runtime tab first.",14,MUTED));
         button(card,repair?"Retry launcher prerequisite repair":copied?"Retry client initialization":"Prepare imported client",()->{
             try{if(!copied&&!repair)saveConnection();startInitialization(repair?"repair-launcher":"initialize");}catch(Exception e){error(e);}
-        }).setEnabled(source.hasClient()&&!source.hasPendingImport()&&rt.installed()&&!rt.alive());
+        }).setEnabled(!update&&source.hasClient()&&!source.hasPendingImport()&&rt.installed()&&!rt.alive());
         button(card,"Open initialization display",()->startActivity(new Intent(this,RuntimeActivity.class))).setEnabled(rt.alive());
         button(card,"Stop initialization",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());
         button(card,"View preparation results",()->{try{showText("Prepared client",rt.preparationState().toString(2));}catch(Exception e){error(e);}});
-        if(copied){
+        if(copied&&!update){
             card.addView(label("If diagnostics identify a missing dependency, select its official x86 prerequisite installer. It runs interactively in the staged copy, then registration checks run again.",14,MUTED));
             button(card,"Select prerequisite installer (.exe)",()->pick("prerequisite")).setEnabled(!rt.alive());
             button(card,"Run prerequisite and retry checks",()->startInitialization(repair?"repair-launcher":"installer")).setEnabled(!rt.alive()&&prepared.optBoolean("prerequisite_selected"));
         }
-        button(card,"Discard staged preparation",()->confirm("Discard staged copy","Remove the unsuccessful working copy and its Windows environment? The original import and validated preparations are kept.",()->run("Discarding staged preparation",(ctx,p)->ClientRuntime.get(ctx).discardPreparation()))).setEnabled(candidate&&!rt.alive());
-        button(card,"Restore previous preparation",()->run("Restoring previous preparation",(ctx,p)->ClientRuntime.get(ctx).rollbackPreparation())).setEnabled(prepared.has("previous")&&!rt.alive());
+        button(card,"Discard staged preparation",()->confirm("Discard staged copy","Remove the unsuccessful working copy and its Windows environment? The original import and validated preparations are kept.",()->run("Discarding staged preparation",(ctx,p)->ClientRuntime.get(ctx).discardPreparation()))).setEnabled(!update&&candidate&&!rt.alive());
+        button(card,"Restore previous preparation",()->run("Restoring previous preparation",(ctx,p)->ClientRuntime.get(ctx).rollbackPreparation())).setEnabled(!update&&prepared.has("previous")&&!rt.alive());
         card.addView(label("Complete session backups include prepared clients and their Windows environments, including FEX. Export from Backup and recovery after stopping both runtimes.",13,MUTED));
     }
     private void startInitialization(String action){

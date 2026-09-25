@@ -5,13 +5,19 @@ The phone owner confirmed successful in-app world connection on 0.5.33 on
 at `1fcebbbc62e7b0ad94b1594038ee0c6a7e634a85`) is the accepted working baseline.
 Keep its client/server revision, compiler defaults and graphics settings.
 
-## First phone test
+## Confirmed baseline
 
-1. Install **LSB Android 0.5.35** over the working app. Do not uninstall it.
+The owner confirmed on 2026-09-25 that 0.5.35 complete-session restoration works
+perfectly. The support log records successful restore and verification at
+07:55:44 CDT. The separate Restore Test app remains the update-testing environment.
+
+## Backup and restore
+
+1. Install **LSB Android 0.5.36** over the working app. Do not uninstall it.
 2. Stop the client and managed server. Open **Client → Backup and recovery →
    Export complete session backup**. Save outside either app's managed storage,
    for example Downloads or an external drive, and wait for export to complete.
-3. Install **LSB Restore Test 0.5.35**. It has a separate launcher name, package
+3. Install **LSB Restore Test 0.5.36**. It has a separate launcher name, package
    ID, Android UID and storage. Open **Client → Backup and recovery → Restore
    complete session backup** and select the exported archive.
 4. Wait for verification and restoration to finish. Check that the selected
@@ -66,11 +72,9 @@ The archive is an LSB complete-session format, not an ordinary client import ZIP
 
 ## Ordered next milestones
 
-Do not update the working client or server until the owner verifies the isolated
-restore test. Next, investigate a staged PlayOnline repair/update workflow in the
-test app, including the exact official version-check/repair behavior, progress,
-interruption recovery and preservation of the current prepared client. Do not
-delete a guessed client marker file or weaken inventory validation.
+The isolated restore test passed on 0.5.35. Next, test the staged PlayOnline
+repair/update workflow in Restore Test; see [client updating](client-update.md).
+Preserve the regular app and its accepted client/server pair during that test.
 
 After the client update is verified, test fetching a pinned new LandSandBoat
 source revision, compiling it in the test app, using that revision's database

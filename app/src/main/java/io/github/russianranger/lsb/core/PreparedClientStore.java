@@ -67,6 +67,7 @@ public final class PreparedClientStore {
     }
     public File prepare(ClientStore imported,File seedPrefix,SafeZip.Progress progress) throws Exception {
         File existing=selected("candidate");
+        if(existing!=null&&metadata(existing).containsKey("updateOf"))throw new IOException("Finish or discard the staged PlayOnline update first");
         if(complete(existing)){progress.update("Reusing staged client; retrying initialization");return existing;}
         if(existing!=null)discard();
         if(imported.hasPendingImport())throw new IOException("Finish the pending import first");
@@ -111,9 +112,71 @@ public final class PreparedClientStore {
         Copier copier=new Copier(bytes,progress);copier.copy(new File(current,"client"),new File(gen,"client"),false,0);copier.copy(new File(current,"prefix"),new File(gen,"prefix"),true,0);
         FilesEx.text(new File(gen,"copy-complete"),"1\n");return gen;
     }
+    /** Full independent client/prefix copy. Interrupted downloads reuse this generation. */
+    public File stageUpdate(SafeZip.Progress progress)throws Exception {
+        File current=selected("current"),existing=selected("candidate");
+        if(!complete(current)||!new File(current,"initialization-passed.json").isFile())throw new IOException("Prepare and validate the client first");
+        if(existing!=null){
+            if(!current.getName().equals(metadata(existing).getProperty("updateOf")))throw new IOException("Finish or discard the unrelated staged preparation first");
+            if(complete(existing))return existing;
+            discard();
+        }
+        long bytes=Math.addExact(size(new File(current,"client"),false,0),size(new File(current,"prefix"),true,0));
+        if(home.getUsableSpace()<bytes+2L*1073741824L)throw new IOException("Client update needs "+((bytes+3L*1073741824L-1)/1073741824L)+" GiB free for a separate client and Windows environment");
+        File gen=generation(UUID.randomUUID().toString());FilesEx.mkdir(gen);
+        Properties m=metadata(current);m.setProperty("generation",gen.getName());m.remove("repairOf");
+        for(String key:new ArrayList<>(m.stringPropertyNames()))if(key.startsWith("update"))m.remove(key);
+        m.setProperty("updateOf",current.getName());m.setProperty("updatePhase","copying");save(new File(gen,"metadata.properties"),m);
+        Properties s=state();s.setProperty("candidate",gen.getName());save(new File(home,"state.properties"),s);
+        Files.copy(new File(current,"source-inventory.json").toPath(),new File(gen,"source-inventory.json").toPath());
+        Files.copy(new File(current,"source-inventory.json").toPath(),new File(gen,"update-source-inventory.json").toPath());
+        Copier copier=new Copier(bytes,progress);copier.copy(new File(current,"client"),new File(gen,"client"),false,0);copier.copy(new File(current,"prefix"),new File(gen,"prefix"),true,0);
+        FilesEx.text(new File(gen,"copy-complete"),"1\n");m.setProperty("updatePhase","staged");save(new File(gen,"metadata.properties"),m);return gen;
+    }
+    public File updateCandidate()throws IOException {
+        File gen=selected("candidate"),current=selected("current");
+        if(!complete(gen)||current==null||!current.getName().equals(metadata(gen).getProperty("updateOf")))throw new IOException("No complete update for the active client is staged");
+        return gen;
+    }
+    private File updateGameFile(File gen)throws IOException {
+        File client=new File(gen,"client"),game=new File(client,metadata(gen).getProperty("game",""));
+        if(!game.getCanonicalFile().toPath().startsWith(client.getCanonicalFile().toPath()))throw new IOException("Invalid update game folder");
+        File rom=ClientInspector.child(game,"ROM"),zero=rom==null?null:ClientInspector.child(rom,"0");
+        if(rom==null||zero==null||Files.isSymbolicLink(rom.toPath())||Files.isSymbolicLink(zero.toPath()))throw new IOException("Missing regular FFXI ROM/0 folder");
+        File dat=ClientInspector.child(zero,"0.dat");return dat==null?new File(zero,"0.dat"):dat;
+    }
+    /** LSB's documented repair trigger; save the one file outside Wine's /client mount. */
+    public void prepareUpdateRepair()throws IOException {
+        File gen=updateCandidate(),saved=new File(gen,"update-original-0.dat");Properties m=metadata(gen);
+        if(!Files.exists(saved.toPath(),LinkOption.NOFOLLOW_LINKS)){
+            File dat=updateGameFile(gen);
+            if(!Files.isRegularFile(dat.toPath(),LinkOption.NOFOLLOW_LINKS)||dat.length()==0)throw new IOException("Missing FFXI ROM/0/0.dat; cannot prepare the repair trigger");
+            Files.move(dat.toPath(),saved.toPath(),StandardCopyOption.ATOMIC_MOVE);
+        }else if(!Files.isRegularFile(saved.toPath(),LinkOption.NOFOLLOW_LINKS))throw new IOException("Invalid saved repair trigger");
+        // Saving after the move makes a crash between the two safe to resume.
+        Files.deleteIfExists(new File(gen,"update-verified.json").toPath());
+        Files.deleteIfExists(new File(gen,"initialization-passed.json").toPath());
+        m.setProperty("updatePhase","repair_pending");save(new File(gen,"metadata.properties"),m);
+    }
+    public void requireRepairCompleted()throws IOException {
+        File gen=updateCandidate(),dat=updateGameFile(gen);
+        if(!Files.isRegularFile(new File(gen,"update-original-0.dat").toPath(),LinkOption.NOFOLLOW_LINKS)||!Files.isRegularFile(dat.toPath(),LinkOption.NOFOLLOW_LINKS)||dat.length()==0)throw new IOException("PlayOnline has not restored ROM/0/0.dat. Finish FINAL FANTASY XI File Repair, then exit the viewer and verify again");
+    }
+    public void updatePhase(String phase)throws IOException {
+        if(!Arrays.asList("repair_pending","verification_pending","verifying","verified").contains(phase))throw new IOException("Invalid update phase");
+        File gen=updateCandidate();Properties m=metadata(gen);m.setProperty("updatePhase",phase);save(new File(gen,"metadata.properties"),m);
+    }
+    public void recordUpdatedInventory(ClientInspector.Snapshot snapshot)throws Exception {
+        File gen=updateCandidate();Properties m=metadata(gen);
+        if(!snapshot.root.equals(new File(gen,"client"))||!m.getProperty("pol").equals(relative(snapshot.root,snapshot.pol))||!m.getProperty("game").equals(relative(snapshot.root,snapshot.game))||!m.getProperty("core").equals(snapshot.polCore)||!m.getProperty("loader","").equals(snapshot.loader==null?"":relative(snapshot.root,snapshot.loader)))throw new IOException("Updated installation paths changed; keep the active client and inspect the staged copy");
+        FilesEx.text(new File(gen,"source-inventory.json"),snapshot.inventory);
+        m.setProperty("inventorySha256",FilesEx.hash(new File(gen,"source-inventory.json")));m.setProperty("files",Long.toString(snapshot.files));m.setProperty("bytes",Long.toString(snapshot.bytes));m.setProperty("clientVersion",snapshot.version);
+        save(new File(gen,"metadata.properties"),m);
+    }
     public void promote(File gen) throws IOException {
         Properties state=state();String id=gen.getName();
         if(!id.equals(state.getProperty("candidate"))||!complete(gen)||!new File(gen,"initialization-passed.json").isFile())throw new IOException("Candidate is not validated");
+        if(metadata(gen).containsKey("updateOf")&&(!"verified".equals(metadata(gen).getProperty("updatePhase"))||!new File(gen,"update-verified.json").isFile()))throw new IOException("Verify the PlayOnline update before activation");
         String current=state.getProperty("current","");if(!current.isEmpty())state.setProperty("previous",current);
         state.setProperty("current",id);state.remove("candidate");save(new File(home,"state.properties"),state);
     }

@@ -57,7 +57,7 @@ def validate_request(req):
         if key in req and not isinstance(req[key],bool):raise ValueError('Unsupported '+key+' setting')
     if 'startup_trace' in req and (req.get('action')!='launch' or not isinstance(req['startup_trace'],bool)):raise ValueError('Unsupported startup trace setting')
     if 'display_profile' in req and (req.get('action')!='launch' or req['display_profile'] not in ('windowed720','windowed540','preserve','restore')):raise ValueError('Unsupported FFXI display setting')
-    if req.get('action','probe') not in ('probe','initialize','installer','launch','check-launcher','repair-launcher','gamepad-config'):raise ValueError('Unsupported runtime action')
+    if req.get('action','probe') not in ('probe','initialize','installer','launch','check-launcher','repair-launcher','gamepad-config','update-client','verify-client-update'):raise ValueError('Unsupported runtime action')
     if not isinstance(req.get('audio'),bool):raise ValueError('Invalid audio setting')
     if not isinstance(req.get('session_id'),str) or len(req['session_id'])!=36:raise ValueError('Missing session identity')
     return req
@@ -187,8 +187,8 @@ class Supervisor:
         self.state.update(fields);atomic(SESSION/'status.json',self.state);atomic(LOGS/'runtime-state.json',self.state)
     def stopped(self):
         if STOP or (SESSION/'stop').exists():raise Stopped()
-    def spawn(self,args,name,env=None,pipe_input=False,fixed_output=False):
-        proc=subprocess.Popen(args,env=env or self.env,cwd=PROBE,stdin=subprocess.PIPE if pipe_input else subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+    def spawn(self,args,name,env=None,pipe_input=False,fixed_output=False,cwd=None):
+        proc=subprocess.Popen(args,env=env or self.env,cwd=PROBE if cwd is None else cwd,stdin=subprocess.PIPE if pipe_input else subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
         writer=BoundedLog(LOGS/name,lambda:self.private_output and not fixed_output);writer.start(proc.stdout);self.logs.append(writer);self.children.append(proc);return proc
     def wait(self,proc,timeout,label,accepted=(0,)):
         deadline=time.monotonic()+timeout
@@ -555,6 +555,9 @@ class Supervisor:
         self.configure_graphics_tuning()
         self.configure_runtime_acceleration()
         self.configure_performance_trial()
+        if self.req.get('action')=='update-client':
+            from client_update import run
+            run(self);return
         if self.req.get('action')=='gamepad-config':
             from client_setup import validate_manifest,client_path,windows_path
             manifest=json.loads((SESSION/'client-manifest.json').read_text());validate_manifest(manifest)
@@ -577,7 +580,7 @@ class Supervisor:
             self.status('initializing_client',prefix_system_files_verified=True)
             from client_setup import initialize
             initialize(self)
-            if self.req['action']=='repair-launcher':
+            if self.req['action'] in ('repair-launcher','verify-client-update'):
                 from client_launch import check
                 check(self);self.status('completed')
             atomic(marker,signature)

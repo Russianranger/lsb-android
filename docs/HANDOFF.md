@@ -1,3 +1,58 @@
+# 0.5.36 in progress: backup browser and staged PlayOnline update
+
+The owner confirmed on 2026-09-25: "Restore functionality works perfectly."
+Support lsb-support(20260925-131758).zip records successful full restore and
+verification at 07:55:44 CDT on .35. This is the new accepted backup/restore
+baseline. Preserve the regular app and provide both regular and isolated Restore
+Test APK updates. Next request is reviewing/deleting app-held recovery copies and
+backups, then testing client updating before latest server compilation/database
+migration. Do not update the working installation automatically.
+
+.36/code52 adds Client → Backup and recovery → Manage backups and storage,
+with background size scans, read-only names/sizes browsing, protected current data,
+and explicit selection/confirmation for deleting inactive recovery data. Known
+previous/orphan client/server generations, paired FEX prefixes, previous imports,
+saved test prefixes, SQL dump copies and download caches are supported. No link
+traversal or arbitrary path deletion. Deletion rechecks selections, holds server
+maintenance reservation, durably removes rollback pointers before quarantine,
+and leaves interrupted cleanup discoverable. It does not retain another export
+ZIP: exported archives stay in their chosen Android folder (manage via Files).
+
+Client → Client update · PlayOnline copies the current prepared client and Box64
+prefix, moves only its ROM/0/0.dat aside outside the mounted client folder, then
+opens real pol.exe in that copy. User runs official Check Files / File Repair;
+progress appears in the display. Reopening resumes the same candidate and does
+not remove downloaded replacements. Prefix-scoped wineserver waiting covers POL
+self-restarts. POL output/login data is not forwarded to support logs. No login
+credentials are passed from LSB. FFXI must already be eligible in POL's dropdown;
+no retail-registration state is fabricated.
+
+Verification is separate, requires restored0.dat, reinspects only this update's
+inventory, retains xiloader hash, runs registration and loader dependency checks,
+and records generation/session-bound receipts. Explicit activation checks those
+receipts and current file hashes, then promotes the client/prefix together with
+rollback retained. Ordinary initialization cannot accept an update candidate.
+Fixed Box64 update/verification follows existing preparation; gameplay FEX choice
+is retained and the new generation obtains its own FEX prefix on launch. Actual
+POL UI/network download and newer client/server compatibility need phone testing.
+
+Local checks: 15 storage safety tests, three browser lifecycle/deletion tests,
+and ten update UI/activation tests pass. Core checks pass, including 39 prepared
+client checks, 62 archive checks and 353 restore transaction cases; all 88 Python
+runtime contracts pass. Independent updater review found no blocking issues.
+The full Android suite passes all 81 tests. CI and signed APK evidence follow at delivery.
+
+See docs/client-update.md and docs/complete-session-backup.md for sequence and
+primary repair references. Latest server/database testing follows successful
+client updater validation; no server/allocator/source changes in this release.
+
+.35 CI follow-through: all push36132052769 jobs finished successfully, including
+Box64108062114928/FEX108062114936 and runtime-release108069012128. PR FEX108062249745
+passed; PR Box64108062249766 retains the documented observed pixel timeout. No
+unchanged rerun or weakened gate.
+
+---
+
 # 0.5.35 delivered: complete-backup POSIX filename repair
 
 The .34 phone export ran from 06:39:55 to 06:48:24 CDT and failed with

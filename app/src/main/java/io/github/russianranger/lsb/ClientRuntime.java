@@ -100,6 +100,7 @@ final class ClientRuntime {
             JSONObject entry=new JSONObject().put("generation",gen.getName()).put("copy_complete",store.complete(gen));
             Properties meta=store.metadata(gen);entry.put("region",meta.getProperty("region","")).put("files",meta.getProperty("files",""));
             if(meta.containsKey("repairOf"))entry.put("repair_of",meta.getProperty("repairOf"));
+            if(meta.containsKey("updateOf"))entry.put("update_of",meta.getProperty("updateOf")).put("update_phase",meta.getProperty("updatePhase","staged")).put("client_version",meta.getProperty("clientVersion","Unknown"));
             File result=new File(gen,"last-result.json");if(result.isFile())entry.put("last_result",new JSONObject(read(result,262144)));
             File launch=new File(gen,"last-launch.json");if(launch.isFile())entry.put("last_launch",new JSONObject(read(launch,262144)));
             out.put(kind,entry);
@@ -112,6 +113,19 @@ final class ClientRuntime {
     synchronized String rollbackPreparation()throws Exception {
         if(alive())throw new IOException("Stop initialization first");reapOrphans();prepared().rollback();return "Previous prepared client and matching prefix restored.";
     }
+    synchronized String activateClientUpdate()throws Exception {
+        if(alive())throw new IOException("Close PlayOnline and stop the runtime first");
+        if(ServerRuntime.get(context).alive())throw new IOException("Stop the managed server before activating a client update");reapOrphans();
+        PreparedClientStore store=prepared();File gen=store.updateCandidate();store.requireRepairCompleted();
+        JSONObject receipt=new JSONObject(read(new File(gen,"update-verified.json"),262144));
+        if(!"verified".equals(store.metadata(gen).getProperty("updatePhase"))||!"passed".equals(receipt.optString("status"))||!gen.getName().equals(receipt.optString("generation")))throw new IOException("Verify the staged client update first");
+        JSONObject initialized=new JSONObject(read(new File(gen,"initialization-passed.json"),262144));
+        if(!"passed".equals(initialized.optString("status"))||!gen.getName().equals(initialized.optString("generation"))||receipt.optString("session_id").isEmpty()||!receipt.optString("session_id").equals(initialized.optString("session_id")))throw new IOException("Update initialization receipt does not match verification; verify again");
+        JSONObject current=clientManifest(gen).getJSONObject("key_files"),verified=receipt.getJSONObject("key_files");
+        if(current.length()!=verified.length())throw new IOException("Staged update changed after verification; verify again");
+        Iterator<String> names=current.keys();while(names.hasNext()){String name=names.next();if(!current.getString(name).equals(verified.optString(name)))throw new IOException("Staged update changed after verification; verify again");}
+        store.promote(gen);return status="Updated client and Windows environment activated. The prior client remains available for rollback. Use a server and loader compatible with the updated client.";
+    }
     synchronized String importPrerequisite(InputStream input)throws Exception {
         if(alive())throw new IOException("Stop initialization first");
         PreparedClientStore s=prepared();if(!s.complete(s.selected("candidate"))&&!s.complete(s.selected("current")))throw new IOException("Prepare the imported client first");
@@ -122,13 +136,23 @@ final class ClientRuntime {
             return "x86 prerequisite installer selected. Use the appropriate repair action to run it in a separate staged environment.";
         }finally{temp.delete();}
     }
-    private JSONObject clientManifest(File gen)throws Exception {
+    private JSONObject clientManifest(File gen)throws Exception {return clientManifest(gen,false);}
+    private JSONObject clientManifest(File gen,boolean updateVerification)throws Exception {
         Properties m=prepared().metadata(gen);File client=new File(gen,"client");
         ClientInspector.Snapshot inspected=ClientInspector.inspect(client,m.getProperty("core"),text->status=text);
         // The installer may add dependencies, but never silently replace selected game binaries.
         JSONObject source=new JSONObject(read(new File(gen,"source-inventory.json"),131072));
         JSONObject inventory=new JSONObject(inspected.inventory);
-        if(!source.getJSONArray("keyFiles").toString().equals(inventory.getJSONArray("keyFiles").toString()))throw new IOException("Selected working DLLs changed; discard this candidate and prepare from the import again");
+        if(!updateVerification&&!source.getJSONArray("keyFiles").toString().equals(inventory.getJSONArray("keyFiles").toString()))throw new IOException("Selected working DLLs changed; discard this candidate and prepare from the import again");
+        if(!inspected.warning().isEmpty())throw new IOException(inspected.warning());
+        if(!m.getProperty("pol").equals(PreparedClientStore.relative(client,inspected.pol))||!m.getProperty("game").equals(PreparedClientStore.relative(client,inspected.game))||!m.getProperty("loader","").equals(inspected.loader==null?"":PreparedClientStore.relative(client,inspected.loader)))throw new IOException("Prepared installation paths changed");
+        if(updateVerification){
+            if(!gen.equals(prepared().updateCandidate()))throw new IOException("Only the staged update can accept new client binaries");
+            JSONObject before=new JSONObject(read(new File(gen,"update-source-inventory.json"),131072));
+            String loader=m.getProperty("loader","");boolean matchingLoader=false;org.json.JSONArray previous=before.getJSONArray("keyFiles");
+            for(int i=0;i<previous.length();i++){JSONObject key=previous.getJSONObject(i);if(loader.equals(key.getString("path")))matchingLoader=inspected.loader!=null&&sha(inspected.loader).equals(key.getString("sha256"));}
+            if(!matchingLoader)throw new IOException("PlayOnline update must retain the selected xiloader unchanged");
+        }
         JSONObject keys=new JSONObject();org.json.JSONArray list=inventory.getJSONArray("keyFiles");
         for(int i=0;i<list.length();i++){JSONObject k=list.getJSONObject(i);keys.put(k.getString("path"),k.getString("sha256"));}
         if(inspected.polExecutable==null)throw new IOException("Selected working PlayOnline executable is missing");
@@ -136,6 +160,14 @@ final class ClientRuntime {
         return new JSONObject().put("format",1).put("generation",gen.getName()).put("region",m.getProperty("region"))
             .put("pol",m.getProperty("pol")).put("core",m.getProperty("core")).put("game",m.getProperty("game"))
             .put("loader",m.getProperty("loader")).put("key_files",keys).put("inventory_sha256",m.getProperty("inventorySha256"));
+    }
+    private JSONObject clientUpdateManifest(File gen)throws Exception {
+        Properties meta=prepared().metadata(gen);File client=new File(gen,"client"),pol=new File(client,meta.getProperty("pol"));
+        File executable=ClientInspector.child(pol,"pol.exe");
+        if(executable==null||Files.isSymbolicLink(executable.toPath())||!executable.isFile())throw new IOException("The staged PlayOnline viewer is missing pol.exe");
+        ClientInspector.requireX86(executable);
+        return new JSONObject().put("format",1).put("generation",gen.getName()).put("region",meta.getProperty("region")).put("pol",meta.getProperty("pol"))
+            .put("game",meta.getProperty("game")).put("executable",FilesEx.relative(client,executable)).put("sha256",sha(executable));
     }
     private void retainInitialization(File gen)throws Exception {
         File result=new File(logs,"client-initialization.json");if(!result.isFile())return;
@@ -257,14 +289,18 @@ final class ClientRuntime {
     }
     void run(String renderer,boolean sound,String action,LoginRequest login,String displayProfile,boolean startupTrace)throws Exception {
         boolean initialize=Arrays.asList("initialize","installer","repair-launcher").contains(action),clientOperation=!"probe".equals(action);
+        boolean updating=Arrays.asList("update-client","verify-client-update").contains(action);
         File candidate=null;File selectedPrefix=prefix;
-        boolean useFex=!initialize&&context.getSharedPreferences("runtime",0).getBoolean("fex",false);
+        // Match the established preparation engine. FEX gameplay gets its own new
+        // generation prefix after activation; no active FEX hive is converted.
+        boolean useFex=!initialize&&!updating&&context.getSharedPreferences("runtime",0).getBoolean("fex",false);
         FexRuntime selectedFex=null;
         ProotAcceleration acceleration=null;
         synchronized(WorkService.class){synchronized(this){if(alive()||WorkService.busy)throw new IOException("Wait for the current operation");active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();}}
         launchError="";
         try{
-            if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher","gamepad-config").contains(action))throw new IOException("Unsupported runtime action");
+            if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher","gamepad-config","update-client","verify-client-update").contains(action))throw new IOException("Unsupported runtime action");
+            if(updating&&ServerRuntime.get(context).alive())throw new IOException("Stop the managed server before updating or verifying the client");
             if(action.equals("launch")&&login==null)throw new IOException("Enter account and password again to launch");
             if(action.equals("launch")&&context.getPackageName().endsWith(".restoretest")) {
                 if(!ServerRuntime.get(context).ready())throw new IOException("Restore Test: start this app’s restored server and wait for Ready before connecting. Stop the working app’s server first.");
@@ -294,6 +330,7 @@ final class ClientRuntime {
             write(new File(run,"status.json"),new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",initialize?"copying_client":"preparing_runtime").put("game_files_mounted",false).toString());
             if(initialize){
                 PreparedClientStore s=prepared();File active=s.selected("current");
+                File pending=s.selected("candidate");if(pending!=null&&s.metadata(pending).containsKey("updateOf"))throw new IOException("Finish or discard the PlayOnline update before client initialization");
                 if(action.equals("installer")&&(!s.complete(s.selected("candidate"))||!new File(home,"prerequisite.exe").isFile()))throw new IOException("Select a prerequisite for a staged preparation first");
                 status="Validating import and preparing an isolated working copy…";
                 if(action.equals("repair-launcher")){
@@ -301,13 +338,24 @@ final class ClientRuntime {
                     candidate=s.stageRepair(text->status=text);
                 }else candidate=s.prepare(MainActivity.store(context),active==null?prefix:new File(active,"prefix"),text->status=text);
                 selectedPrefix=new File(candidate,"prefix");
+            }else if(updating){
+                PreparedClientStore s=prepared();
+                if(action.equals("update-client")){
+                    status="Copying client and Windows environment for PlayOnline repair…";candidate=s.stageUpdate(text->status=text);s.prepareUpdateRepair();
+                }else{
+                    candidate=s.updateCandidate();s.requireRepairCompleted();
+                    Files.deleteIfExists(new File(candidate,"update-verified.json").toPath());Files.deleteIfExists(new File(candidate,"initialization-passed.json").toPath());
+                    s.updatePhase("verifying");status="Checking the updated client and loader…";
+                }
+                selectedPrefix=new File(candidate,"prefix");
             }else if(clientOperation){
                 candidate=launchGeneration();selectedPrefix=new File(candidate,"prefix");status="Checking the prepared client…";
             }
             if(useFex)selectedPrefix=selectedFex.prefix(selectedPrefix,candidate==null?"probe":candidate.getName(),text->status=text);
             interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");
             if(clientOperation){
-                write(new File(run,"client-manifest.json"),clientManifest(candidate).toString(2));
+                if(action.equals("update-client"))write(new File(run,"client-update-manifest.json"),clientUpdateManifest(candidate).toString(2));
+                else write(new File(run,"client-manifest.json"),clientManifest(candidate,action.equals("verify-client-update")).toString(2));
                 if(action.equals("installer")||action.equals("repair-launcher"))Files.copy(new File(home,"prerequisite.exe").toPath(),new File(run,"prerequisite.exe").toPath());
             }
             new File(root,"client").mkdirs();
@@ -329,7 +377,7 @@ final class ClientRuntime {
             pb.environment().put("PROOT_TMP_DIR",tmp.getPath());pb.environment().put("PROOT_NO_SECCOMP","1");pb.environment().put("LSB_RUNTIME_OWNER",home.getPath());
             // PRoot may print tracee command lines on a fatal error. Keep its raw
             // wrapper stream out of files for login; structured supervisor receipts remain.
-            pb.redirectErrorStream(true);pb.redirectOutput(action.equals("launch")?new File("/dev/null"):new File(logs,"proot.log"));
+            pb.redirectErrorStream(true);pb.redirectOutput(action.equals("launch")||action.equals("update-client")?new File("/dev/null"):new File(logs,"proot.log"));
             acceleration=new ProotAcceleration(sessionId,run,logs);
             ProotAcceleration.Check checkStop=()->{interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");};
             boolean filter=acceleration.prepare(pb,request,checkStop,this::reapOrphans);
@@ -342,15 +390,27 @@ final class ClientRuntime {
             checkStop.check();
             starting=false;preparingThread=null;
             try(OutputStream input=process.getOutputStream()){if(action.equals("launch"))login.send(input);}
-            if(stopRequested)write(new File(run,"stop"),"stop\n");status=initialize?"Initializing working client. Open the display for installer prompts.":clientOperation?"Checking the loader and starting the client…":"Starting Windows checks. Open the display to follow progress.";
+            if(stopRequested)write(new File(run,"stop"),"stop\n");status=action.equals("update-client")?"PlayOnline repair is opening in the staged copy. Use Check Files → FINAL FANTASY XI → File Repair.":initialize?"Initializing working client. Open the display for installer prompts.":clientOperation?"Checking the loader and starting the client…":"Starting Windows checks. Open the display to follow progress.";
             while(!process.waitFor(1,TimeUnit.SECONDS)){
                 if(new File(run,"status.json").isFile())try{JSONObject s=new JSONObject(read(new File(run,"status.json"),131072));status=s.optString("error",s.optString("message",s.optString("phase",status))).replace('_',' ');}catch(Exception ignored){}
             }
             JSONObject finalState=state().optJSONObject("launch");
-            if(initialize)retainInitialization(candidate);
+            if(initialize||action.equals("verify-client-update"))retainInitialization(candidate);
             if(clientOperation)retainLaunch(candidate);
             if(finalState!=null&&finalState.optString("phase").equals("completed")&&process.exitValue()==0&&!stopRequested){
-                if(initialize){
+                if(action.equals("update-client")){
+                    prepared().updatePhase("verification_pending");status="PlayOnline closed. After successful FINAL FANTASY XI File Repair, verify the staged update. The active client is unchanged.";
+                }else if(action.equals("verify-client-update")){
+                    JSONObject report=finalState.getJSONObject("initialization"),check=finalState.getJSONObject("client_launch");
+                    for(JSONObject receipt:new JSONObject[]{report,check})if(!candidate.getName().equals(receipt.optString("generation"))||!sessionId.equals(receipt.optString("session_id")))throw new IOException("Update verification receipt does not match candidate");
+                    if(!"passed".equals(report.optString("status"))||!"ready".equals(check.optString("status")))throw new IOException("Updated client and loader checks did not pass");
+                    reapOrphans();PreparedClientStore s=prepared();s.requireRepairCompleted();
+                    JSONObject manifest=clientManifest(candidate,true);
+                    ClientInspector.Snapshot inspected=ClientInspector.inspect(new File(candidate,"client"),s.metadata(candidate).getProperty("core"),text->status=text);
+                    s.recordUpdatedInventory(inspected);write(new File(candidate,"initialization-passed.json"),report.toString(2));
+                    write(new File(candidate,"update-verified.json"),new JSONObject().put("format",1).put("generation",candidate.getName()).put("session_id",sessionId).put("status","passed").put("key_files",manifest.getJSONObject("key_files")).put("client_version",inspected.version).put("world_entry_verified",false).toString(2));
+                    s.updatePhase("verified");status="Updated client and loader checks passed. Activate the update when ready; the active client is still unchanged. Server compatibility and world entry remain to be tested.";
+                }else if(initialize){
                     JSONObject report=finalState.getJSONObject("initialization");
                     if(!report.optString("status").equals("passed")||!candidate.getName().equals(report.optString("generation"))||!sessionId.equals(report.optString("session_id")))throw new IOException("Initialization receipt does not match candidate");
                     if(prepared().metadata(candidate).containsKey("repairOf")){
@@ -396,7 +456,7 @@ final class ClientRuntime {
         PreparedClientStore ps=prepared();
         for(String kind:new String[]{"current","previous","candidate"}){
             File gen=ps.selected(kind);if(gen==null)continue;
-            for(String name:new String[]{"source-inventory.json","last-result.json","initialization-passed.json","last-launch.json"}){
+            for(String name:new String[]{"source-inventory.json","last-result.json","initialization-passed.json","last-launch.json","update-verified.json","update-source-inventory.json"}){
                 File f=new File(gen,name);if(f.isFile())SafeZip.entry(zip,"prepared/"+kind+"/"+name,read(f,262144));
             }
             File[] attempts=new File(gen,"attempts").listFiles();if(attempts!=null)for(File f:attempts)if(f.isFile())SafeZip.entry(zip,"prepared/"+kind+"/attempts/"+f.getName(),read(f,262144));
