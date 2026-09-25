@@ -46,6 +46,7 @@ public final class BackupBrowserActivity extends Activity {
     private boolean showingWork;
     private boolean lastRuntimeActive;
     private long workGeneration;
+    private long scanWorkGeneration;
     private String itemId = "";
     private String relativePath = "";
     private String itemLabel = "";
@@ -65,7 +66,7 @@ public final class BackupBrowserActivity extends Activity {
             if (!resumed) return;
             boolean active = runtimesActive();
             if (lastRuntimeActive != active) { lastRuntimeActive = active; adapter.notifyDataSetChanged(); updateStatus(); }
-            if (WorkService.busy) {
+            if (maintenanceBlocked()) {
                 if (scanning) stopScan();
                 showingWork = true;
                 updateStatus();
@@ -156,7 +157,15 @@ public final class BackupBrowserActivity extends Activity {
 
     @Override public void onBackPressed() { goUp(); }
 
-    private boolean runtimesActive() { return ClientRuntime.get(this).alive() || ServerRuntime.get(this).alive(); }
+    private static boolean maintenanceBlocked() {
+        return WorkService.busy || SessionBackup.active || !SessionBackup.recoveryError.isEmpty();
+    }
+
+    private boolean runtimesActive() {
+        // Runtime construction creates directories. A complete restore may currently
+        // be moving those roots, or deliberately leave them absent until recovery.
+        return maintenanceBlocked() || ClientRuntime.get(this).alive() || ServerRuntime.get(this).alive();
+    }
 
     private void goUp() {
         if (itemId.isEmpty()) { finish(); return; }
@@ -179,10 +188,11 @@ public final class BackupBrowserActivity extends Activity {
     private void load() {
         stopScan();
         if (!resumed) return;
-        if (WorkService.busy) { showingWork = true; updateStatus(); return; }
+        if (maintenanceBlocked()) { showingWork = true; updateStatus(); return; }
         showingWork = false;
         scanning = true;
         final int expected = scanGeneration;
+        scanWorkGeneration = WorkService.generation;
         final Context context = getApplicationContext();
         final String selected = itemId;
         final String path = relativePath;
@@ -227,23 +237,29 @@ public final class BackupBrowserActivity extends Activity {
         });
     }
 
-    private boolean current(int expected) { return resumed && expected == scanGeneration; }
+    private boolean current(int expected) {
+        return resumed && expected == scanGeneration && !maintenanceBlocked()
+                && scanWorkGeneration == WorkService.generation;
+    }
 
     private void finishScan() { scanning = false; scan = null; adapter.notifyDataSetChanged(); updateStatus(); }
 
     private void updateStatus() {
         if (status == null) return;
         boolean busy = WorkService.busy;
+        boolean blocked = maintenanceBlocked();
         location.setText(itemId.isEmpty() ? "Copies held in this installation" : display(itemLabel) + (relativePath.isEmpty() ? "" : " / " + display(relativePath)));
         up.setText(itemId.isEmpty() ? "Back to launcher" : relativePath.isEmpty() ? "All copies" : "Parent folder");
-        String text = busy ? WorkService.message + (WorkService.result.isEmpty() ? "" : "\n" + WorkService.result)
+        String text = !SessionBackup.recoveryError.isEmpty() ? "Return to the launcher to finish session recovery.\n" + SessionBackup.recoveryError
+                : busy ? WorkService.message + (WorkService.result.isEmpty() ? "" : "\n" + WorkService.result)
+                : SessionBackup.active ? "A complete session transfer is in progress. Storage browsing will resume when it finishes."
                 : scanning ? scanStatus : (completedOperation.isEmpty() ? "" : completedOperation + "\n") + idleStatus;
-        if (!busy && !scanning && runtimesActive()) text += "\nStop the client and server before deleting a copy.";
+        if (!blocked && !scanning && runtimesActive()) text += "\nStop the client and server before deleting a copy.";
         status.setText(text);
-        progress.setVisibility(busy || scanning ? View.VISIBLE : View.GONE);
+        progress.setVisibility(busy || SessionBackup.active || scanning ? View.VISIBLE : View.GONE);
         cancel.setVisibility(busy || scanning ? View.VISIBLE : View.GONE);
         cancel.setText(busy ? "Cancel operation" : "Cancel scan");
-        refresh.setEnabled(!busy);
+        refresh.setEnabled(!blocked);
     }
 
     private void cancelOperation() {
@@ -260,7 +276,7 @@ public final class BackupBrowserActivity extends Activity {
     }
 
     private void openRow(int position) {
-        if (WorkService.busy || scanning) return;
+        if (maintenanceBlocked() || scanning) return;
         if (itemId.isEmpty()) {
             if (position >= items.size()) return;
             showItem(items.get(position));

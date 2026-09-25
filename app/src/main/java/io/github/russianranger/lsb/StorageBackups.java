@@ -50,7 +50,10 @@ final class StorageBackups {
         this.files=files.getCanonicalFile().toPath();this.managed=managed.getCanonicalFile().toPath();this.work=work.getCanonicalFile().toPath();
     }
     private static StorageBackups at(Context c)throws IOException {
-        return new StorageBackups(c.getFilesDir(),MainActivity.storage(c),new File(c.getNoBackupFilesDir(),"session-transfer"));
+        if(SessionBackup.active||!SessionBackup.recoveryError.isEmpty())throw new IOException("Wait for complete session recovery before browsing backups");
+        // A read-only browser must not recreate a root while restore is swapping it.
+        File files=new File(c.getApplicationInfo().dataDir,"files"),external=c.getExternalFilesDir(null);
+        return new StorageBackups(files,new File(external==null?files:external,"lsb"),new File(c.getNoBackupFilesDir(),"session-transfer"));
     }
     static List<Item> inventory(Context c,SafeZip.Progress progress)throws Exception {return at(c).inventory(progress);}
     static List<Node> children(Context c,String id,String relative)throws Exception {return at(c).children(id,relative);}

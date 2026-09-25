@@ -13,6 +13,7 @@ import android.widget.TextView;
 import io.github.russianranger.lsb.core.FilesEx;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.util.concurrent.CountDownLatch;
@@ -176,5 +177,34 @@ public class BackupBrowserActivityTest {
         assertNotNull(text(content(),"Previous imported client / client"));
         text(content(),"Parent folder").performClick();ready();
         assertNotNull(text(content(),"Previous imported client"));
+    }
+
+    @Test public void returningDuringRestoreOrRecoveryDoesNotRecreateRuntimeRootsOrSingletons() throws Exception {
+        controller.pause();
+        File files=context.getFilesDir();
+        ClientRuntime.resetAfterRestore();ServerRuntime.resetAfterRestore();
+        FilesEx.delete(files);
+        try {
+            SessionBackup.active=true;WorkService.busy=true;
+            controller.resume();Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertNull(get(ClientRuntime.class,null,"instance"));
+            assertNull(get(ServerRuntime.class,null,"instance"));
+            assertFalse("A paused browser must not recreate the root a restore moved away",files.exists());
+            try {StorageBackups.inventory(context,s->{});fail("The browser must defer to an active session transfer");}
+            catch(IOException expected) {assertFalse(files.exists());}
+
+            // The session guard also works without relying on the foreground-service flag.
+            WorkService.busy=false;
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600));
+            assertNull(get(ClientRuntime.class,null,"instance"));assertNull(get(ServerRuntime.class,null,"instance"));
+            assertFalse(files.exists());assertFalse(text(content(),"Refresh").isEnabled());
+
+            SessionBackup.active=false;SessionBackup.recoveryError="Interrupted restore fixture";
+            controller.pause().resume();Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertNotNull(text(content(),"Return to the launcher to finish session recovery."));
+            assertNull(get(ClientRuntime.class,null,"instance"));assertNull(get(ServerRuntime.class,null,"instance"));
+            try {StorageBackups.inventory(context,s->{});fail("Unresolved recovery must prevent browsing");}
+            catch(IOException expected) {assertFalse(files.exists());}
+        } finally {SessionBackup.active=false;SessionBackup.recoveryError="";WorkService.busy=false;}
     }
 }
