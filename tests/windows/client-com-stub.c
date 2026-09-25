@@ -16,6 +16,9 @@ static void identity(void){
  if(!_wcsicmp(name,L"polcoreeu.dll")){cls=L"{E5966FB3-C97B-42EB-84BF-37F95EE54A9F}";iid=L"{DFEC2E93-4971-4A54-B8ED-63815C208C5A}";}
  if(!_wcsicmp(name,L"polcore.dll")&&GetFileAttributesW(L"D:\\region-jp")!=INVALID_FILE_ATTRIBUTES){cls=L"{07974581-0DF6-4EF0-BD05-604B3ADA9BE9}";iid=L"{9A30D565-A74C-4B56-B971-DCF02185B10D}";}
  if(!_wcsicmp(name,L"FFXiMain.dll")){cls=L"{1027DC46-750D-4B1F-8834-1D25B8BEBAB8}";iid=L"{493BF7B9-0C3A-43B5-BFA6-28FBEE251E3D}";}
+ if(!_wcsicmp(name,L"app.dll"))cls=L"{40555AAE-53AD-4ABC-AE65-8441755E7D69}";
+ if(!_wcsicmp(name,L"PolContents.dll"))cls=L"{62021866-976B-49A3-A18B-7A44869008A2}";
+ if(!_wcsicmp(name,L"polcontentsINT.dll"))cls=L"{3FC1EF9A-F346-413C-BB47-ED6F9A4BD52F}";
  CLSIDFromString(cls,&probe);IIDFromString(iid,&client_interface);wcscpy(class_string,cls);
 }
 

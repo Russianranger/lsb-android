@@ -36,6 +36,8 @@ if args.tests:
     build('tests/windows/prerequisite-stub.c', tests/'prerequisite-stub.exe')
     build('tests/windows/login-stub.c', tests/'login-stub.exe', ['-mconsole'])
     build('windows/playonline-run.c', tests/'playonline-run-test.exe', ['-mconsole', '-DLSB_PLAYONLINE_TEST_MODE'])
+    build('windows/client-init.c', tests/'client-init-test.exe', ['-mconsole', '-DLSB_CLIENT_INIT_TEST_MODE'])
+    build('tests/windows/pol-class-stub.c', tests/'pol-class-stub.dll', ['-shared', '-Wl,--kill-at'])
     build('tests/windows/playonline-stub.c', tests/'playonline-stub.exe', ['-mconsole'])
     build('tests/windows/fex-crash.c', tests/'fex-crash.exe', ['-mconsole'])
     build('tests/windows/texture-submission.c', tests/'texture-submission.exe', ['-mconsole','-ld3d8'])

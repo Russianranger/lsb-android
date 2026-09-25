@@ -2,8 +2,8 @@
 
 Runs after initialization.py in the Box64 software and patched PRoot jobs.
 No retail viewer, credentials, downloads, server, or game are involved. The
-production dependency checker and process runner execute under the same Wine
-prefix as the other runtime fixtures; neither helper is mocked.
+production COM registration, dependency checker and process runner execute
+under the same Wine prefix as the other fixtures; none is mocked.
 """
 import hashlib
 import json
@@ -71,6 +71,12 @@ def main():
     game = STAGED / 'Game'
     viewer.mkdir(parents=True)
     game.mkdir()
+    components = [viewer / 'viewer/com/polcore.dll', viewer / 'viewer/com/app.dll',
+                  viewer / 'viewer/contents/polcontentsINT.dll']
+    for component in components:
+        component.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile('/fixtures/client-com-stub.dll', component)
+    component_hash = hashlib.sha256(Path('/fixtures/client-com-stub.dll').read_bytes()).hexdigest()
     (game / 'unrelated-client-data.dat').write_bytes(b'preserve staged game data\x00\xff')
     (STAGED / 'update-original-0.dat').write_bytes(b'preserve removed repair trigger')
     executable = viewer / 'pol.exe'
@@ -107,6 +113,18 @@ def main():
             assert report['generation'] == manifest['generation'] and report['session_id'] == request['session_id'], report
             assert report['activation_performed'] is False and report['official_repair_confirmed'] is False, report
             assert report['credentials_forwarded'] is False, report
+            registration = report['component_registration']
+            assert [row['component'] for row in registration] == ['core', 'app', 'contents'], registration
+            assert [row['dll'] for row in registration] == [path.name for path in components], registration
+            for row, operations in zip(registration, [('register', 'com'), ('register', 'class'), ('register', 'class')]):
+                assert row['sha256'] == component_hash, row
+                assert [step['operation'] for step in row['steps']] == list(operations), row
+                for step in row['steps']:
+                    assert step['exit_code'] == 0, step
+                    assert step['result'] == {'format': 1, 'bits': 32, 'operation': step['operation'],
+                                              'ok': True, 'hresult': 0, 'win32_error': 0}, step
+                    assert step['startup_diagnostics']['policy'] == 'fixed_metadata_only', step
+            assert 'loaded_path' not in json.dumps(registration) and 'detail' not in json.dumps(registration), registration
             attempts = report['dependency_attempts']
             assert len(attempts) == 1 and attempts[0]['receipt_valid'] is True, attempts
             dependencies = attempts[0]['dependencies']
@@ -140,7 +158,7 @@ def main():
             assert not (SESSION / 'display.sock').exists(), 'updater display was left running'
             assert_private_logs()
             (LOGS / ('update-' + label + '.json')).write_text(json.dumps(report, indent=2))
-            print('PASS: PlayOnline update', label, 'real dependency checks, full Windows exit, private diagnostics and isolated stage', flush=True)
+            print('PASS: PlayOnline update', label, 'real COM registration and dependencies, full Windows exit, private diagnostics and isolated stage', flush=True)
     finally:
         shutil.rmtree(STAGED)
 

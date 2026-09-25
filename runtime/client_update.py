@@ -97,6 +97,89 @@ def check_dependencies(supervisor, manifest, executable, environment, report, re
         return
 
 
+def viewer_component(manifest, relative):
+    """Resolve one installer-defined live path, preserving imported filename case."""
+    current = client_path(manifest['pol'])
+    for name in relative.split('/'):
+        if not current.is_dir():
+            raise RuntimeError('Staged PlayOnline component is missing: ' + relative)
+        matches = [entry for entry in current.iterdir() if entry.name.casefold() == name.casefold()]
+        if len(matches) != 1:
+            raise RuntimeError('Staged PlayOnline component is missing or ambiguous: ' + relative)
+        current = client_path(matches[0].relative_to(client_path('.')).as_posix())
+    if not current.is_file():
+        raise RuntimeError('Staged PlayOnline component is not a file: ' + relative)
+    imports(current)  # Reject non-PE32 or malformed images before registration.
+    return current
+
+
+def prepare_playonline_components(supervisor, manifest, environment, report, record):
+    # The official installer registers the viewer application and regional
+    # contents separately from the POL core used by xiloader. Only these known
+    # live modules are selected; patchfiles and arbitrary DLLs are never scanned.
+    international = manifest['region'] != 'JP'
+    definitions = [
+        ('core', 'viewer/com/' + ('polcoreeu.dll' if manifest['region'] == 'EU' else 'polcore.dll'), None),
+        ('app', 'viewer/com/app.dll', 'pol-app'),
+        ('contents', 'viewer/contents/' + ('polcontentsINT.dll' if international else 'PolContents.dll'),
+         'pol-contents-int' if international else 'pol-contents')]
+    components = []
+    report['component_registration'] = []
+    for name, relative, class_name in definitions:
+        path = viewer_component(manifest, relative)
+        digest = hashlib.sha256()
+        with path.open('rb') as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b''):
+                digest.update(chunk)
+        entry = {'component': name, 'dll': path.name, 'sha256': digest.hexdigest(), 'steps': []}
+        report['component_registration'].append(entry)
+        components.append((path, class_name, entry))
+    record()
+    for path, class_name, entry in components:
+        windows = windows_path(path.relative_to(client_path('.')).as_posix())
+        verify = ('class', [class_name, windows]) if class_name else ('com', [manifest['region'], 'pol', windows])
+        for operation, arguments in [('register', [windows]), verify]:
+            supervisor.stopped()
+            supervisor.status('registering_playonline_components',
+                              message='Preparing PlayOnline components in the staged update')
+            receipt_path = SESSION / 'client-step.json'
+            receipt_path.unlink(missing_ok=True)
+            process = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', operation, *arguments),
+                'playonline-' + entry['component'] + '-' + operation + '.log', env=environment)
+            writer = supervisor.logs[-1]
+            step = {'operation': operation, 'exit_code': None}
+            entry['steps'].append(step)
+            try:
+                supervisor.wait(process, 90, 'PlayOnline ' + entry['component'] + ' ' + operation, accepted=(0, 1))
+            finally:
+                try:
+                    receipt = json.loads(receipt_path.read_text()) if receipt_path.stat().st_size <= 32 * 1024 else {}
+                except (OSError, ValueError):
+                    receipt = {}
+                if not isinstance(receipt, dict):
+                    receipt = {}
+                # Do not copy the helper's free-form strings into private POL logs.
+                safe = {key: receipt[key] for key in ('format', 'bits', 'hresult', 'win32_error')
+                        if type(receipt.get(key)) is int and 0 <= receipt[key] <= 0xffffffff}
+                if receipt.get('operation') in ('register', 'com', 'class'):
+                    safe['operation'] = receipt['operation']
+                if type(receipt.get('ok')) is bool:
+                    safe['ok'] = receipt['ok']
+                step.update(exit_code=process.poll(), result=safe,
+                            startup_diagnostics=diagnostics(writer, drain=True))
+                record()
+            valid = (safe.get('format') == 1 and safe.get('bits') == 32 and
+                     safe.get('operation') == operation and safe.get('ok') is True and
+                     type(safe.get('hresult')) is int and safe['hresult'] < 0x80000000 and
+                     safe.get('win32_error') == 0 and isinstance(receipt.get('loaded_path'), str) and
+                     receipt['loaded_path'].casefold() == windows.casefold())
+            if process.returncode != 0 or not valid:
+                code = safe.get('hresult')
+                detail = (' (HRESULT 0x%08X)' % code) if code is not None else ' (invalid component receipt)'
+                raise RuntimeError('PlayOnline ' + entry['dll'] + ' ' + operation + ' failed' + detail +
+                                   '. The staged copy is retained; export Diagnostics')
+
+
 def validate_manifest(data):
     fields = {'format', 'generation', 'region', 'pol', 'game', 'executable', 'sha256'}
     if set(data) != fields or data['format'] != 1 or data['region'] not in ('US', 'EU', 'JP'):
@@ -136,7 +219,7 @@ def run(supervisor):
     viewer_started = None
     try:
         # The existing 32-bit helper writes and reads back the regional install
-        # paths. No new registry guesses and no game DLL registration mid-repair.
+        # paths; viewer-only registrations below stay in the staged prefix.
         result = SESSION / 'client-step.json'
         result.unlink(missing_ok=True)
         worker = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', 'registry', manifest['region'],
@@ -150,6 +233,7 @@ def run(supervisor):
         # POL output, which could include a retail account entered in its UI.
         supervisor.private_output = True
         environment = private_environment(supervisor)
+        prepare_playonline_components(supervisor, manifest, environment, report, record)
         check_dependencies(supervisor, manifest, executable, environment, report, record)
         report['status'] = 'viewer_open'; record()
         supervisor.status('playonline_update', message='In PlayOnline: Check Files → FINAL FANTASY XI → Check Files → File Repair. Exit the viewer after repair completes.')

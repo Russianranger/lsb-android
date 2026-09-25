@@ -17,16 +17,23 @@ static const WCHAR *ffxi_interface=L"{989D790C-6236-11D4-80E9-00105A81E890}";
 static DWORD error_code;
 static DWORD child_exit;
 static WCHAR detail[2048],loaded[2048];
+#ifdef LSB_CLIENT_INIT_TEST_MODE
+/* Tests change receipt location only. Registration and class lookup still use
+ * the production 32-bit Win32 APIs and canonical D: client-path rules. */
+static WCHAR receipt_new[2048],receipt_final[2048];
+#else
+static const WCHAR *receipt_new=L"Z:\\session\\client-step.new",*receipt_final=L"Z:\\session\\client-step.json";
+#endif
 static void quoted(FILE *f,const WCHAR *s){
     char out[8192];int n=WideCharToMultiByte(CP_UTF8,0,s,-1,out,sizeof(out),NULL,NULL);
     fputc('"',f);for(int i=0;i<n-1;i++){unsigned char c=out[i];if(c=='"'||c=='\\')fputc('\\',f);if(c<32)fprintf(f,"\\u%04x",c);else fputc(c,f);}fputc('"',f);
 }
 static int report(const WCHAR *op,HRESULT hr){
-    FILE *f=_wfopen(L"Z:\\session\\client-step.new",L"wb");if(!f)return 91;
+    FILE *f=_wfopen(receipt_new,L"wb");if(!f)return 91;
     fprintf(f,"{\"format\":1,\"bits\":32,\"operation\":");quoted(f,op);
     fprintf(f,",\"ok\":%s,\"hresult\":%lu,\"win32_error\":%lu,\"child_exit\":%lu,\"detail\":",SUCCEEDED(hr)?"true":"false",(unsigned long)hr,(unsigned long)error_code,(unsigned long)child_exit);quoted(f,detail);
     fputs(",\"loaded_path\":",f);quoted(f,loaded);fputs("}\n",f);fclose(f);
-    if(!MoveFileExW(L"Z:\\session\\client-step.new",L"Z:\\session\\client-step.json",MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))return 92;
+    if(!MoveFileExW(receipt_new,receipt_final,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))return 92;
     wprintf(L"%ls: HRESULT=0x%08lx Win32=%lu %ls\n",op,(unsigned long)hr,(unsigned long)error_code,detail);fflush(stdout);
     return SUCCEEDED(hr)?0:1;
 }
@@ -83,6 +90,49 @@ static HRESULT com(const WCHAR *area,const WCHAR *kind,const WCHAR *expected){
     if(instance)IUnknown_Release(instance);
     wcscpy(detail,L"CoCreateInstance with the client's interface ID; no GameStart or login invoked");return hr;
 }
+static HRESULT viewer_class(const WCHAR *kind,const WCHAR *expected){
+    /* Class identities from the official viewer MSI's App.PolAppCom,
+     * PolContents.PolContentsCom and PolContentsINT.PolContentsCom classes.
+     * Verify factories only: creating these application objects can initialize
+     * viewer/account state and is not a dependency preflight. */
+    static const struct {const WCHAR *kind,*name,*cls;} classes[]={
+        {L"pol-app",L"app.dll",L"{40555AAE-53AD-4ABC-AE65-8441755E7D69}"},
+        {L"pol-contents",L"PolContents.dll",L"{62021866-976B-49A3-A18B-7A44869008A2}"},
+        {L"pol-contents-int",L"polcontentsINT.dll",L"{3FC1EF9A-F346-413C-BB47-ED6F9A4BD52F}"}
+    };
+    const WCHAR *cls=NULL,*name=wcsrchr(expected,L'\\');
+    if(!client_path(expected)||!name)return E_INVALIDARG;
+    const WCHAR *segment=expected+3;
+    for(const WCHAR *p=segment;;p++){
+        if(*p&&(*p<32||wcschr(L"<>|?*",*p)))return E_INVALIDARG;
+        if(!*p||*p==L'\\'){
+            if(p==segment||p[-1]==L' '||p[-1]==L'.')return E_INVALIDARG;
+            if(!*p)break;segment=p+1;
+        }
+    }
+    for(unsigned int i=0;i<sizeof(classes)/sizeof(classes[0]);i++)
+        if(!wcscmp(kind,classes[i].kind)&&!_wcsicmp(name+1,classes[i].name))cls=classes[i].cls;
+    if(!cls)return E_INVALIDARG;
+    WCHAR key[256];swprintf(key,256,L"CLSID\\%ls\\InprocServer32",cls);
+    HKEY h;LONG rc=RegOpenKeyExW(HKEY_CLASSES_ROOT,key,0,KEY_READ|KEY_WOW64_32KEY,&h);
+    DWORD bytes=sizeof(loaded),type=0;memset(loaded,0,sizeof(loaded));
+    if(!rc){rc=RegQueryValueExW(h,NULL,NULL,&type,(BYTE*)loaded,&bytes);RegCloseKey(h);}
+    loaded[2047]=0;
+    if(rc){error_code=rc;wcscpy(detail,L"Expected 32-bit PlayOnline class registration is absent");return HRESULT_FROM_WIN32(rc);}
+    if(type!=REG_SZ||bytes!=(wcslen(expected)+1)*sizeof(WCHAR)||bytes>sizeof(loaded)||
+       loaded[bytes/sizeof(WCHAR)-1]!=0||_wcsicmp(loaded,expected)){
+        loaded[2047]=0;wcscpy(detail,L"PlayOnline class registration does not match the selected DLL");return E_FAIL;
+    }
+    WCHAR dir[2048];wcscpy(dir,expected);WCHAR *last=wcsrchr(dir,L'\\');
+    if(last==dir+2)last[1]=0;else *last=0;
+    if(!SetCurrentDirectoryW(dir)){error_code=GetLastError();return HRESULT_FROM_WIN32(error_code);}
+    CLSID class_id;HRESULT hr=CLSIDFromString(cls,&class_id);if(FAILED(hr))return hr;
+    IClassFactory *factory=NULL;
+    hr=CoGetClassObject(&class_id,CLSCTX_INPROC_SERVER,NULL,&IID_IClassFactory,(void**)&factory);
+    if(SUCCEEDED(hr)&&!factory)hr=E_FAIL;
+    if(factory)IClassFactory_Release(factory);
+    wcscpy(detail,L"PlayOnline class factory checked; no application object, game or login created");return hr;
+}
 static HRESULT installer(void){
     WCHAR command[]=L"\"Z:\\session\\prerequisite.exe\"";
     STARTUPINFOW si={0};PROCESS_INFORMATION pi={0};si.cb=sizeof(si);
@@ -96,12 +146,17 @@ static HRESULT installer(void){
     return child_exit==0||child_exit==3010?S_OK:HRESULT_FROM_WIN32(child_exit);
 }
 int wmain(int argc,WCHAR **argv){
+#ifdef LSB_CLIENT_INIT_TEST_MODE
+    DWORD n=GetCurrentDirectoryW(1900,receipt_new);if(!n||n>=1900)return 93;
+    wcscpy(receipt_final,receipt_new);wcscat(receipt_new,L"\\client-step.new");wcscat(receipt_final,L"\\client-step.json");
+#endif
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|SEM_NOOPENFILEERRORBOX);
     HRESULT init=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);if(FAILED(init))return report(L"com-apartment",init);
     HRESULT hr=E_INVALIDARG;const WCHAR *op=argc>1?argv[1]:L"arguments";
     if(argc==5&&!wcscmp(op,L"registry"))hr=registry(argv[2],argv[3],argv[4]);
     else if(argc==3&&!wcscmp(op,L"register"))hr=register_file(argv[2]);
     else if(argc==5&&!wcscmp(op,L"com"))hr=com(argv[2],argv[3],argv[4]);
+    else if(argc==4&&!wcscmp(op,L"class"))hr=viewer_class(argv[2],argv[3]);
     else if(argc==2&&!wcscmp(op,L"installer"))hr=installer();
     int result=report(op,hr);CoUninitialize();return result;
 }

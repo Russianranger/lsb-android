@@ -26,7 +26,11 @@ SESSION = Path('/session')
 LOGS = Path('/logs')
 CLIENT = Path('/client')
 POL_SHA = '5c2d45bd277eaf815d2790fee79548a88e25679986ca483773c69382ef92c404'
-VARIANTS = ('registry-only', 'core-registered')
+VARIANTS = ('registry-only', 'core-registered', 'production')
+POL_CLASSES = {'{3501f5dd-7894-42df-866a-a2b6527d8049}',
+               '{40555aae-53ad-4abc-ae65-8441755e7d69}',
+               '{3fc1ef9a-f346-413c-bb47-ed6f9a4bd52f}',
+               '{62021866-976b-49a3-a18b-7a44869008a2}'}
 
 
 def png_chunk(kind, payload):
@@ -91,7 +95,7 @@ def worker(label):
     # Explicit comparison of .37 install-path-only behavior and an already
     # core-registered gameplay prefix. A later production helper must not make
     # the regression baseline accidentally use the fix being evaluated.
-    if hasattr(client_update, 'prepare_playonline_components'):
+    if label != 'production' and hasattr(client_update, 'prepare_playonline_components'):
         client_update.prepare_playonline_components = lambda *args, **kwargs: None
     original_check = client_update.check_dependencies
 
@@ -197,6 +201,7 @@ def main():
                           'supervisor_phase': state.get('phase'),
                           'supervisor_error': state.get('error'),
                           'preparation': preparation,
+                          'component_registration': report.get('component_registration', []),
                           'dependency_attempts': report.get('dependency_attempts', []),
                           'startup_diagnostics': report.get('startup_diagnostics', {})}
         (LOGS / 'official-playonline-smoke.json').write_text(json.dumps(results, indent=2))
@@ -208,6 +213,31 @@ def main():
                 report.get('dependency_attempts')), 'Official viewer did not reach current dependency preflight'
         if observed:
             assert 'screenshot' in metrics, 'Visible official viewer has no screenshot for review'
+        diagnostic = report.get('startup_diagnostics', {})
+        missing_classes = {row.get('clsid') for row in diagnostic.get('records', [])
+                           if row.get('reason') == 'class_not_registered'}
+        if label == 'registry-only':
+            assert '{3501f5dd-7894-42df-866a-a2b6527d8049}' in missing_classes, 'Missing unregistered-core regression evidence'
+        elif label == 'core-registered':
+            assert '{40555aae-53ad-4abc-ae65-8441755e7d69}' in missing_classes, 'Missing .37 unregistered-app regression evidence'
+        else:
+            components = report.get('component_registration', [])
+            assert [entry.get('component') for entry in components] == ['core', 'app', 'contents'], 'Incomplete production registration inventory'
+            for entry, operations in zip(components, [('register', 'com'), ('register', 'class'), ('register', 'class')]):
+                steps = entry.get('steps', [])
+                assert tuple(step.get('operation') for step in steps) == operations, 'Missing production register/verify step'
+                for step, operation in zip(steps, operations):
+                    result = step.get('result', {})
+                    assert (step.get('exit_code') == 0 and result.get('operation') == operation and
+                            result.get('bits') == 32 and result.get('ok') is True and
+                            result.get('hresult') == 0 and result.get('win32_error') == 0), 'Production component did not register and verify successfully'
+            assert observed and 'screenshot' in metrics, 'Production viewer never provided reviewable display evidence'
+            assert diagnostic.get('dropped_records') == 0, 'Incomplete production startup diagnostics'
+            assert not missing_classes.intersection(POL_CLASSES), 'Production viewer still reports missing PlayOnline COM class'
+            # This checks the concrete COM regression, not general UI usability.
+            # The offline screenshot still needs inspection for another error.
+            results[label]['component_registration_verified'] = True
+            results[label]['known_missing_class_errors'] = False
         print('Official PlayOnline offline COM comparison:', label,
               'window=', bool(observed), 'alive=', alive,
               'exit=', final_before_stop.get('child_exit'), 'pixels=', metrics, flush=True)
