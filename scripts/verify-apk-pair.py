@@ -19,7 +19,7 @@ def verify(aapt2, standard, restore_test):
     android = '{http://schemas.android.com/apk/res/android}'
     version = (source.get(android+'versionCode'), source.get(android+'versionName'))
     base = 'io.github.russianranger.lsb'
-    components = {base+'.'+name for name in ('MainActivity', 'RuntimeActivity', 'RuntimeService', 'ServerService', 'WorkService')}
+    components = {base+'.'+name for name in ('MainActivity', 'RuntimeActivity', 'BackupBrowserActivity', 'RuntimeService', 'ServerService', 'WorkService')}
     for apk, package, label in ((standard, base, 'LSB Android'), (restore_test, base+'.restoretest', 'LSB Restore Test')):
         badging = subprocess.check_output([str(aapt2), 'dump', 'badging', str(apk)], text=True)
         identity = re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging, re.M)
