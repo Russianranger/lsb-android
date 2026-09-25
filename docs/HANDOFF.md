@@ -1,3 +1,110 @@
+# 0.5.39: PlayOnline DNS repair and preparation timings
+
+The owner confirmed .38 gets past COM startup but reported a slow viewer and
+**POL-0019: Cannot connect to server**. Current support archive
+`lsb-support (4).zip` SHA256
+`76e03f8ddd049511f82939b31f18fd149b0604f4f6efe89f9a8d5760ac47efa7`,
+Library `libfile_311d690741e081918e353ee2b7724cdb`, uploaded file
+`file_00000000a9cc81f58d3bf90ca647ba18`. Screenshots 1006409549/1006409548
+show network information and the version-update error. Session
+`59c831e0-d619-4e5d-9fd9-3fbef24b4b1b` passes all six component checks and all
+11 normal DLL imports; the viewer remains running until intentional Stop.
+Do not regress the accepted .38 component registration.
+
+Concrete defect: the complete 353,710,639-byte pinned runtime archive, SHA256
+`08c639c26506dc6fbd15464bec475337087bb23cb7c0c5ace2db5240ee36424f`, has regular
+zero-byte `/etc/resolv.conf` and `/etc/hosts`; nsswitch uses `hosts: files dns`.
+ClientRuntime previously supplied neither file. Docker supplied its own files
+in CI, hiding the Android problem. The official viewer app uses Winsock
+gethostbyname, which Wine 10 routes to the guest libc resolver. Do not replace
+the user's polcore or invent patch-server ports: no evidence justifies that.
+
+Source `2dd240ef8a19a50321e62e6b1cd5e6617583b36a`, tree
+`7e3c734b50a3c703ce518f9e165653f33fa7e64d`, version 0.5.39/code 55:
+- New ClientNetwork reads active Android LinkProperties (normal
+  ACCESS_NETWORK_STATE permission), selects at most three numeric DNS endpoints,
+  writes per-run resolver/localhost files, and binds them only for update-client.
+  Missing DNS fails with retry guidance; there is no silent public DNS fallback.
+  Diagnostics retain count/source/private-DNS flag/time, never endpoint values.
+  Direct guest DNS does not implement Android Private DNS/DoT; do not claim it does.
+- Before Wine starts, network_check.py performs bounded parallel IPv4 libc name
+  lookups for qc000.pol.com and www.playonline.com. Eight-second shared deadline,
+  twelve-second parent watchdog, fixed numeric/count diagnostics, no resolved
+  IPs/aliases/raw exceptions. Both failed lookups stop early; one success permits
+  the viewer with partial evidence. Successful DNS is not patch-service health.
+- Per-step numeric elapsed times and six numbered COM preparation statuses.
+  The updater preparation timer excludes earlier prefix/display startup.
+  No renderer/engine, active client, server, backup or runtime-download changes.
+
+Phone timing evidence: total 334.1s, viewer 231.6s, approximately 102.5s before
+viewer launch, first visible window 25.5s later. Hardware Adreno 740/Turnip 26,
+DXVK 2.5.3/Box64 confirmed; mean Android decode 0.318ms/draw 0.089ms. Sparse
+screen updates include static dialogs/network waits and are not gameplay FPS.
+The working game remains FEX/DXVK 2.7.1/Native Surface/SHM/filtering; do not change
+that accepted configuration based on this report. Fix DNS first; if startup
+remains slow, use new timings to assess batching the six component workers.
+
+Local verification: 112 runtime unit methods, seven new Android/Robolectric
+network tests, production Java compilation and existing core/archive/recovery
+checks pass. Independent review found no blockers. Focused CI now reproduces
+empty resolver/hosts failures and supplied binding success in the exact pinned
+guest with network disabled and a controlled loopback DNS server; it runs the
+production preflight and checks privacy/bounds before the official viewer UI.
+
+
+Both source workflows (push 36196883144 and PR 36196887508) pass Android build,
+server deployment, native Windows launcher and focused PlayOnline startup.
+Push jobs: verify 108274742625, server 108274638924, Windows 108275415841,
+PlayOnline 108275415733. PR jobs: verify 108274747865, server 108274653872,
+Windows 108275515677, PlayOnline 108275515632.
+
+The focused fixture proves the empty pinned guest resolver fails both names
+(error -3, zero DNS fixture queries) and empty hosts fails localhost. Supplying
+both files resolves both names (one address each, error 0) and localhost.
+Production preflight remains patch_connection_verified=false. All six component
+operations succeed; capture_failures=[], known_missing_class_errors=false.
+Root inspected the actual 640x480 production screenshot: Setup → Version Update,
+Update to the Latest Version, Network/Next/Cancel controls, no error modal.
+Artifact 10889419612 SHA256
+`1b028009468deca79d976d81680e1282d1c3644f9feed829a8516270e60dc0e3`;
+production.png SHA256
+`815956cfd45257ca54983830b85bba72257708ef8a5297e83e7e0918c16cf5f9`.
+Controlled DNS and offline viewer tests do not prove live patch downloads.
+Broader unchanged Box64/FEX graphics jobs were still running at delivery; do not
+claim all workflows green or phone performance fixed.
+
+Both signed APKs match the tested CI payload, every runtime Python module and
+all 7 server assets. Verified v2/v3 signatures, alignment, ZIP integrity, version
+0.5.39/code 55, separate app identities and 58 identical shared code/resource/
+runtime entries. Signing certificate SHA256 remains
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+
+- Regular: LSB-Android-0.5.39.apk, 18,416,285 bytes, package
+  `io.github.russianranger.lsb`, SHA256
+  `6bddbb210abab9f5703520984d48041ac5943b8add54698fbb6e0014a4686637`.
+- Restore Test: LSB-Android-Restore-Test-0.5.39.apk, 18,416,285 bytes,
+  package `io.github.russianranger.lsb.restoretest`, SHA256
+  `d7bafd5ad601c401491e432b3402204a426f1a3600a05e4dba5a6bf00b8da3b2`.
+
+CI archives: runtime-device-build 10890058279 SHA256
+`acbf3aa3e58d597cacdb7efab3d5777371d1944e8b460f5b8bc15b25729be284`;
+restore-test-device-build 10889463960 SHA256
+`7a760909937fe366ac89bbffcdf41e7da9656c48a0a521a8ed7e454a04648c3e`.
+Both deliverables saved successfully at version 0 with local metadata applied:
+- Regular: libfile_37dd6a3cf5548191bd25b1067abc7ef7 /
+  file_00000000e00481f686755deabae0113a.
+- Restore Test: libfile_10778c5fe3ac8191aaad670fab6a8cea /
+  file_0000000010ac81f6ab5a12b73759709a.
+
+Install over the matching existing apps without uninstalling. Use Restore Test
+first: Client → Client update · PlayOnline → Open or resume PlayOnline update.
+Reuse the retained staged copy; no runtime download, reimport or restore needed.
+Continue the viewer update then Check Files/File Repair. If connection or startup
+waits remain, collect a new support ZIP with network and per-step timing reports.
+Keep newest-server/database experiments deferred until client updates are accepted.
+
+---
+
 # 0.5.38: PlayOnline application/contents registration repair
 
 The .37 phone report `lsb-support (2)(8).zip` (SHA256

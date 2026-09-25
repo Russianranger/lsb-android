@@ -1,7 +1,7 @@
 # Staged client updates and storage management
 
 The owner confirmed that 0.5.35 full-session restore works. Keep the regular app
-and LSB Restore Test installed separately. Version 0.5.38 updates each in place;
+and LSB Restore Test installed separately. Version 0.5.39 updates each in place;
 never uninstall the regular app to install an update.
 
 ## Manage copies stored in the app
@@ -21,7 +21,7 @@ arbitrary device folders.
 
 ## First PlayOnline update test
 
-1. Install both 0.5.38 APK updates and use **LSB Restore Test** for this test.
+1. Install both 0.5.39 APK updates and use **LSB Restore Test** for this test.
    Keep the original app's server stopped. Stop the test app's client/server too.
 2. Open **Client → Client update · PlayOnline → Prepare update and open
    PlayOnline**. Confirm creation of a separate full client and Windows copy.
@@ -110,3 +110,31 @@ Repair steps above. If another error appears, export a fresh support ZIP.
 
 See [component registration evidence](playonline-com-0538.md) for the official
 installer mapping, reproduced failure and verification limits.
+
+## Retrying POL-0019 / slow update startup
+
+Version 0.5.39 supplies the updater's Linux environment with the DNS servers
+from Android's active network and a private localhost hosts file. The pinned
+runtime archive contains empty resolver/hosts files; Android app downloads and
+local-server gameplay did not exercise this missing external-name resolution.
+The files are bound for the update session without replacing the installed
+runtime, active gameplay prefix or server configuration.
+
+A bounded guest IPv4 name check runs before Wine starts. It records whether
+PlayOnline's public server names resolve; it does not claim the patch service
+is available. If neither check resolves, the app stops early with a specific
+network message. Reopening the updater refreshes the network settings. No
+public DNS fallback is selected. This uses the active link's DNS endpoints;
+Android Private DNS/DoT is not implemented inside the guest.
+
+Preparation now shows six numbered component steps and records their elapsed
+times. The .38 phone report showed about 102.5 seconds before viewer launch,
+then 25.5 seconds before a visible window. Android decode/draw was sub-millisecond,
+so it did not establish a display-transfer bottleneck. These measurements do
+not prove a renderer or translator fix, and no such settings were changed.
+
+Install the matching .39 APK over each app, then use **Restore Test → Client →
+Client update · PlayOnline → Open or resume PlayOnline update**. The existing
+staged copy is reused. Continue the viewer update, then Check Files/File Repair.
+If POL-0019 or a long wait remains, export a new support ZIP so the network and
+step timing reports can identify the remaining failure.
