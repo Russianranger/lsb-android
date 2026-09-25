@@ -16,20 +16,41 @@ The v4 dependency marker remains current; this repair needs only an APK update
 and another Deploy matching server + database, without a runtime reinstall.
 No force flags, database reset, allocator changes or client changes are needed.
 
-New Android regression checks deploy/start bindings on an already-current
-runtime and preserved staged SQL; the upgrade test checks the bootstrap binding.
-Native CI now disables DNS lookup, empties hosts, reproduces the exact MariaDB
-error, checks actual PRoot file binding resolves localhost without overwriting
-the underlying hosts file, then deploys real SQL with the packaged loopback
-entries while DNS remains disabled. It restores DNS for later pip-based update
-tests. Python/Bash syntax and diff checks pass; native/Android CI and signed APK
-are pending. Actual private server deployment still needs the next phone test.
+Source commit **e50eb95f5f63231560c2a7027bfe5c695e2f7247** passes both native
+ARM64 server jobs: push **108036468380** / run **36124206700**, and PR
+**108036481247** / run **36124211055**. All 13 integration markers pass. The new
+check disables DNS lookup, empties hosts, reproduces the exact MariaDB error,
+verifies an actual PRoot file binding resolves localhost without overwriting
+the underlying hosts file, then deploys real SQL using the packaged loopback
+entries while DNS remains disabled. DNS is restored for later pip-based updates.
+Existing BFD, import/restore/rollback/account and process start/stop checks pass.
+
+Both Android build jobs **108036585417** and **108036592759** pass 45 Android
+checks, 43 tar checks, 82 runtime contracts and 34 server units. The new Android
+regression covers deploy/start on a current runtime with retained staged SQL;
+the existing upgrade test also checks the bootstrap binding. Both presentation
+and Windows jobs pass. The user's private server deployment remains untested here.
+
+Delivered **LSB-Android-0.5.33.apk**, code 49, 18,334,132 bytes, SHA-256
+`d01b4116461c811270050cf9c0229e1ee60e6a9a600aa03e077ef2ae66199ba2`.
+Library `libfile_d91a58dc0a9c81919c9317cc4348c2f0`, version 0,
+file `file_0000000043b081f5be5cb12f4506ee60`. Retained update certificate verifies
+with v2/v3 signatures; package/version, alignment and ZIP integrity pass.
+Non-signature payload matches CI artifact **10859711591**, ZIP SHA-256
+`d9fbce8f65f4098035ab23636ea3c63dec77cda4e067fce6208a89f0c99605c9`.
+All 37 client runtime/native entries are byte-identical to .32; all seven server
+assets match source. Payload changes are manifest/classes and the new server
+hosts file, plus signing metadata. No runtime dependency update is needed.
+
+Full client CI is still running at delivery: push Box64 **108037283340**, FEX
+**108037283382**; PR Box64 **108037110774**, FEX **108037110708**. Check these
+next turn; do not claim all CI green. No unchanged reruns or relaxed gates.
 
 .32 follow-through: PR FEX job 108031656057 failed the existing optional graphics
 trial because baseline GPL was not confirmed (gpl_fast inactive; draw/presentation
-check timed out). Earlier software/FEX coverage passed. Other .32 client jobs
-were still running when this task started; check before delivery. No unchanged
-rerun or weakened check.
+check timed out). Earlier software/FEX coverage passed. Push FEX **108031574898**
+has completed successfully. Both .32 Box64 jobs **108031574807** / **108031656085**
+remain running at .33 delivery. No unchanged rerun or weakened check.
 
 Next phone test after delivery: install .33 over .32, Server → Import your
 working server → Deploy matching server + database, then Start managed server.

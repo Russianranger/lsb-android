@@ -13,7 +13,19 @@ no apt update, rootfs overwrite or data reset is required. Python/Bash syntax an
 diff checks pass. New Android coverage checks the bind for bootstrap/deploy/start
 and retained staged SQL. Native coverage reproduces the missing-hosts failure,
 checks an actual PRoot bind, and initializes/imports MariaDB with file-only host
-resolution. Native and Android build results pending.
+resolution. Both ARM64 jobs (108036468380 / 108036481247) pass all 13 integration
+markers, including this failure/repair reproduction. Both Android builds
+(108036585417 / 108036592759) pass 45 Android tests, 43 archive checks, 82 runtime
+contracts and 34 server units. Both Windows/presentation jobs pass. Full client
+Box64/FEX checks remain running at delivery; actual phone deployment is pending.
+
+Signed .33/code 49: 18,334,132 bytes, SHA-256
+`d01b4116461c811270050cf9c0229e1ee60e6a9a600aa03e077ef2ae66199ba2`.
+Same update signer, v2/v3 verification, alignment, package/version and ZIP
+integrity pass. Payload matches CI artifact 10859711591. All 37 client/native
+entries match .32 byte-for-byte; all seven server assets match source commit
+e50eb95f5f63231560c2a7027bfe5c695e2f7247. Only manifest/classes, private hosts
+asset and signing metadata differ from .32.
 
 ---
 
