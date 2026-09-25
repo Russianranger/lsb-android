@@ -1,4 +1,4 @@
-# 0.5.35 in progress: complete-backup POSIX filename repair
+# 0.5.35 delivered: complete-backup POSIX filename repair
 
 The .34 phone export ran from 06:39:55 to 06:48:24 CDT and failed with
 IOException: Unsafe session path. The supplied support ZIP confirms the logical
@@ -14,6 +14,57 @@ link-parent and checksum checks. Errors identify a bounded escaped path. Both
 standard and Restore Test APKs need the update. No game/runtime/server data is
 renamed or skipped; archive format remains v1. Client/runtime/allocator behavior
 is unchanged. See docs/complete-session-backup.md for the retry sequence.
+
+Implementation source **44f1b7a7f9be84665343a4d233fba09243082512**, tree
+**c45f0c093696553bb0df60ce71de378eb545f977**, version .35/code51. Two independent
+local reproductions reproduce the previous error with literal backslash names;
+the exact phone filename remains unverified. POSIX host and UTF-8 round-trip
+checks prevent interpreting these names differently on another host.
+
+Validation: push **36132052769** and PR **36132058540** Android build jobs
+**108061447491 / 108061504271** pass all **53 Android tests**, including the
+full-session Wine-prefix backslash filename fixture, **62 archive** and **353
+transaction recovery** checks, **43 tar** checks, **82 runtime contracts**,
+**39 server units** and existing core/display checks. Native ARM64 server jobs
+**108061330879 / 108061350382** pass all 15 markers, including the actual 731 MiB
+complete archive/activation round trip with 2,443 files and five symlinks. Restored
+MariaDB starts at the new app path, preserves account/password/character data and
+SQL objects, and restored-only writes leave original state/source hashes unchanged.
+The phone owner's full export/isolated restore still needs a retry.
+
+Both presentation and Windows jobs pass. PR Box64 **108062249766** failed the
+observed D3D8 pixel fixture timeout (last logged swvp frame 3 pixel_lock before),
+followed by the startup assertion in the cancellation fixture. Push Box64
+**108062114928** and push/PR FEX **108062114936 / 108062249745** are still running
+at delivery. Runtime payloads are unchanged; no gates were weakened or unchanged
+jobs rerun. Do not claim all CI green; follow up on these jobs next turn.
+
+Both delivered APKs use the retained signing certificate SHA256
+f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e:
+
+- **LSB-Android-0.5.35.apk**: 18,350,516 bytes; SHA256
+  832f80271ea8477b0f88b8eeaacd70b7183c3635f949d0cd33a27d56ee307f86.
+  Library libfile_3b5c25071de88191954d6895e95405ff, version0,
+  file_00000000db7081f58dcde5b084d739e1.
+- **LSB-Android-Restore-Test-0.5.35.apk**: 18,354,612 bytes; SHA256
+  c39db351279d851785e54c7479bf3a86c0696428d1a28dd1ec3fb12d55384170.
+  Library libfile_475b053568c481918a007a0d1cc4560a, version0,
+  file_00000000059481f58c0066505ff09378.
+
+v2/v3 signatures, alignment, package IDs/version51 and ZIP integrity pass. Final
+non-signature payloads match CI. The two APKs have 55 identical code/resource/
+runtime entries outside manifest/resources table. All 37 client runtime/native
+entries remain byte-identical to .34; all seven server assets match source.
+Push CI artifacts **10862236104** (standard) and **10862211092** (test), ZIP SHA256
+71be7ca4d5679a7d86dd765caf752cca01f037cb1146df567145d407deba49b8 and
+4c562dfcadb2799d6a83c3139b89c42eb50f0b1561e8983d9e1804d1437ff392.
+
+Install both .35 updates without uninstalling. Stop client/server, retry Client
+→ Backup and recovery → Export complete session backup in the working app, then
+restore into LSB Restore Test. Keep the original server stopped while testing
+the restored server. No runtime reinstall or source/client/database reimport is
+needed. Preserve the accepted .33 working setup; client updating and latest LSB
+source/database experiments remain gated on the owner's successful restore test.
 
 .34 CI follow-through: PR FEX108054909744 passed. Push FEX108054625185 failed a
 D3D8 texture/geometry/render-target pixel timeout followed by cancellation fixture
