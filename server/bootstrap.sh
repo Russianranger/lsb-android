@@ -17,7 +17,9 @@ hashed=bcrypt.hashpw(sample,bcrypt.gensalt(rounds=4,prefix=b'2b'))
 if not hashed.startswith(b'$2b$04$') or not bcrypt.checkpw(sample,hashed):
     raise SystemExit('Server account hashing check failed')
 PY
+python3 "$(dirname "$0")/bfd_compat.py"
 apt-get clean
 printf '%s\n' 'Ubuntu 26.04 ARM64 server environment' > /lsb-server-ready
 printf '%s\n' 'Server account tools v2' > /lsb-server-tools-v2
 printf '%s\n' 'Server dependencies v3: jemalloc runtime and build support' > /lsb-server-tools-v3
+printf '%s\n' 'Server dependencies v4: exact BFD 2.45 and SFrame 2 compatibility' > /lsb-server-tools-v4

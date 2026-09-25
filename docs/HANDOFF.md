@@ -1,3 +1,40 @@
+# 0.5.32: exact BFD 2.45 compatibility for imported server
+
+The 0.5.31 phone support ZIP `lsb-support (2)(7).zip` confirms dependency update
+completed, then deployment failed before database activation. All four imported
+xi executables report only `libbfd-2.45-system.so => not found`. Their loader lists
+do not show dynamic jemalloc linkage. Do not infer static allocation choices or
+claim jemalloc caused this failure. Deployment reuses the imported binaries;
+rebuilding uses source defaults without forced jemalloc preload/linker flags.
+
+Version .32/code 48 supplies checksum-pinned official Ubuntu ARM64 BFD 2.45 and
+its SFrame 2 dependency in a dedicated compatibility directory, enabled through
+ldconfig. It does not downgrade system binutils or replace its headers/linker,
+alias a newer BFD library, change imported binaries, or change client defaults.
+Tools marker v4 prompts the existing in-place runtime update. See
+`docs/bfd-compatibility.md` for exact packages, hashes, provenance and checks.
+
+Local 34 server unit tests pass, including invalid-download rejection and
+preservation of live libraries/config after download/loader failure. Android
+regressions now model v3-to-v4 updating while retaining imported source/SQL and
+databases. ARM64 integration adds the exact missing BFD SONAME scenario, actual
+BFD object operations with matching headers, retained system toolchain/binary
+bytes and BFD-linked managed process startup. Native CI and signed APK delivery
+are pending; no actual user server or on-device success is claimed.
+
+Follow-through on .31 CI: PR run 36087783616 completed successfully, including
+Box64 job 107924095368 and FEX job 107924095363. Push run 36087781630 passed FEX
+107923961334, but Box64 107923961292 failed its existing D3D8 texture/geometry/
+render-target pixel check with exit 12 on llvmpipe. It is separate from the
+server dependency error. No unchanged rerun or weakened gate was attempted.
+
+Phone retry after delivery: update APK in place, stop client and old Termux
+server, Server → Import your working server → Update server runtime and build
+tools, then Deploy matching server + database. Preserve existing imports; do
+not fetch upstream or rebuild just to fix this specific missing library.
+
+---
+
 # 0.5.31: imported-server dependencies and jemalloc support
 
 Fresh phone support ZIP `lsb-support (1)(5).zip` confirms .30 installed Ubuntu,

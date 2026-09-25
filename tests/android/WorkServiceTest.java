@@ -88,7 +88,7 @@ public class WorkServiceTest {
         ServerRuntime runtime=ServerRuntime.get(context);Job running=new Job();set(ServerRuntime.class,runtime,"active",true);
         try{runtime.createAccount(running.account,s->{});fail("Running server must reject account changes");}catch(IOException expected){assertTrue(expected.getMessage().contains("Stop"));}
         try{running.account.send(new ByteArrayOutputStream());fail("Rejected details must expire");}catch(IOException expected){}
-        set(ServerRuntime.class,runtime,"active",false);new File(runtime.root,"lsb-server-tools-v3").delete();Job oldTools=new Job();
+        set(ServerRuntime.class,runtime,"active",false);new File(runtime.root,"lsb-server-tools-v4").delete();Job oldTools=new Job();
         try{runtime.createAccount(oldTools.account,s->{});fail("Old tools must be updated");}catch(IOException expected){assertTrue(expected.getMessage().contains("update server tools"));}
         try{oldTools.account.send(new ByteArrayOutputStream());fail("Rejected details must expire");}catch(IOException expected){}
     }
@@ -118,13 +118,13 @@ public class WorkServiceTest {
             assertTrue(builder.command().contains("/opt/lsb-server/bootstrap.sh"));
             assertFalse("Previous deployment failure must not override bootstrap status",new File(home,"run/status.json").exists());
             assertFalse(builder.environment().containsKey("LD_PRELOAD"));
-            FilesEx.text(new File(home,"rootfs/lsb-server-tools-v3"),"jemalloc installed");
+            FilesEx.text(new File(home,"rootfs/lsb-server-tools-v4"),"BFD compatibility installed");
             bootstraps.incrementAndGet();return new Child(false);
         });
         File source=new File(MainActivity.storage(context),"server/current/source-report.txt");
         try{
             FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");
-            FilesEx.text(new File(runtime.root,"lsb-server-tools-v2"),"old tools");
+            FilesEx.text(new File(runtime.root,"lsb-server-tools-v3"),"old tools");
             FilesEx.text(new File(runtime.root,"usr/bin/bash"),"existing rootfs sentinel");
             FilesEx.text(new File(runtime.state,"import.sql"),"staged SQL retained");
             FilesEx.text(new File(runtime.state,"generations/fixture/mysql/sentinel"),"database retained");
@@ -184,7 +184,7 @@ public class WorkServiceTest {
     }
     @Test public void repeatedInterruptionForcesChildCleanupAndReleasesOnlyFinishedOperation()throws Exception {
         Child child=new Child(true);ServerRuntime runtime=new ServerRuntime(nativeContext(),builder->child);
-        FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");FilesEx.text(new File(runtime.root,"lsb-server-tools-v3"),"ready");
+        FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");FilesEx.text(new File(runtime.root,"lsb-server-tools-v4"),"ready");
         ServerAccountRequest account=new ServerAccountRequest("fixture account","private password");
         try{runtime.createAccount(account,s->{});fail("Interrupted manager must fail");}
         catch(InterruptedIOException expected){assertTrue(expected.getMessage().contains("check status before retrying"));}

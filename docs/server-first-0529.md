@@ -7,7 +7,7 @@ these controls do not establish that the user's exact server has run in the app.
 
 ## Install and import
 
-1. Install the signed 0.5.29 APK over the existing app. Keep the client runtime,
+1. Install the signed 0.5.32 APK over the existing app. Keep the client runtime,
    imported game files and working client settings.
 2. Stop the client and the old Termux server. In **Server → Import your working
    server**, choose **Install server runtime and build tools** (or **Update server runtime and build tools** for
@@ -26,7 +26,9 @@ these controls do not establish that the user's exact server has run in the app.
    and their dependencies. If they are incompatible, choose **Build imported
    revision and deploy** to compile that same source revision. This does not
    fetch current upstream code or run a database update. From 0.5.31, the runtime
-   includes jemalloc for imported binaries linked against it. Update the server
+   includes jemalloc for imported binaries linked against it. Version 0.5.32 also
+   supplies the exact BFD 2.45/SFrame 2 libraries used by the imported binaries,
+   alongside the current build tools. Update the server
    runtime first when prompted. Any remaining missing library or ABI version is
    named in the error and retained in the server operation log/support ZIP.
 6. Confirm the displayed expected client version, then choose **Start managed server**.

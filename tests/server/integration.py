@@ -29,11 +29,10 @@ program=Path('/tmp/server-stub.c');program.write_text('''#include <signal.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <jemalloc/jemalloc.h>
+#include <bfd.h>
 static volatile sig_atomic_t done;static void stop(int s){(void)s;done=1;}
-int main(int argc,char**argv){(void)argc;const char* version=NULL;size_t length=sizeof(version);if(mallctl("version",&version,&length,NULL,0))return 9;printf("allocator=jemalloc %s\\n",version);fflush(stdout);signal(SIGTERM,stop);int fd=-1;if(strstr(argv[0],"xi_connect")){fd=socket(AF_INET,SOCK_STREAM,0);int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(54231);a.sin_addr.s_addr=htonl(0x7f000001);if(bind(fd,(void*)&a,sizeof(a))||listen(fd,4))return 8;}while(!done)sleep(1);if(fd>=0)close(fd);return 0;}
+int main(int argc,char**argv){(void)argc;bfd_init();bfd* input=bfd_openr(argv[0],NULL);if(!input||!bfd_check_format(input,bfd_object)||!bfd_close(input))return 10;puts("bfd=2.45 object verified");const char* version=NULL;size_t length=sizeof(version);if(mallctl("version",&version,&length,NULL,0))return 9;printf("allocator=jemalloc %s\\n",version);fflush(stdout);signal(SIGTERM,stop);int fd=-1;if(strstr(argv[0],"xi_connect")){fd=socket(AF_INET,SOCK_STREAM,0);int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(54231);a.sin_addr.s_addr=htonl(0x7f000001);if(bind(fd,(void*)&a,sizeof(a))||listen(fd,4))return 8;}while(!done)sleep(1);if(fd>=0)close(fd);return 0;}
 ''')
-subprocess.run(['gcc-15','-O2',program,'-o','/tmp/server-stub','-ljemalloc'],check=True)
-for name in ('xi_connect','xi_map','xi_search','xi_world'):shutil.copy2('/tmp/server-stub',source/name)
 dump=ACCOUNT_SCHEMA_SQL.encode()+b"\nINSERT INTO accounts(id,login) VALUES(1,'fixture'); CREATE TABLE chars(charid INT PRIMARY KEY,charname VARCHAR(32)); INSERT INTO chars VALUES(1,'Fixture'); CREATE TABLE zone_settings(zoneid INT,zoneip VARCHAR(32),zoneport INT); INSERT INTO zone_settings VALUES(1,'192.0.2.5',54231);\n"+b"""
 CREATE TABLE fixture_blobs(id INT PRIMARY KEY, content BLOB);
 INSERT INTO fixture_blobs VALUES (1, 0x000A0DFF275C);
@@ -58,6 +57,37 @@ def invoke(action,success=True,payload=None,**extra):
 def selected():return json.loads((state/'active.json').read_text())
 def tree_hashes(root):return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
 spec=importlib.util.spec_from_file_location('integration_manager',manager);backend=importlib.util.module_from_spec(spec);spec.loader.exec_module(backend)
+# Reproduce the phone's exact SONAME failure using real BFD 2.45 calls. Fetch
+# its matching headers only for this fixture; the installed compiler stays current.
+spec=importlib.util.spec_from_file_location('bfd_compat',repo/'server/bfd_compat.py');bfd=importlib.util.module_from_spec(spec);spec.loader.exec_module(bfd)
+bfd_work=Path('/tmp/lsb-bfd-fixture');bfd_work.mkdir()
+headers,_=bfd.download_package(bfd_work,'binutils-dev',12947812,'a36b1e07661eabd0d9c9f22299b07b12bbcf6084b9be724ac55bfe946933230e')
+subprocess.run(['dpkg-deb','--extract',headers,bfd_work/'headers'],check=True)
+bfd_program=bfd_work/'bfd-check.c';bfd_program.write_text('''#include <bfd.h>
+#include <stdio.h>
+int main(int argc,char**argv){(void)argc;bfd_init();bfd* input=bfd_openr(argv[0],NULL);if(!input||!bfd_check_format(input,bfd_object))return 1;printf("BFD 2.45 opened %s\\n",bfd_get_target(input));return bfd_close(input)?0:2;}
+''')
+subprocess.run(['gcc-15','-I'+str(bfd_work/'headers/usr/include'),bfd_program,'-L'+str(bfd.LIBDIR),'-Wl,-rpath-link,'+str(bfd.LIBDIR),'-l:libbfd-2.45-system.so','-o',bfd_work/'bfd-check'],check=True)
+# The long-running server fixtures also use the exact BFD ABI, so managed start
+# tests actual process execution, not just ldd or a standalone dlopen.
+subprocess.run(['gcc-15','-O2','-I'+str(bfd_work/'headers/usr/include'),program,'-L'+str(bfd.LIBDIR),'-Wl,-rpath-link,'+str(bfd.LIBDIR),'-l:libbfd-2.45-system.so','-ljemalloc','-o','/tmp/server-stub'],check=True)
+for name in backend.PROCESSES:shutil.copy2('/tmp/server-stub',source/name)
+original_binaries={name:(source/name).read_bytes() for name in backend.PROCESSES}
+system_bfd=Path('/usr/lib/aarch64-linux-gnu/libbfd.so');system_target=system_bfd.resolve();system_hash=hashlib.sha256(system_bfd.read_bytes()).hexdigest()
+assert system_target.name!='libbfd-2.45-system.so',system_target
+package_state=subprocess.check_output(['dpkg-query','-W','binutils','binutils-dev','libbinutils'])
+for _,_,_,soname in bfd.PACKAGES:(bfd.LIBDIR/soname).rename(bfd_work/soname)
+subprocess.run(['ldconfig'],check=True)
+failed=invoke('deploy',False)
+assert 'libbfd-2.45-system.so' in failed['message'],failed
+assert not (state/'active.json').exists() and (state/'import.sql').read_bytes()==dump
+assert all((source/name).read_bytes()==content for name,content in original_binaries.items())
+bfd.install();backend.validate_binaries(source)
+subprocess.run([bfd_work/'bfd-check'],check=True)
+assert system_bfd.resolve()==system_target and hashlib.sha256(system_bfd.read_bytes()).hexdigest()==system_hash
+assert subprocess.check_output(['dpkg-query','-W','binutils','binutils-dev','libbinutils'])==package_state
+assert all((source/name).read_bytes()==content for name,content in original_binaries.items())
+print('PASS: exact BFD 2.45 dependency failure repaired with real BFD/SFrame calls; current toolchain, imported binaries and SQL preserved',flush=True)
 def query_generation(generation,query):
  folder=state/'generations'/generation;meta=json.loads((folder/'deployment.json').read_text());creds=None
  try:
@@ -162,4 +192,5 @@ finally:
 assert (Path('/client')/'sentinel').read_bytes()==b'accepted client kept'
 for name in ('xi_connect','xi_map','xi_search','xi_world'):
  assert 'allocator=jemalloc ' in (logs/(name+'.log')).read_text(),name
+ assert 'bfd=2.45 object verified' in (logs/(name+'.log')).read_text(),name
 print('PASS: managed database + four server processes start, report readiness and stop without changing client data',flush=True)

@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.31 fixes server runtime installation with the pinned Ubuntu archive.** The client now renders correctly and the user accepted Trial F's checked runtime syscall filtering as a default in 0.5.28. Preserve prepared client `30251204_1`, original xiloader, the accepted FEX v3/Turnip 26/DXVK 2.7.1/two-worker profile, and the Box64 fallback. See [handoff](docs/HANDOFF.md).
+Current development: **0.5.32 supplies the exact BFD 2.45 library required by the imported server binaries.** The client now renders correctly and the user accepted Trial F's checked runtime syscall filtering as a default in 0.5.28. Preserve prepared client `30251204_1`, original xiloader, the accepted FEX v3/Turnip 26/DXVK 2.7.1/two-worker profile, and the Box64 fallback. See [handoff](docs/HANDOFF.md).
 
 The Server tab imports an existing source/binary ZIP plus its logical SQL dump, deploys an independent server/database pair, creates normal player accounts, and exports or restores database backups. Imported binaries are checked for ARM64/dependency compatibility; an explicit fallback builds the same imported revision. Restores reuse the deployed server files and retain the previous pair for rollback. Source updates remain a separate later action. The user's matching server archive is still required for the first real deployment.
 

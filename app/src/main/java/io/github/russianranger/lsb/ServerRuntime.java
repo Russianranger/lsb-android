@@ -30,7 +30,7 @@ final class ServerRuntime {
     ServerRuntime(Context c,ProcessStarter starter){context=c;processStarter=starter;home=new File(c.getFilesDir(),"server-runtime");root=new File(home,"rootfs");state=new File(home,"state");run=new File(home,"run");logs=new File(home,"logs");backend=new File(home,"backend");tmp=new File(home,"tmp");}
     boolean alive(){Process child=process;return active||(child!=null&&child.isAlive());}
     boolean installed(){return new File(root,"lsb-server-ready").isFile();}
-    boolean toolsCurrent(){return new File(root,"lsb-server-tools-v3").isFile();}
+    boolean toolsCurrent(){return new File(root,"lsb-server-tools-v4").isFile();}
     boolean hasDatabaseImport(){return new File(state,"import.sql").isFile();}
     JSONObject deployment()throws Exception {
         File pointer=new File(state,"active.json");if(!pointer.isFile())return new JSONObject();

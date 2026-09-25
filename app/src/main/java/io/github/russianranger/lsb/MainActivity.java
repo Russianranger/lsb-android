@@ -456,7 +456,7 @@ public final class MainActivity extends Activity {
         supportTile();
         LinearLayout existing=card("Import your working server");
         button(existing,sr.toolsCurrent()?"Server runtime ready":sr.installed()?"Update server runtime and build tools":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(idle&&!sr.toolsCurrent());
-        if(sr.installed()&&!sr.toolsCurrent())existing.addView(label("Update the server runtime to add jemalloc support. Your imported server, SQL backup and deployed databases are retained.",13,MUTED));
+        if(sr.installed()&&!sr.toolsCurrent())existing.addView(label("Update the server runtime to add libraries required by your imported server. Your imported server, SQL backup and deployed databases are retained.",13,MUTED));
         button(existing,"Import existing server folder ZIP",()->pick("source")).setEnabled(idle);
         File report=new File(storage(this),"server/current/source-report.txt");
         if(report.exists())existing.addView(label(FilesEx.read(report,8192),13,MUTED));

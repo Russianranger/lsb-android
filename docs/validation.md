@@ -1,3 +1,26 @@
+# Exact BFD compatibility 0.5.32
+
+The phone export from .31 identifies `libbfd-2.45-system.so` as the sole missing
+SONAME for all four imported executables. Official Ubuntu ARM64 2.45-7ubuntu1.2
+packages and their byte counts/SHA-256 were checked against the official security
+package index. Readelf confirms BFD's exact SONAME and transitive libsframe.so.2
+requirement; the matching SFrame library requires only libc and the ARM64 loader.
+
+Local 34 server unit tests pass. New tests reject modified, truncated and oversized
+packages, exercise the identical-hash archive fallback, preserve existing bundle
+and config on pre-install failures, and ensure the final loader check has no
+LD_LIBRARY_PATH override. Bash/Python syntax and diff checks pass. Android tests
+cover the v3-to-v4 upgrade. The native integration adds real BFD 2.45 operations,
+missing-library reproduction/recovery, unchanged system toolchain and imported
+binary hashes, and BFD-linked managed process startup. Native CI pending.
+
+.31 follow-through: PR 36087783616 passed all gates; push 36087781630 passed the
+server/Android/Windows/FEX gates but Box64 107923961292 failed D3D8 pixel validation
+(exit 12 under llvmpipe). No unchanged rerun or gate relaxation. This does not
+identify the source of the phone's BFD dependency failure.
+
+---
+
 # Server dependency compatibility 0.5.31
 
 The .30 phone support export proves runtime installation completed and prebuilt
