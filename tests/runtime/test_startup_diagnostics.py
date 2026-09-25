@@ -36,6 +36,52 @@ class StartupContracts(unittest.TestCase):
         self.assertIn({'source':'dxvk','event':'diagnostic','category':'d3d8','severity':'err'},report['records'])
         self.assertNotIn('private',json.dumps(report));self.assertNotIn('secret',json.dumps(report))
 
+    def test_exact_wine_com_failures_keep_numeric_component_identity(self):
+        clsid='{3501f5dd-7894-42df-866a-a2b6527d8049}'
+        iid='{e0516654-ef77-435d-aa7d-50d2c069ce34}'
+        raw=(f'1.234:0168:016c:err:ole:com_get_class_object class {clsid.upper()} not registered\n'
+             f'1.235:0168:016c:err:ole:com_get_class_object no class object {clsid} could be created for context 0x17\n'
+             f'1.236:0168:016c:fixme:ole:CoCreateInstanceEx no instance created for interface {iid} of class {clsid}, hr 0x80040154.\n').encode()
+        events,report=self.parsed(raw)
+        self.assertEqual(events.snapshot(),[])
+        records=report['records']
+        self.assertEqual(len(records),3)
+        self.assertEqual({r['clsid'] for r in records},{clsid})
+        self.assertEqual({r['process_id'] for r in records},{360})
+        self.assertEqual({r['thread_id'] for r in records},{364})
+        self.assertEqual(records[0]['reason'],'class_not_registered')
+        self.assertEqual((records[1]['reason'],records[1]['context']),('class_context_unavailable',0x17))
+        self.assertEqual((records[2]['iid'],records[2]['code'],records[2]['reason']),
+                         (iid,0x80040154,'interface_creation_failed'))
+
+    def test_com_identity_requires_exact_source_function_and_message(self):
+        clsid='{3501f5dd-7894-42df-866a-a2b6527d8049}'
+        for prefix,message in (
+                ('err:ole:com_get_class_object',f'class {clsid} not registered private_password'),
+                ('err:ole:com_get_class_object',f'private_account class {clsid} not registered'),
+                ('err:ole:com_get_class_object','class {private_password} not registered'),
+                ('err:ole:com_get_class_object',f'class {clsid[:-2]}z}} not registered'),
+                ('err:ole:com_get_class_object',f'no class object {clsid} could be created for context 0x100000000'),
+                ('err:ole:private_account',f'class {clsid} not registered'),
+                ('err:private_account:com_get_class_object',f'class {clsid} not registered'),
+                ('warn:ole:com_get_class_object',f'class {clsid} not registered'),
+                ('fixme:ole:CoCreateInstanceEx',f'no instance created for interface {clsid} of class {clsid}, hr 0x80040154. private_password'),
+                ('fixme:ole:CoCreateInstanceEx',f'no instance created for interface {{private_account}} of class {clsid}, hr 0x80040154.')):
+            with self.subTest(prefix=prefix,message=message):
+                _,report=self.parsed(f'0168:016c:{prefix} {message}\n'.encode())
+                serialized=json.dumps(report)
+                self.assertNotIn(clsid,serialized)
+                self.assertNotIn('private',serialized)
+                self.assertFalse(any('clsid' in r or 'iid' in r or 'context' in r for r in report['records']))
+
+    def test_different_missing_com_classes_are_not_deduplicated(self):
+        classes=['{3501f5dd-7894-42df-866a-a2b6527d8049}', '{07974581-0df6-4ef0-bd05-604b3ada9be9}']
+        raw=''.join(f'0168:016c:err:ole:com_get_class_object class {clsid} not registered\n' for clsid in classes)
+        _,report=self.parsed((raw+raw).encode())
+        self.assertEqual(len(report['records']),2)
+        self.assertEqual({r['clsid'] for r in report['records']},set(classes))
+        self.assertEqual(report['counts']['wine_diagnostic'],4)
+
     def test_bounds_deduplication_and_overlong_line_recovery(self):
         raw=b''.join(('0001:trace:seh:dispatch_exception code=%08x flags=0\n'%i).encode() for i in range(200))
         events,report=self.parsed(raw+raw+b'X'*9000+b'\ninfo:  DXVK: v2.5.3\n')

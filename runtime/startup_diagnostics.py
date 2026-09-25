@@ -32,6 +32,14 @@ class StartupDiagnostics:
                  'cocreateinstanceex': 'com_create', 'apartment_get_inproc_class_object': 'com_inproc',
                  'start_rpcss': 'rpc_service', 'virtual_setup_exception': 'exception',
                  'dispatch_exception': 'exception', 'show_exception': 'exception'}
+    # Wine 10.0 dlls/combase/combase.c: com_get_class_object and
+    # CoCreateInstanceEx. Exact source messages only, not arbitrary GUIDs in
+    # application output. COM identities are numeric component metadata; no
+    # registry values, account text, DLL paths or unknown labels are retained.
+    GUID = rb'\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}'
+    COM_NOT_REGISTERED = re.compile(rb'class (' + GUID + rb') not registered')
+    COM_CONTEXT_FAILED = re.compile(rb'no class object (' + GUID + rb') could be created for context (0x[0-9a-f]{1,8}|0)')
+    COM_CREATE_FAILED = re.compile(rb'no instance created for interface (' + GUID + rb') of class (' + GUID + rb'), hr (0x[0-9a-f]{1,8}|0)\.')
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -114,6 +122,19 @@ class StartupDiagnostics:
                 code = re.search(rb'(?:hr |status[= ]|error )(?:0x)?([0-9a-f]{8})[.)]?$', message)
                 if code:
                     fields['code'] = int(code[1], 16)
+                if channel == b'ole' and function == b'com_get_class_object' and level == b'err':
+                    missing = self.COM_NOT_REGISTERED.fullmatch(message)
+                    context = self.COM_CONTEXT_FAILED.fullmatch(message)
+                    if missing:
+                        fields.update(clsid=missing[1].decode('ascii'), reason='class_not_registered')
+                    elif context:
+                        fields.update(clsid=context[1].decode('ascii'), context=int(context[2], 16),
+                                      reason='class_context_unavailable')
+                elif channel == b'ole' and function == b'cocreateinstanceex' and level == b'fixme':
+                    creation = self.COM_CREATE_FAILED.fullmatch(message)
+                    if creation:
+                        fields.update(iid=creation[1].decode('ascii'), clsid=creation[2].decode('ascii'),
+                                      code=int(creation[3], 16), reason='interface_creation_failed')
                 self.add('wine', 'diagnostic', **fields, **owner)
             return
         dxvk = re.fullmatch(rb'(info|warn|err):\s+(.*)', data)

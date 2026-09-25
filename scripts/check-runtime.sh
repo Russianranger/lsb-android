@@ -14,18 +14,6 @@ FROM lsb-runtime:base
 RUN apt-get update && apt-get install -y --no-install-recommends mesa-vulkan-drivers && apt-get clean && rm -rf /var/lib/apt/lists/*
 DOCKER
 docker build -t lsb-runtime:test out/runtime-test
-# The official viewer is only a read-only input to an offline, disposable
-# container. Its installer and client files stay outside uploaded artifacts.
-sudo apt-get install -y --no-install-recommends unrar-free msitools
-python3 scripts/prepare-playonline-smoke.py
-mkdir -p out/runtime-test/logs/official-playonline
-docker run --rm --network none \
- -v "$PWD/out/runtime-test/backend:/opt/lsb:ro" \
- -v "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
- -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" \
- -v "$PWD/.tools/playonline-smoke/viewer:/official:ro" \
- -v "$PWD/out/runtime-test/logs/official-playonline:/logs" \
- lsb-runtime:test python3 /tests/playonline_smoke.py
 python3 scripts/check-display-wire.py --backend docker
 # A separate, disposable modern Mesa environment actually executes DXVK 2.7.1.
 # Upgrade only Mesa and its required dependencies. A full dist-upgrade also

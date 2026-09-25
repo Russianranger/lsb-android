@@ -73,13 +73,13 @@ jobs:
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks" \
             --with-restore-test
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.37.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-Restore-Test-0.5.37.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.38.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-Restore-Test-0.5.38.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.37.apk
+            out/LSB-Android-0.5.38.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/
@@ -105,8 +105,8 @@ jobs:
         with:
           name: restore-test-device-build
           path: |
-            out/LSB-Android-Restore-Test-0.5.37.apk
-            out/LSB-Android-Restore-Test-0.5.37.apk.sha256
+            out/LSB-Android-Restore-Test-0.5.38.apk
+            out/LSB-Android-Restore-Test-0.5.38.apk.sha256
       - name: Preserve APK verification tools
         run: |
           mkdir -p out/apk-tools/lib out/apk-tools/lib64
@@ -131,6 +131,46 @@ jobs:
           path: out/windows-tests
       - name: Native registration and process checks with stub client files
         run: python tests/windows/run.py
+
+  playonline-startup:
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-device-build
+          path: out
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+      - uses: actions/cache@v4
+        with:
+          path: .tools/playonline-smoke/viewer.rar-fragment
+          key: lsb-official-viewer-fixture-4607a2e1
+      - name: Compare offline official PlayOnline COM startup and capture error UI
+        run: bash scripts/check-playonline.sh
+      - name: Make official viewer evidence readable
+        if: always()
+        run: |
+          if [ -d out/playonline-test/logs ]; then sudo chown -R "$(id -u):$(id -g)" out/playonline-test/logs; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playonline-startup-evidence
+          path: |
+            out/playonline-test/logs/*.json
+            out/playonline-test/logs/*.png
+      - name: Show official viewer fixed diagnostic summary
+        if: always()
+        run: |
+          python3 - <<'PYLOG'
+          from pathlib import Path
+          result = Path('out/playonline-test/logs/official-playonline-smoke.json')
+          if result.exists(): print(result.read_text())
+          PYLOG
 
   runtime:
     needs: verify
@@ -233,7 +273,7 @@ jobs:
 
   runtime-release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/codex/client-baseline'
-    needs: [verify, windows-launcher, runtime, fex-runtime, server-deployment]
+    needs: [verify, windows-launcher, playonline-startup, runtime, fex-runtime, server-deployment]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
