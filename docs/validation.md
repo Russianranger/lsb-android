@@ -1,3 +1,20 @@
+# Server dependency compatibility 0.5.31
+
+The .30 phone support export proves runtime installation completed and prebuilt
+`xi_world` dependency validation failed. Its ldd output was discarded, so the
+missing SONAME cannot be recovered from that export. Jemalloc was absent from
+the managed runtime; the user reports needing it in the old Termux installation.
+
+This update adds the jemalloc runtime/development packages with a v3 dependency
+upgrade, exact loader diagnostics for every server executable, nonzero/timeout
+checks and support-export coverage. It preserves existing binary bytes and does
+not force allocator overrides. Local 30 server unit tests pass. CI now exercises
+real jemalloc-linked ARM64 processes and a deliberately unavailable shared
+library, checking diagnostics and preservation of the active source/database pair.
+Android/ARM64 integration and signed delivery evidence are pending.
+
+---
+
 # Server runtime archive extraction 0.5.30
 
 The reported 0.5.29 failure is reproduced by its production Java TarExtractor on

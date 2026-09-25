@@ -187,4 +187,63 @@ class ServerTests(unittest.TestCase):
                 self.assertTrue(committed.exists());self.assertIn('Check whether the account exists before retrying',message)
                 self.assertNotIn('kept',message);self.assertNotIn('rolled back',message)
 
+class DependencyTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name);self.logs=self.root/'logs'
+        patch=mock.patch.multiple(m,RUN=self.root/'run',LOGS=self.logs)
+        patch.start();self.addCleanup(patch.stop)
+        header=bytearray(64);header[:6]=b'\x7fELF\x02\x01';header[18:20]=(183).to_bytes(2,'little')
+        for name in m.PROCESSES:(self.root/name).write_bytes(header)
+    def check(self,outcome):
+        with mock.patch.object(m.subprocess,'run',side_effect=outcome):m.validate_binaries(self.root)
+    def test_reports_missing_names_for_every_server_and_keeps_loader_details(self):
+        def ldd(args,**kw):
+            name=Path(args[-1]).name
+            self.assertEqual(kw['env']['LC_ALL'],'C')
+            output={'xi_world':'libjemalloc.so.2 => not found\n',
+                    'xi_map':'libfmt.so.8 => not found\nlibjemalloc.so.2 => not found\n'}.get(name,'libc.so.6 => /lib/libc.so.6 (0x1)\n')
+            return subprocess.CompletedProcess(args,0,output,'')
+        before={name:(self.root/name).read_bytes() for name in m.PROCESSES}
+        with self.assertRaises(ValueError) as error:self.check(ldd)
+        message=str(error.exception)
+        for word in ('xi_world','xi_map','libjemalloc.so.2','libfmt.so.8','Update server runtime'):self.assertIn(word,message)
+        log=(self.logs/'dependencies.log').read_text()
+        for name in m.PROCESSES:self.assertIn(name,log)
+        self.assertIn('libjemalloc.so.2 => not found',log)
+        self.assertEqual(before,{name:(self.root/name).read_bytes() for name in m.PROCESSES})
+    def test_abi_version_failure_is_not_mistaken_for_available_library(self):
+        result=subprocess.CompletedProcess([],1,'libstdc++.so.6 => /lib/libstdc++.so.6\n',"xi_world: /lib/libstdc++.so.6: version `GLIBCXX_3.4.99' not found\n")
+        with self.assertRaisesRegex(ValueError,'GLIBCXX_3.4.99'):
+            self.check(lambda *args,**kwargs:result)
+        self.assertIn('GLIBCXX_3.4.99',(self.logs/'dependencies.log').read_text())
+    def test_failed_or_hung_dependency_checker_never_passes(self):
+        for outcome in (subprocess.CompletedProcess([],2,'','loader probe failed'),subprocess.TimeoutExpired('ldd',30)):
+            with self.subTest(outcome=type(outcome).__name__):
+                def failed(*args,**kwargs):
+                    if isinstance(outcome,Exception):raise outcome
+                    return outcome
+                with self.assertRaises(ValueError):self.check(failed)
+                self.assertIn('xi_world',(self.logs/'dependencies.log').read_text())
+    def test_resolved_jemalloc_is_recorded_without_changing_binaries(self):
+        result=subprocess.CompletedProcess([],0,'libjemalloc.so.2 => /usr/lib/aarch64-linux-gnu/libjemalloc.so.2 (0x1)\nlibc.so.6 => /lib/libc.so.6 (0x2)\n','')
+        self.check(lambda *args,**kwargs:result)
+        self.assertIn('PASS: all four',(self.logs/'dependencies.log').read_text())
+    def test_static_binary_requires_independent_elf_confirmation(self):
+        for dynamic in (False,True):
+            with self.subTest(dynamic=dynamic):
+                def run(args,**kw):
+                    if args[0]=='ldd':return subprocess.CompletedProcess(args,1,'','not a dynamic executable\n')
+                    return subprocess.CompletedProcess(args,0,'INTERP (NEEDED) libc.so.6' if dynamic else 'There is no dynamic section in this file.','')
+                if dynamic:
+                    with self.assertRaises(ValueError):self.check(run)
+                else:self.check(run)
+    def test_wrong_architecture_is_recorded_and_not_sent_to_loader(self):
+        (self.root/'xi_world').write_bytes(b'not an ARM64 binary')
+        def run(args,**kw):
+            self.assertNotEqual(Path(args[-1]).name,'xi_world')
+            return subprocess.CompletedProcess(args,0,'libc.so.6 => /lib/libc.so.6\n','')
+        with self.assertRaisesRegex(ValueError,'Linux ARM64'):self.check(run)
+        self.assertIn('xi_world',(self.logs/'dependencies.log').read_text())
+
 if __name__=='__main__':unittest.main()

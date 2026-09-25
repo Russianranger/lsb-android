@@ -37,7 +37,7 @@ public class ServerPageTest {
     @Test public void serverControlsSeparateAccountsRestoreAndLaterUpdatesAndClearSecrets()throws Exception{
         Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
         ServerRuntime sr=ServerRuntime.get(ctx);String id="11111111-1111-1111-1111-111111111111";
-        FilesEx.text(new File(sr.root,"lsb-server-ready"),"ready");FilesEx.text(new File(sr.root,"lsb-server-tools-v2"),"ready");
+        FilesEx.text(new File(sr.root,"lsb-server-ready"),"ready");FilesEx.text(new File(sr.root,"lsb-server-tools-v3"),"ready");
         FilesEx.text(new File(sr.state,"active.json"),"{\"current\":\""+id+"\"}");
         FilesEx.text(new File(sr.state,"generations/"+id+"/deployment.json"),"{\"generation\":\""+id+"\",\"accounts\":1,\"characters\":1,\"expected_client\":\"30251204_1\"}");
         FilesEx.text(new File(sr.state,"import.sql"),"a complete staged fixture dump");
@@ -60,5 +60,22 @@ public class ServerPageTest {
             String message=((TextView)dialog.findViewById(android.R.id.message)).getText().toString();assertTrue(message.contains("currently deployed server"));assertTrue(message.contains("does not fetch source"));dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();assertFalse(WorkService.busy);
             assertEquals(before,prefs.getAll());
         }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);prefs.edit().clear().commit();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
+    }
+    @Test public void installedRuntimeOffersDependencyUpgradeBeforeDeployment()throws Exception{
+        Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
+        ServerRuntime sr=ServerRuntime.get(ctx);FilesEx.delete(sr.home);
+        FilesEx.text(new File(sr.root,"lsb-server-ready"),"ready");FilesEx.text(new File(sr.root,"lsb-server-tools-v2"),"old tools");
+        FilesEx.text(new File(sr.state,"import.sql"),"staged SQL fixture");
+        File report=new File(MainActivity.storage(ctx),"server/current/source-report.txt");FilesEx.text(report,"matching server fixture");
+        org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Server")).setup();
+        try{
+            Field tileField=MainActivity.class.getDeclaredField("tiles");tileField.setAccessible(true);FantasyTiles tiles=(FantasyTiles)tileField.get(controller.get());
+            text(tiles,"◇  Import your working server").performClick();
+            assertTrue(text(tiles,"Update server runtime and build tools").isEnabled());
+            assertFalse(text(tiles,"Deploy matching server + database").isEnabled());
+            assertFalse(text(tiles,"Build imported revision and deploy").isEnabled());
+            assertNotNull(text(tiles,"Update the server runtime to add jemalloc support."));
+            capture(tiles,920,"server-runtime-update-wide.png");capture(tiles,400,"server-runtime-update-narrow.png");
+        }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);report.delete();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }
 }

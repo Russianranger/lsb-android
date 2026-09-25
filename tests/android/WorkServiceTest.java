@@ -88,7 +88,7 @@ public class WorkServiceTest {
         ServerRuntime runtime=ServerRuntime.get(context);Job running=new Job();set(ServerRuntime.class,runtime,"active",true);
         try{runtime.createAccount(running.account,s->{});fail("Running server must reject account changes");}catch(IOException expected){assertTrue(expected.getMessage().contains("Stop"));}
         try{running.account.send(new ByteArrayOutputStream());fail("Rejected details must expire");}catch(IOException expected){}
-        set(ServerRuntime.class,runtime,"active",false);new File(runtime.root,"lsb-server-tools-v2").delete();Job oldTools=new Job();
+        set(ServerRuntime.class,runtime,"active",false);new File(runtime.root,"lsb-server-tools-v3").delete();Job oldTools=new Job();
         try{runtime.createAccount(oldTools.account,s->{});fail("Old tools must be updated");}catch(IOException expected){assertTrue(expected.getMessage().contains("update server tools"));}
         try{oldTools.account.send(new ByteArrayOutputStream());fail("Rejected details must expire");}catch(IOException expected){}
     }
@@ -111,6 +111,53 @@ public class WorkServiceTest {
         public boolean isAlive(){return alive;}
         public void destroy(){}
         public Process destroyForcibly(){forced=true;alive=false;return this;}
+    }
+    @Test public void dependencyUpgradePreservesImportsAndDatabaseAndClearsStaleError()throws Exception {
+        File home=new File(context.getFilesDir(),"server-runtime");AtomicInteger bootstraps=new AtomicInteger();
+        ServerRuntime runtime=new ServerRuntime(nativeContext(),builder->{
+            assertTrue(builder.command().contains("/opt/lsb-server/bootstrap.sh"));
+            assertFalse("Previous deployment failure must not override bootstrap status",new File(home,"run/status.json").exists());
+            assertFalse(builder.environment().containsKey("LD_PRELOAD"));
+            FilesEx.text(new File(home,"rootfs/lsb-server-tools-v3"),"jemalloc installed");
+            bootstraps.incrementAndGet();return new Child(false);
+        });
+        File source=new File(MainActivity.storage(context),"server/current/source-report.txt");
+        try{
+            FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");
+            FilesEx.text(new File(runtime.root,"lsb-server-tools-v2"),"old tools");
+            FilesEx.text(new File(runtime.root,"usr/bin/bash"),"existing rootfs sentinel");
+            FilesEx.text(new File(runtime.state,"import.sql"),"staged SQL retained");
+            FilesEx.text(new File(runtime.state,"generations/fixture/mysql/sentinel"),"database retained");
+            FilesEx.text(source,"matching imported server retained");
+            FilesEx.text(new File(runtime.run,"status.json"),"{\"phase\":\"error\",\"message\":\"old missing library error\"}");
+            assertTrue(runtime.installed());assertFalse(runtime.toolsCurrent());
+            try{runtime.perform("deploy",false,s->{});fail("Old dependencies must be updated first");}
+            catch(IOException expected){assertTrue(expected.getMessage().contains("Update server runtime"));}
+            assertEquals(0,bootstraps.get());
+            assertTrue(runtime.install(s->{}).contains("Ubuntu server runtime"));
+            assertEquals(1,bootstraps.get());assertTrue(runtime.toolsCurrent());assertFalse(runtime.alive());
+            assertEquals("existing rootfs sentinel",FilesEx.read(new File(runtime.root,"usr/bin/bash"),1024));
+            assertEquals("staged SQL retained",FilesEx.read(new File(runtime.state,"import.sql"),1024));
+            assertEquals("database retained",FilesEx.read(new File(runtime.state,"generations/fixture/mysql/sentinel"),1024));
+            assertEquals("matching imported server retained",FilesEx.read(source,1024));
+        }finally{FilesEx.delete(runtime.home);source.delete();}
+    }
+    @Test public void dependencyDetailsReachSupportExport()throws Exception {
+        ServerRuntime runtime=new ServerRuntime(context,builder->{throw new AssertionError("No process needed for support export");});
+        try{
+            FilesEx.text(new File(runtime.logs,"dependencies.log"),"xi_world\nlibjemalloc.so.2 => not found\n");
+            ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+            try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(bytes)){runtime.exportLogs(zip);}
+            boolean found=false;
+            try(java.util.zip.ZipInputStream zip=new java.util.zip.ZipInputStream(new ByteArrayInputStream(bytes.toByteArray()))){
+                java.util.zip.ZipEntry entry;while((entry=zip.getNextEntry())!=null){
+                    ByteArrayOutputStream content=new ByteArrayOutputStream();byte[] buffer=new byte[1024];int n;
+                    while((n=zip.read(buffer))!=-1)content.write(buffer,0,n);
+                    if(entry.getName().equals("server/operation.log")){assertTrue(content.toString("UTF-8").contains("libjemalloc.so.2 => not found"));found=true;}
+                }
+            }
+            assertTrue(found);
+        }finally{FilesEx.delete(runtime.home);}
     }
     @Test public void concurrentPreparationCannotOverwriteRequestOrReleaseImportReservation()throws Exception {
         ServerRuntime runtime=new ServerRuntime(context,builder->{throw new AssertionError("Rejected operation must not start");});
@@ -137,7 +184,7 @@ public class WorkServiceTest {
     }
     @Test public void repeatedInterruptionForcesChildCleanupAndReleasesOnlyFinishedOperation()throws Exception {
         Child child=new Child(true);ServerRuntime runtime=new ServerRuntime(nativeContext(),builder->child);
-        FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");FilesEx.text(new File(runtime.root,"lsb-server-tools-v2"),"ready");
+        FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");FilesEx.text(new File(runtime.root,"lsb-server-tools-v3"),"ready");
         ServerAccountRequest account=new ServerAccountRequest("fixture account","private password");
         try{runtime.createAccount(account,s->{});fail("Interrupted manager must fail");}
         catch(InterruptedIOException expected){assertTrue(expected.getMessage().contains("check status before retrying"));}

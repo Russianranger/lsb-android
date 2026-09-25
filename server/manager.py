@@ -162,14 +162,56 @@ def build(root, jobs):
             shutil.copy2(found[0],root/name)
 
 def validate_binaries(root):
+    # Retain the loader's evidence even when validation fails before any server
+    # process or database starts. Previously capture_output discarded the only
+    # useful missing-library names from both the UI and support export.
+    LOGS.mkdir(parents=True,exist_ok=True)
+    failures=[]
+    report=LOGS/'dependencies.log'
+    report.write_text('Server dependency check (Linux ARM64)\n')
+    def record(name, detail):
+        with report.open('a') as out:out.write('\n'+name+'\n'+detail[-16384:]+'\n')
     for name in PROCESSES:
+        cancelled()
         file=root/name
-        if not file.is_file():raise ValueError('Missing '+name+'. Choose Build imported source and deploy.')
+        if not file.is_file():
+            reason='Missing '+name+'. Choose Build imported revision and deploy.'
+            record(name,reason);failures.append(reason);continue
         with file.open('rb') as f:header=f.read(64)
-        if len(header)<20 or header[:5]!=b'\x7fELF\x02' or header[5]!=1 or int.from_bytes(header[18:20],'little')!=183:raise ValueError(name+' must be a Linux ARM64 executable. Rebuild the imported source in this app.')
+        if len(header)<20 or header[:5]!=b'\x7fELF\x02' or header[5]!=1 or int.from_bytes(header[18:20],'little')!=183:
+            reason=name+' must be a Linux ARM64 executable. Rebuild the imported source in this app.'
+            record(name,reason);failures.append(reason);continue
         os.chmod(file,0o755)
-        result=subprocess.run(['ldd',str(file)],capture_output=True,text=True)
-        if 'not found' in result.stdout+result.stderr:raise ValueError(name+' requires libraries missing from this runtime. Rebuild the same imported source.')
+        try:
+            result=subprocess.run(['ldd',str(file)],capture_output=True,text=True,errors='replace',timeout=30,env=dict(os.environ,LC_ALL='C'))
+        except subprocess.TimeoutExpired:
+            reason=name+': library check timed out after 30 seconds'
+            record(name,reason);failures.append(reason);continue
+        details=result.stdout+result.stderr
+        record(name,'ldd exit='+str(result.returncode)+'\n'+details)
+        missing=sorted(set(re.findall(r'^\s*(\S+)\s+=>\s+not found\s*$',details,re.M)))
+        if missing:
+            failures.append(name+': missing '+', '.join(missing));continue
+        if 'not found' in details:
+            # Also preserve versioned ABI failures (GLIBC/GLIBCXX), which cannot
+            # safely be repaired by aliasing one library version to another.
+            lines=[' '.join(line.split()) for line in details.splitlines() if 'not found' in line]
+            failures.append(name+': '+ '; '.join(lines)[:1500]);continue
+        if result.returncode:
+            # glibc ldd returns 1 for valid static executables too. Accept those
+            # only after readelf independently confirms no dynamic dependencies.
+            static=False
+            if 'not a dynamic executable' in details or 'statically linked' in details:
+                try:
+                    elf=subprocess.run(['readelf','-lW','-dW',str(file)],capture_output=True,text=True,errors='replace',timeout=30,env=dict(os.environ,LC_ALL='C'))
+                    static=elf.returncode==0 and 'INTERP' not in elf.stdout and '(NEEDED)' not in elf.stdout
+                    record(name,'readelf exit='+str(elf.returncode)+'\n'+elf.stdout+elf.stderr)
+                except subprocess.TimeoutExpired:pass
+            if not static:failures.append(name+': library check failed (exit '+str(result.returncode)+')')
+    if failures:
+        record('Summary','\n'.join(failures))
+        raise ValueError('Server dependency check failed: '+'; '.join(failures)+'. Update server runtime and build tools, then retry deployment. If unavailable library versions remain, rebuild the same imported revision. See Server operation log for dependency details.')
+    record('Summary','PASS: all four Linux ARM64 server executables passed dependency validation')
 
 def credentials(generation):
     file=generation/'database-credentials.json'

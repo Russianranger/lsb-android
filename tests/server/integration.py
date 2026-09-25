@@ -27,10 +27,12 @@ program=Path('/tmp/server-stub.c');program.write_text('''#include <signal.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <stdio.h>
+#include <jemalloc/jemalloc.h>
 static volatile sig_atomic_t done;static void stop(int s){(void)s;done=1;}
-int main(int argc,char**argv){(void)argc;signal(SIGTERM,stop);int fd=-1;if(strstr(argv[0],"xi_connect")){fd=socket(AF_INET,SOCK_STREAM,0);int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(54231);a.sin_addr.s_addr=htonl(0x7f000001);if(bind(fd,(void*)&a,sizeof(a))||listen(fd,4))return 8;}while(!done)sleep(1);if(fd>=0)close(fd);return 0;}
+int main(int argc,char**argv){(void)argc;const char* version=NULL;size_t length=sizeof(version);if(mallctl("version",&version,&length,NULL,0))return 9;printf("allocator=jemalloc %s\\n",version);fflush(stdout);signal(SIGTERM,stop);int fd=-1;if(strstr(argv[0],"xi_connect")){fd=socket(AF_INET,SOCK_STREAM,0);int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(54231);a.sin_addr.s_addr=htonl(0x7f000001);if(bind(fd,(void*)&a,sizeof(a))||listen(fd,4))return 8;}while(!done)sleep(1);if(fd>=0)close(fd);return 0;}
 ''')
-subprocess.run(['gcc-15','-O2',program,'-o','/tmp/server-stub'],check=True)
+subprocess.run(['gcc-15','-O2',program,'-o','/tmp/server-stub','-ljemalloc'],check=True)
 for name in ('xi_connect','xi_map','xi_search','xi_world'):shutil.copy2('/tmp/server-stub',source/name)
 dump=ACCOUNT_SCHEMA_SQL.encode()+b"\nINSERT INTO accounts(id,login) VALUES(1,'fixture'); CREATE TABLE chars(charid INT PRIMARY KEY,charname VARCHAR(32)); INSERT INTO chars VALUES(1,'Fixture'); CREATE TABLE zone_settings(zoneid INT,zoneip VARCHAR(32),zoneport INT); INSERT INTO zone_settings VALUES(1,'192.0.2.5',54231);\n"+b"""
 CREATE TABLE fixture_blobs(id INT PRIMARY KEY, content BLOB);
@@ -69,6 +71,26 @@ first=invoke('deploy',client_pair=pair,local_zones=False)['deployment'];assert f
 assert (state/'import.sql').read_bytes()==dump
 assert (state/'generations'/first['generation']/'server/settings/default/network.lua').read_text()==(source/'settings/default/network.lua').read_text()
 print('PASS: real MariaDB import, ARM64 binary validation, isolated settings and unchanged source SQL',flush=True)
+assert 'libjemalloc.so.2 =>' in (logs/'dependencies.log').read_text()
+assert 'libjemalloc.so.2 => not found' not in (logs/'dependencies.log').read_text()
+print('PASS: imported ARM64 jemalloc-linked server executables resolve the installed allocator',flush=True)
+# Exercise a real ELF dependency failure, not just mocked ldd text. The existing
+# selected database/server pair and staged SQL must survive this failed deploy.
+compat=Path('/tmp/lsb-dependency-fixture');compat.mkdir()
+(compat/'library.c').write_text('int lsb_fixture_dependency(void){return 0;}\n')
+(compat/'main.c').write_text('extern int lsb_fixture_dependency(void); int main(void){return lsb_fixture_dependency();}\n')
+library=compat/'liblsb_import_fixture.so.1'
+subprocess.run(['gcc-15','-shared','-fPIC',compat/'library.c','-Wl,-soname,liblsb_import_fixture.so.1','-o',library],check=True)
+subprocess.run(['gcc-15',compat/'main.c','-L'+str(compat),'-Wl,-rpath,'+str(compat),'-l:liblsb_import_fixture.so.1','-o',compat/'xi_world'],check=True)
+original=(source/'xi_world').read_bytes();shutil.copy2(compat/'xi_world',source/'xi_world')
+library.rename(compat/'library.hidden');pointer=selected();imported=tree_hashes(source)
+failed=invoke('deploy',False)
+assert 'xi_world' in failed['message'] and 'liblsb_import_fixture.so.1' in failed['message'],failed
+assert 'liblsb_import_fixture.so.1 => not found' in (logs/'dependencies.log').read_text()
+assert selected()==pointer and (state/'import.sql').read_bytes()==dump and tree_hashes(source)==imported
+(compat/'library.hidden').rename(library);backend.validate_binaries(source)
+(source/'xi_world').write_bytes(original)
+print('PASS: exact missing ELF dependency is reported; restoring the library passes without rebuilding, and failed deployment retains source/SQL/active database',flush=True)
 invoke('backup');assert b'Fixture' in (state/'export.sql').read_bytes()
 full_export=(state/'export.sql').read_bytes()
 for value in (b'fixture_proc',b'fixture_trigger',b'fixture_event',b'fixture_view',b'0x000A0DFF275C'):assert value in full_export,value
@@ -138,4 +160,6 @@ try:
 finally:
  if process.poll() is None:process.terminate();process.wait(timeout=50)
 assert (Path('/client')/'sentinel').read_bytes()==b'accepted client kept'
+for name in ('xi_connect','xi_map','xi_search','xi_world'):
+ assert 'allocator=jemalloc ' in (logs/(name+'.log')).read_text(),name
 print('PASS: managed database + four server processes start, report readiness and stop without changing client data',flush=True)

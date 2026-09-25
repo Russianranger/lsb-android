@@ -10,7 +10,7 @@ these controls do not establish that the user's exact server has run in the app.
 1. Install the signed 0.5.29 APK over the existing app. Keep the client runtime,
    imported game files and working client settings.
 2. Stop the client and the old Termux server. In **Server → Import your working
-   server**, choose **Install server runtime and build tools** (or **Update server account tools** for
+   server**, choose **Install server runtime and build tools** (or **Update server runtime and build tools** for
    an older installed runtime). This downloads the separate ARM64 Linux/MariaDB
    environment and installs its dependencies; the first setup needs internet.
 3. Choose **Import existing server folder ZIP** and select the complete server folder, including
@@ -25,7 +25,10 @@ these controls do not establish that the user's exact server has run in the app.
 5. Choose **Deploy matching server + database**. This checks imported binaries
    and their dependencies. If they are incompatible, choose **Build imported
    revision and deploy** to compile that same source revision. This does not
-   fetch current upstream code or run a database update.
+   fetch current upstream code or run a database update. From 0.5.31, the runtime
+   includes jemalloc for imported binaries linked against it. Update the server
+   runtime first when prompted. Any remaining missing library or ABI version is
+   named in the error and retained in the server operation log/support ZIP.
 6. Confirm the displayed expected client version, then choose **Start managed server**.
    In the Client tab, use server address `127.0.0.1` and the existing account to
    reach character selection and enter the world. Verify existing character

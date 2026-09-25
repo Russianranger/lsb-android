@@ -30,7 +30,7 @@ final class ServerRuntime {
     ServerRuntime(Context c,ProcessStarter starter){context=c;processStarter=starter;home=new File(c.getFilesDir(),"server-runtime");root=new File(home,"rootfs");state=new File(home,"state");run=new File(home,"run");logs=new File(home,"logs");backend=new File(home,"backend");tmp=new File(home,"tmp");}
     boolean alive(){Process child=process;return active||(child!=null&&child.isAlive());}
     boolean installed(){return new File(root,"lsb-server-ready").isFile();}
-    boolean toolsCurrent(){return new File(root,"lsb-server-tools-v2").isFile();}
+    boolean toolsCurrent(){return new File(root,"lsb-server-tools-v3").isFile();}
     boolean hasDatabaseImport(){return new File(state,"import.sql").isFile();}
     JSONObject deployment()throws Exception {
         File pointer=new File(state,"active.json");if(!pointer.isFile())return new JSONObject();
@@ -88,7 +88,8 @@ final class ServerRuntime {
         }
         Files.deleteIfExists(new File(root,"etc/resolv.conf").toPath());FilesEx.text(new File(root,"etc/resolv.conf"),"nameserver 1.1.1.1\nnameserver 8.8.8.8\n");
         FilesEx.text(new File(root,"usr/sbin/policy-rc.d"),"#!/bin/sh\nexit 101\n");Os.chmod(new File(root,"usr/sbin/policy-rc.d").getPath(),0755);
-        progress.update(installed()?"Updating managed server tools; server files and databases are retained…":"Installing MariaDB and the server compiler. This download can take several minutes…");
+        new File(run,"status.json").delete();status="Installing server dependencies…";
+        progress.update(installed()?"Updating server dependencies and build tools; imported files and databases are retained…":"Installing MariaDB and the server compiler. This download can take several minutes…");
         execute(Arrays.asList("/bin/bash","/opt/lsb-server/bootstrap.sh"),progress);
         if(!installed()||!toolsCurrent())throw new IOException("Server setup did not finish; retry Install or update server tools to resume");
         return "Ubuntu server runtime, MariaDB and build tools installed. Your Termux server is unchanged.";
@@ -141,6 +142,7 @@ final class ServerRuntime {
     }
     private String performReserved(String action,boolean build,SafeZip.Progress progress,ServerAccountRequest account)throws Exception {
         assets();if(!installed())throw new IOException("Install the server runtime first");
+        if((action.equals("deploy")||action.equals("update"))&&!toolsCurrent())throw new IOException("Update server runtime and build tools before deploying or rebuilding the server");
         JSONObject request=new JSONObject().put("action",action).put("build",build).put("jobs",context.getSharedPreferences("server",0).getInt("jobs",2)).put("database",context.getSharedPreferences("server",0).getString("database","xidb")).put("local_zones",context.getSharedPreferences("server",0).getBoolean("local_zones",true));
         if(action.equals("deploy")||action.equals("update"))try{request.put("client_pair",ClientRuntime.get(context).compatibilitySnapshot());}catch(Exception e){request.put("client_pair",new JSONObject().put("status","client_not_prepared"));}
         FilesEx.text(new File(run,"request.json"),request.toString());new File(run,"status.json").delete();
@@ -156,7 +158,7 @@ final class ServerRuntime {
         }
     }
     String operationLog()throws Exception {
-        StringBuilder text=new StringBuilder();for(String name:new String[]{"operation.log","database.log","xi_connect.log","xi_map.log","xi_world.log","xi_search.log","supervisor.log"}){
+        StringBuilder text=new StringBuilder();for(String name:new String[]{"operation.log","dependencies.log","database.log","xi_connect.log","xi_map.log","xi_world.log","xi_search.log","supervisor.log"}){
             File file=new File(logs,name);if(!file.isFile())continue;
             try(RandomAccessFile f=new RandomAccessFile(file,"r")){int size=(int)Math.min(12000,f.length());f.seek(f.length()-size);byte[] b=new byte[size];f.readFully(b);text.append(name).append("\n").append(new String(b,java.nio.charset.StandardCharsets.UTF_8)).append("\n");}
         }

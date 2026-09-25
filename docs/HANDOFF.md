@@ -1,3 +1,46 @@
+# 0.5.31: imported-server dependencies and jemalloc support
+
+Fresh phone support ZIP `lsb-support (1)(5).zip` confirms .30 installed Ubuntu,
+MariaDB and build tools successfully at 21:35:59 CDT. Deployment then failed on
+`xi_world` at 21:37:17 before database import. The old validator discarded ldd
+output, leaving only a generic missing-library message and empty server logs.
+The precise missing SONAME is therefore unknown; do not claim jemalloc is proven
+as the cause. User recalls requiring jemalloc for the old Termux/proot server.
+Historical context found a proposed `-ljemalloc` build flag but no verified
+actual link/preload command. The user's server archive has not been supplied here.
+
+Version .31/code 47 installs libjemalloc2 and libjemalloc-dev and marks server
+tools v3. Existing runtime installs offer **Update server runtime and build tools**;
+this reruns dependencies without replacing the Linux root, imported source/SQL,
+or deployed databases. Stale deployment errors are cleared before bootstrap.
+Deployment/rebuild requires updated tools; the imported binaries stay unchanged.
+No forced jemalloc preload or linker override is added. Prelinked jemalloc
+binaries can resolve their allocator; fresh builds retain source allocator defaults.
+
+Dependency validation now inspects all four binaries, reports exact missing
+library names and ABI-version failures, checks loader errors/timeouts, and stores
+loader details in `dependencies.log`, included in server log/support exports.
+Static executables require independent ELF confirmation when ldd returns an error.
+Tests cover error details and preserved binaries, dependency upgrades preserving
+imports/databases, support export, and the upgrade UI. ARM64 integration now uses
+jemalloc-linked server fixtures and a deliberately missing shared library to
+verify failed deployment keeps the active pair and restoring the library permits
+validation without recompilation. Local 30 server unit tests pass; Android/ARM64
+CI and signed delivery results will follow. Actual user's server remains untested.
+
+Prior .30 follow-through: FEX jobs failed existing optional client performance
+trials: push 107918076905 timed out trial A's pixel check; PR 107918076921 rejected
+trial E because baseline GPL was not confirmed. Both passed earlier FEX/software
+and D3D8 coverage. No retry or weakened check. Box64 jobs still running at review;
+these failures are recorded separately from the phone's server dependency error.
+
+Next phone test: update APK in place; Server → Import your working server →
+Update server runtime and build tools; then Deploy matching server + database.
+Do not reimport files, change client settings or fetch newer server source. If
+another dependency remains unavailable, the new error/support log names it.
+
+---
+
 # 0.5.30: Ubuntu runtime extraction fix
 
 User reports server runtime installation failed on 0.5.29. Support ZIP

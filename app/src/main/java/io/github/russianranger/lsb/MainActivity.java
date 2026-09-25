@@ -455,7 +455,8 @@ public final class MainActivity extends Activity {
         live.addView(label("Stop the Termux server before starting this one: they use the same login/map ports. Once running, open the Client tab and connect to 127.0.0.1. Stop the client and managed server before account or database maintenance.",13,MUTED));
         supportTile();
         LinearLayout existing=card("Import your working server");
-        button(existing,sr.toolsCurrent()?"Server runtime ready":sr.installed()?"Update server account tools":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(idle&&!sr.toolsCurrent());
+        button(existing,sr.toolsCurrent()?"Server runtime ready":sr.installed()?"Update server runtime and build tools":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(idle&&!sr.toolsCurrent());
+        if(sr.installed()&&!sr.toolsCurrent())existing.addView(label("Update the server runtime to add jemalloc support. Your imported server, SQL backup and deployed databases are retained.",13,MUTED));
         button(existing,"Import existing server folder ZIP",()->pick("source")).setEnabled(idle);
         File report=new File(storage(this),"server/current/source-report.txt");
         if(report.exists())existing.addView(label(FilesEx.read(report,8192),13,MUTED));
@@ -465,8 +466,8 @@ public final class MainActivity extends Activity {
         EditText database=loginField(existing,"Original database name",getSharedPreferences("server",0).getString("database","xidb"),android.text.InputType.TYPE_CLASS_TEXT);database.setContentDescription("Server database name");
         CheckBox local=new CheckBox(this);local.setText("Configure all zones for one local map process");local.setTextColor(TEXT);local.setChecked(getSharedPreferences("server",0).getBoolean("local_zones",true));existing.addView(local);
         Runnable save=()->{String name=database.getText().toString().trim();if(!name.matches("[A-Za-z][A-Za-z0-9_]{0,47}"))throw new IllegalArgumentException("Enter a database name using letters, digits and underscores");getSharedPreferences("server",0).edit().putString("database",name).putBoolean("local_zones",local.isChecked()).apply();};
-        button(existing,"Deploy matching server + database",()->{save.run();run("Deploying existing server",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",false,p));}).setEnabled(sr.installed()&&report.exists()&&sr.hasDatabaseImport()&&idle);
-        button(existing,"Build imported revision and deploy",()->{save.run();run("Building existing server revision",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",true,p));}).setEnabled(sr.installed()&&report.exists()&&sr.hasDatabaseImport()&&idle);
+        button(existing,"Deploy matching server + database",()->{save.run();run("Deploying existing server",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",false,p));}).setEnabled(sr.toolsCurrent()&&report.exists()&&sr.hasDatabaseImport()&&idle);
+        button(existing,"Build imported revision and deploy",()->{save.run();run("Building existing server revision",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",true,p));}).setEnabled(sr.toolsCurrent()&&report.exists()&&sr.hasDatabaseImport()&&idle);
         existing.addView(label("Try the matching compiled server first. If its binaries need rebuilding, build this same imported revision. Deployment stages an independent database and retains the previous server/database pair.",13,MUTED));
         button(existing,"Export Termux packaging helper",()->create("server-helper","export-existing-lsb.py"));
         existing.addView(label("If you still need the SQL dump, run the helper inside your existing server's Linux distro: python3 export-existing-lsb.py /path/to/server. It creates a server ZIP and SQL.gz without updating them.",13,MUTED));
@@ -486,7 +487,7 @@ public final class MainActivity extends Activity {
             });
         }).setEnabled(sr.toolsCurrent()&&active.has("generation")&&idle);
         if(!active.has("generation"))accounts.addView(label("Deploy your matching server and database first.",13,MUTED));
-        else if(!sr.toolsCurrent())accounts.addView(label("Update server account tools under Import your working server first.",13,MUTED));
+        else if(!sr.toolsCurrent())accounts.addView(label("Update server runtime and build tools under Import your working server first.",13,MUTED));
         LinearLayout recovery=card("Database backup & restore");
         recovery.addView(label("Full database backups include accounts, characters and world data. Keep an exported copy outside the app before making changes.",15,TEXT));
         button(recovery,"Export full database backup",()->create("server-db","lsb-database.sql.gz")).setEnabled(active.has("generation")&&idle);
@@ -500,7 +501,7 @@ public final class MainActivity extends Activity {
         EditText ref=loginField(source,"Branch, tag or exact commit",getSharedPreferences("server",0).getString("ref","base"),android.text.InputType.TYPE_CLASS_TEXT);
         button(source,"Fetch selected source revision",()->{String repository=repo.getText().toString().trim(),revision=ref.getText().toString().trim();getSharedPreferences("server",0).edit().putString("repository",repository).putString("ref",revision).apply();run("Fetching source snapshot",(ctx,p)->SourceImport.download(new File(storage(ctx),"server"),repository,revision,p));}).setEnabled(idle);
         button(source,"Inspect selected source",()->run("Inspecting source",(ctx,p)->ServerRuntime.get(ctx).perform("inspect",false,p))).setEnabled(sr.installed()&&report.exists()&&idle);
-        button(source,"Build and apply source + database update",()->confirm("Stage a server update","First verify the existing server deployment works. This builds the selected source and runs its database migrations on a separate copy. Your current server/database pair stays available for rollback. Client and loader versions must be compatible with the selected revision.",()->run("Staging server and database update",(ctx,p)->ServerRuntime.get(ctx).perform("update",true,p)))).setEnabled(sr.installed()&&active.has("generation")&&idle);
+        button(source,"Build and apply source + database update",()->confirm("Stage a server update","First verify the existing server deployment works. This builds the selected source and runs its database migrations on a separate copy. Your current server/database pair stays available for rollback. Client and loader versions must be compatible with the selected revision.",()->run("Staging server and database update",(ctx,p)->ServerRuntime.get(ctx).perform("update",true,p)))).setEnabled(sr.toolsCurrent()&&active.has("generation")&&idle);
         source.addView(label("Fetching selects a snapshot only. Restoring an imported database always uses the currently deployed server, even if a newer source snapshot has been selected here.",13,MUTED));
         LinearLayout diagnostics=card("Server logs");
         button(diagnostics,"View server operation log",()->{try{showText("Server log",sr.operationLog());}catch(Exception e){error(e);}});
