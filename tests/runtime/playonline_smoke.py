@@ -8,10 +8,12 @@ A visible process and colored pixels can be a modal error: screenshots require
 review, and neither this test nor offline startup claims completed online repair.
 """
 from collections import Counter
+from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -20,7 +22,7 @@ import uuid
 import zlib
 
 sys.path.insert(0, '/opt/lsb')
-from integration import display, recv
+from integration import recv
 
 SESSION = Path('/session')
 LOGS = Path('/logs')
@@ -37,9 +39,35 @@ def png_chunk(kind, payload):
     return struct.pack('>I', len(payload)) + kind + payload + struct.pack('>I', zlib.crc32(kind + payload))
 
 
-def screen_evidence(connection, destination):
+@contextmanager
+def viewer_display():
+    # A successful viewer can switch fullscreen resolution after its splash.
+    # The fixed 1280x720 synthetic graphics fixture is unsuitable here: use the
+    # dimensions actually advertised by this fresh RFB connection, bounded.
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(10)
+        connection.connect('/session/display.sock')
+        assert recv(connection, 12) == b'RFB 003.008\n', 'Unexpected RFB version'
+        connection.sendall(b'RFB 003.008\n')
+        kinds = recv(connection, 1)[0]
+        assert 1 in recv(connection, kinds), 'RFB no-auth unavailable'
+        connection.sendall(b'\x01')
+        assert recv(connection, 4) == bytes(4), 'RFB authentication failed'
+        connection.sendall(b'\x01')
+        width, height = struct.unpack('>HH', recv(connection, 4))
+        assert 1 <= width <= 4096 and 1 <= height <= 4096, 'RFB dimensions outside fixture bound'
+        recv(connection, 16)
+        title_size = struct.unpack('>I', recv(connection, 4))[0]
+        assert title_size <= 4096, 'RFB title exceeds fixture bound'
+        recv(connection, title_size)  # Never retain the arbitrary desktop title.
+        connection.sendall(bytes(4) + bytes([32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0]))
+        connection.sendall(struct.pack('>BBHi', 2, 0, 1, 0))
+        yield connection, (width, height)
+
+
+def screen_evidence(connection, destination, dimensions=(1280, 720)):
     """Request one full raw RFB frame and store a standalone RGB PNG."""
-    width, height = 1280, 720
+    width, height = dimensions
     connection.sendall(struct.pack('>BBHHHH', 3, 0, 0, 0, width, height))
     while True:
         kind = recv(connection, 1)[0]
@@ -61,7 +89,7 @@ def screen_evidence(connection, destination):
             for row in range(rect_height):
                 offset = ((y + row) * width + x) * 3
                 source = raw[row * rect_width * 4:(row + 1) * rect_width * 4]
-                # display() selects 32-bit little-endian truecolor with RGB
+                # viewer_display() selects 32-bit little-endian truecolor with RGB
                 # shifts 16/8/0; incoming pixel bytes are B G R unused.
                 rgb = bytearray(rect_width * 3)
                 rgb[0::3], rgb[1::3], rgb[2::3] = source[2::4], source[1::4], source[0::4]
@@ -74,7 +102,7 @@ def screen_evidence(connection, destination):
             png_chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) +
             png_chunk(b'IDAT', zlib.compress(filtered)) + png_chunk(b'IEND', b''))
         colors = Counter(bytes(frame[index:index + 3]) for index in range(0, len(frame), 3))
-        return {'distinct_colors': len(colors),
+        return {'width': width, 'height': height, 'distinct_colors': len(colors),
                 'nonbackground_pixels': sum(colors.values()) - max(colors.values(), default=0),
                 'screenshot': destination.name,
                 'screenshot_sha256': hashlib.sha256(destination.read_bytes()).hexdigest()}
@@ -166,6 +194,8 @@ def main():
         captured_at = 0
         metrics = {'distinct_colors': 0, 'nonbackground_pixels': 0}
         observed = {}
+        capture_failures = []
+        negotiated_dimensions = None
         try:
             while process.poll() is None and time.monotonic() - started < 240:
                 receipt = read_json(SESSION / 'playonline-process.json')
@@ -175,11 +205,13 @@ def main():
                         visible_at = time.monotonic()
                     if time.monotonic() - visible_at > 5 and time.monotonic() - captured_at > 5:
                         try:
-                            with display() as connection:
-                                metrics = screen_evidence(connection, LOGS / (label + '.png'))
+                            with viewer_display() as (connection, negotiated_dimensions):
+                                metrics = screen_evidence(connection, LOGS / (label + '.png'), negotiated_dimensions)
                             captured_at = time.monotonic()
-                        except (OSError, EOFError, AssertionError):
-                            pass
+                        except (OSError, EOFError, AssertionError) as error:
+                            failure = {'type': type(error).__name__, 'dimensions': negotiated_dimensions}
+                            if failure not in capture_failures:
+                                capture_failures.append(failure)
                     if time.monotonic() - visible_at > 25:
                         break
                 time.sleep(.25)
@@ -197,6 +229,7 @@ def main():
         preparation = read_json(LOGS / (label + '-preparation.json'))
         results[label] = {'process': final_before_stop, 'visible_process': observed,
                           'alive_before_stop': alive, 'pixels': metrics,
+                          'capture_failures': capture_failures,
                           'status': report.get('status'),
                           'supervisor_phase': state.get('phase'),
                           'supervisor_error': state.get('error'),

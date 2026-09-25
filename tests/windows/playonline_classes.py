@@ -26,7 +26,19 @@ def test_playonline_classes(source, check):
             receipt.unlink(missing_ok=True)
             result = subprocess.run([str(source/'client-init-test.exe'), *arguments], cwd=root,
                                     capture_output=True, timeout=30)
-            value = json.loads(receipt.read_text())
+            # client-init.c emits UTF-8 explicitly; a Windows locale decode
+            # corrupts the accented fixture directory and breaks path equality.
+            value = json.loads(receipt.read_text(encoding='utf-8'))
+            # Keep a failed assertion actionable without exposing arbitrary
+            # helper output, registry strings or the temporary executable path.
+            numeric = {key: value[key] for key in
+                       ('format', 'bits', 'hresult', 'win32_error', 'child_exit')
+                       if type(value.get(key)) is int}
+            numeric.update(exit_code=result.returncode,
+                           ok=value.get('ok') is True,
+                           operation_matches=value.get('operation') == arguments[0],
+                           loaded_path_matches=value.get('loaded_path') == arguments[-1])
+            print('Native COM fixture receipt:', json.dumps(numeric, sort_keys=True), flush=True)
             check(value['bits'] == 32 and value['operation'] == arguments[0],
                   'native class helper writes its 32-bit operation receipt')
             return result.returncode, value
