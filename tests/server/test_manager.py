@@ -302,16 +302,16 @@ class StartupTests(unittest.TestCase):
         worker=mock.Mock(pid=99999,returncode=None);worker.poll.return_value=None
         with mock.patch.multiple(m,LOGS=self.root),mock.patch.object(m,'current',return_value=generation),mock.patch.object(m,'validate_binaries'),mock.patch.object(m,'ensure_ports'),mock.patch.object(m,'start_database',return_value={}),mock.patch.object(m,'stop_database'),mock.patch.object(m,'cancelled',side_effect=cancelled),mock.patch.object(m,'status',side_effect=lambda phase,message,**fields:reports.append((phase,message,fields))),mock.patch.object(m.subprocess,'Popen',return_value=worker),mock.patch.object(m.socket,'create_connection'),mock.patch.object(m.os,'killpg'),mock.patch.object(m.time,'sleep',side_effect=sleep),mock.patch.object(m.time,'monotonic',side_effect=lambda:tick[0]*300),mock.patch.object(m,'children',[]):
             with self.assertRaises(InterruptedError):m.serve()
-        self.assertEqual([r[0] for r in reports],['starting','starting','starting','running'])
-        loading=reports[-2][2]['startup']
+        self.assertEqual([r[0] for r in reports],['starting','starting','starting','running','stopping'])
+        loading=reports[-3][2]['startup']
         self.assertEqual(loading['stage'],'Loading Mob scripts');self.assertEqual(loading['pending_processes'],['xi_map'])
         self.assertTrue(loading['login_port_reachable']);self.assertEqual(loading['elapsed_seconds'],300)
-        self.assertIn('You can connect now',reports[-1][1]);self.assertEqual(reports[-1][2]['startup']['elapsed_seconds'],600)
+        self.assertIn('You can connect now',reports[-2][1]);self.assertEqual(reports[-2][2]['startup']['elapsed_seconds'],600)
     def test_dead_worker_never_announces_ready(self):
         generation=self.root/'generation';generation.mkdir();(generation/'deployment.json').write_text('{}')
         worker=mock.Mock(pid=99999,returncode=7);worker.poll.return_value=7
         with mock.patch.multiple(m,LOGS=self.root),mock.patch.object(m,'current',return_value=generation),mock.patch.object(m,'validate_binaries'),mock.patch.object(m,'ensure_ports'),mock.patch.object(m,'start_database',return_value={}),mock.patch.object(m,'stop_database'),mock.patch.object(m,'cancelled'),mock.patch.object(m,'status') as report,mock.patch.object(m.subprocess,'Popen',return_value=worker),mock.patch.object(m,'children',[]):
             with self.assertRaisesRegex(RuntimeError,'xi_world exited with code 7'):m.serve()
-        self.assertEqual([call.args[0] for call in report.call_args_list],['starting'])
+        self.assertEqual([call.args[0] for call in report.call_args_list],['starting','stopping'])
 
 if __name__=='__main__':unittest.main()

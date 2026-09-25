@@ -487,6 +487,8 @@ def serve():
             time.sleep(.5)
     finally:
         # Stop game writers before shutting down their database.
+        try:status('stopping','Stopping the managed server and database…',deployment=meta)
+        except OSError:pass  # A full disk must not prevent clean database shutdown.
         for _,p in workers:
             if p.poll() is None:
                 try:os.killpg(p.pid,signal.SIGTERM)

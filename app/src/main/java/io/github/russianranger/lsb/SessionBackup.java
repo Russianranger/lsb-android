@@ -73,11 +73,14 @@ final class SessionBackup {
         active=true;
         try {
             idle(c);recover(c);
+            // Create normal destination roots before the transaction records
+            // whether they exist, never as a side effect while decoding.
+            Map<String,File> destinations=roots(c.getFilesDir(),MainActivity.storage(c));
             SessionTransaction transaction=transaction(c);boolean committed=false;
             try(AutoCloseable reserved=ServerRuntime.get(c).reserveSession(false,progress)) {
                 try {
                     SessionTransaction.Stage stage=transaction.begin();
-                    SessionArchive.Result result=SessionArchive.read(in,roots(stage.files(),stage.storage()),roots(c.getFilesDir(),MainActivity.storage(c)),progress);
+                    SessionArchive.Result result=SessionArchive.read(in,roots(stage.files(),stage.storage()),destinations,progress);
                     JSONObject metadata=new JSONObject(new String(result.metadata,StandardCharsets.UTF_8));
                     if(!FORMAT.equals(metadata.optString("format")))throw new IOException("Select a complete session backup. Older client-only backups use Restore legacy client backup.");
                     JSONObject prefs=metadata.getJSONObject("preferences");validateSettings(prefs);

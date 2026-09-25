@@ -197,6 +197,7 @@ public class SessionBackupTest {
         write(server.run,"status.json","{\"phase\":\"running\",\"startup\":{\"recent_lines\":[\"map: Loading Mob scripts\",\"map: Ready\"]}}");
         assertFalse(server.ready());set(server,"active",true);assertFalse("A reservation is not a running server",server.ready());set(server,"active",false);
         Child child=new Child(true);set(server,"process",child);assertTrue(server.ready());assertEquals("map: Loading Mob scripts\nmap: Ready",server.startupLog());
+        write(server.run,"stop","stop\n");assertFalse("Stopping server cannot authorize a test client launch",server.ready());new File(server.run,"stop").delete();
         write(server.run,"status.json","{\"phase\":\"starting\"}");assertFalse(server.ready());child.destroy();
     }
 

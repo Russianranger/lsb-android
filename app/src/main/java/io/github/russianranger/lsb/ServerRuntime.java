@@ -29,7 +29,7 @@ final class ServerRuntime {
     private ServerRuntime(Context c){this(c,ProcessBuilder::start);}
     ServerRuntime(Context c,ProcessStarter starter){context=c;processStarter=starter;home=new File(c.getFilesDir(),"server-runtime");root=new File(home,"rootfs");state=new File(home,"state");run=new File(home,"run");logs=new File(home,"logs");backend=new File(home,"backend");tmp=new File(home,"tmp");}
     boolean alive(){Process child=process;return active||(child!=null&&child.isAlive());}
-    boolean ready(){try{Process child=process;return child!=null&&child.isAlive()&&"running".equals(new JSONObject(FilesEx.read(new File(run,"status.json"),65536)).optString("phase"));}catch(Exception e){return false;}}
+    boolean ready(){try{Process child=process;return child!=null&&child.isAlive()&&!new File(run,"stop").exists()&&"running".equals(new JSONObject(FilesEx.read(new File(run,"status.json"),65536)).optString("phase"));}catch(Exception e){return false;}}
     String startupLog(){try{
         JSONObject startup=new JSONObject(FilesEx.read(new File(run,"status.json"),65536)).optJSONObject("startup");
         JSONArray lines=startup==null?null:startup.optJSONArray("recent_lines");StringBuilder out=new StringBuilder();
