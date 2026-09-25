@@ -7,7 +7,7 @@ these controls do not establish that the user's exact server has run in the app.
 
 ## Install and import
 
-1. Install the signed 0.5.32 APK over the existing app. Keep the client runtime,
+1. Install the signed 0.5.33 APK over the existing app. Keep the client runtime,
    imported game files and working client settings.
 2. Stop the client and the old Termux server. In **Server → Import your working
    server**, choose **Install server runtime and build tools** (or **Update server runtime and build tools** for
@@ -31,6 +31,9 @@ these controls do not establish that the user's exact server has run in the app.
    alongside the current build tools. Update the server
    runtime first when prompted. Any remaining missing library or ABI version is
    named in the error and retained in the server operation log/support ZIP.
+   Version 0.5.33 also supplies local hostname resolution inside the server guest.
+   If .32 failed at MariaDB initialization, update the APK and retry deployment;
+   the existing runtime and imports can be reused.
 6. Confirm the displayed expected client version, then choose **Start managed server**.
    In the Client tab, use server address `127.0.0.1` and the existing account to
    reach character selection and enter the world. Verify existing character

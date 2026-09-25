@@ -1,3 +1,22 @@
+# Server localhost resolution 0.5.33
+
+The .32 phone log confirms all four imported server dependencies resolve, then
+mariadb-install-db exits before initialization because localhost cannot resolve.
+The checksum-pinned Ubuntu Base archive has an empty etc/hosts; its nsswitch
+hosts lookup is files then DNS. The MariaDB install script checks the system
+hostname and localhost before initializing tables. See the upstream script:
+https://github.com/MariaDB/server/blob/11.8/scripts/mysql_install_db.sh
+
+The app now binds a packaged private loopback hosts file into each server guest
+command. Existing v4 installs receive the repair on their next deployment/start;
+no apt update, rootfs overwrite or data reset is required. Python/Bash syntax and
+diff checks pass. New Android coverage checks the bind for bootstrap/deploy/start
+and retained staged SQL. Native coverage reproduces the missing-hosts failure,
+checks an actual PRoot bind, and initializes/imports MariaDB with file-only host
+resolution. Native and Android build results pending.
+
+---
+
 # Exact BFD compatibility 0.5.32
 
 The phone export from .31 identifies `libbfd-2.45-system.so` as the sole missing

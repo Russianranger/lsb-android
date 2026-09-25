@@ -10,5 +10,6 @@ fi' EXIT
 printf '#!/bin/sh\nexit 101\n' >/usr/sbin/policy-rc.d
 chmod +x /usr/sbin/policy-rc.d
 bash /src/server/bootstrap.sh
+apt-get install -y --no-install-recommends proot
 python3 -m unittest discover -s /src/tests/server -p 'test_*.py'
 python3 /src/tests/server/integration.py

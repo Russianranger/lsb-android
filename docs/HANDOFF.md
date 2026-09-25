@@ -1,3 +1,43 @@
+# 0.5.33: MariaDB localhost resolution in the server guest
+
+Phone support ZIP `lsb-support (3)(8).zip` on .32 proves BFD/SFrame repair works:
+all four xi executables pass ldd and resolve both exact libraries from the
+compatibility directory. Deployment then fails in mariadb-install-db because
+neither the phone hostname `localhost` nor `localhost` resolves. No database
+has been activated (`server/deployment.json` is empty). Imports remain staged.
+
+The exact pinned Ubuntu Base tar contains an empty `etc/hosts`; its nsswitch
+configuration uses `hosts: files dns`. Docker had supplied localhost entries,
+which masked this prerequisite in previous server integration tests. Version
+.33/code 49 bundles a private loopback hosts file and binds it to `/etc/hosts`
+for every server PRoot invocation, including bootstrap, deploy and start on
+existing installs. Host Android/Termux files and rootfs files are not overwritten.
+The v4 dependency marker remains current; this repair needs only an APK update
+and another Deploy matching server + database, without a runtime reinstall.
+No force flags, database reset, allocator changes or client changes are needed.
+
+New Android regression checks deploy/start bindings on an already-current
+runtime and preserved staged SQL; the upgrade test checks the bootstrap binding.
+Native CI now disables DNS lookup, empties hosts, reproduces the exact MariaDB
+error, checks actual PRoot file binding resolves localhost without overwriting
+the underlying hosts file, then deploys real SQL with the packaged loopback
+entries while DNS remains disabled. It restores DNS for later pip-based update
+tests. Python/Bash syntax and diff checks pass; native/Android CI and signed APK
+are pending. Actual private server deployment still needs the next phone test.
+
+.32 follow-through: PR FEX job 108031656057 failed the existing optional graphics
+trial because baseline GPL was not confirmed (gpl_fast inactive; draw/presentation
+check timed out). Earlier software/FEX coverage passed. Other .32 client jobs
+were still running when this task started; check before delivery. No unchanged
+rerun or weakened check.
+
+Next phone test after delivery: install .33 over .32, Server → Import your
+working server → Deploy matching server + database, then Start managed server.
+Keep the already-imported source and SQL, installed server runtime and accepted
+client settings. No rebuild/reimport/update from upstream is requested.
+
+---
+
 # 0.5.32: exact BFD 2.45 compatibility for imported server
 
 The 0.5.31 phone support ZIP `lsb-support (2)(7).zip` confirms dependency update

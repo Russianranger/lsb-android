@@ -116,6 +116,7 @@ public class WorkServiceTest {
         File home=new File(context.getFilesDir(),"server-runtime");AtomicInteger bootstraps=new AtomicInteger();
         ServerRuntime runtime=new ServerRuntime(nativeContext(),builder->{
             assertTrue(builder.command().contains("/opt/lsb-server/bootstrap.sh"));
+            assertTrue(builder.command().contains(new File(home,"backend/hosts").getPath()+":/etc/hosts"));
             assertFalse("Previous deployment failure must not override bootstrap status",new File(home,"run/status.json").exists());
             assertFalse(builder.environment().containsKey("LD_PRELOAD"));
             FilesEx.text(new File(home,"rootfs/lsb-server-tools-v4"),"BFD compatibility installed");
@@ -141,6 +142,32 @@ public class WorkServiceTest {
             assertEquals("database retained",FilesEx.read(new File(runtime.state,"generations/fixture/mysql/sentinel"),1024));
             assertEquals("matching imported server retained",FilesEx.read(source,1024));
         }finally{FilesEx.delete(runtime.home);source.delete();}
+    }
+    @Test public void existingRuntimeBindsPrivateHostsWithoutAnotherDependencyInstall()throws Exception {
+        File home=new File(context.getFilesDir(),"server-runtime");AtomicInteger calls=new AtomicInteger();
+        ServerRuntime runtime=new ServerRuntime(nativeContext(),builder->{
+            java.util.List<String> command=builder.command();
+            int binding=command.indexOf(new File(home,"backend/hosts").getPath()+":/etc/hosts");
+            assertTrue(binding>0);assertEquals("-b",command.get(binding-1));
+            assertTrue(command.contains("/opt/lsb-server/manager.py"));
+            assertFalse(command.contains("/opt/lsb-server/bootstrap.sh"));
+            String hosts=FilesEx.read(new File(home,"backend/hosts"),4096);
+            assertTrue(hosts.contains("127.0.0.1 localhost localhost.localdomain"));
+            assertTrue(hosts.contains("::1 localhost ip6-localhost ip6-loopback"));
+            calls.incrementAndGet();return new Child(false);
+        });
+        try{
+            FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");
+            FilesEx.text(new File(runtime.root,"lsb-server-tools-v4"),"current dependencies");
+            FilesEx.text(new File(runtime.root,"etc/hosts"),"");
+            FilesEx.text(new File(runtime.state,"import.sql"),"staged SQL retained");
+            // Config.NONE does not load APK assets; seed the same production asset.
+            FilesEx.text(new File(runtime.backend,"hosts"),FilesEx.read(new File("server/hosts"),4096));
+            runtime.perform("deploy",false,s->{});runtime.perform("start",false,s->{});
+            assertEquals(2,calls.get());assertTrue(runtime.toolsCurrent());
+            assertEquals("",FilesEx.read(new File(runtime.root,"etc/hosts"),4096));
+            assertEquals("staged SQL retained",FilesEx.read(new File(runtime.state,"import.sql"),4096));
+        }finally{FilesEx.delete(runtime.home);}
     }
     @Test public void dependencyDetailsReachSupportExport()throws Exception {
         ServerRuntime runtime=new ServerRuntime(context,builder->{throw new AssertionError("No process needed for support export");});

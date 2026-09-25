@@ -94,11 +94,13 @@ final class ServerRuntime {
         if(!installed()||!toolsCurrent())throw new IOException("Server setup did not finish; retry Install or update server tools to resume");
         return "Ubuntu server runtime, MariaDB and build tools installed. Your Termux server is unchanged.";
     }
+    // Ubuntu Base leaves /etc/hosts empty. Bind private loopback names for every
+    // operation, including existing installs, without changing Android host files.
     private List<String> command(List<String> guest)throws Exception {
         File nativeDir=new File(context.getApplicationInfo().nativeLibraryDir);
         for(String name:new String[]{"state","server-run","server-logs","input","opt/lsb-server","tmp","dev","proc","sys"})new File(root,name).mkdirs();
         File source=new File(MainActivity.storage(context),"server/current");source.mkdirs();
-        List<String> cmd=new ArrayList<>(Arrays.asList(new File(nativeDir,"libproot.so").getPath(),"--link2symlink","--kill-on-exit","-0","-r",root.getPath(),"-b","/dev","-b","/proc","-b","/sys","-b",state.getPath()+":/state","-b",run.getPath()+":/server-run","-b",logs.getPath()+":/server-logs","-b",source.getPath()+":/input","-b",backend.getPath()+":/opt/lsb-server","-b",tmp.getPath()+":/tmp","-w","/state","/usr/bin/env","-i","HOME=/root","USER=root","PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","LANG=C.UTF-8","DEBIAN_FRONTEND=noninteractive","TMPDIR=/tmp","PYTHONUNBUFFERED=1","LSB_SERVER_OWNER="+home.getPath()));cmd.addAll(guest);return cmd;
+        List<String> cmd=new ArrayList<>(Arrays.asList(new File(nativeDir,"libproot.so").getPath(),"--link2symlink","--kill-on-exit","-0","-r",root.getPath(),"-b","/dev","-b","/proc","-b","/sys","-b",new File(backend,"hosts").getPath()+":/etc/hosts","-b",state.getPath()+":/state","-b",run.getPath()+":/server-run","-b",logs.getPath()+":/server-logs","-b",source.getPath()+":/input","-b",backend.getPath()+":/opt/lsb-server","-b",tmp.getPath()+":/tmp","-w","/state","/usr/bin/env","-i","HOME=/root","USER=root","PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","LANG=C.UTF-8","DEBIAN_FRONTEND=noninteractive","TMPDIR=/tmp","PYTHONUNBUFFERED=1","LSB_SERVER_OWNER="+home.getPath()));cmd.addAll(guest);return cmd;
     }
     private void execute(List<String> guest,SafeZip.Progress progress)throws Exception {
         execute(guest,progress,null);

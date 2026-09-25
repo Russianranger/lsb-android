@@ -1,6 +1,6 @@
 """Real MariaDB deployment/recovery with synthetic ARM64 server processes."""
 from pathlib import Path
-import hashlib, importlib.util, json, os, shutil, subprocess, sys, time
+import hashlib, importlib.util, json, os, re, shutil, subprocess, sys, time
 from test_accounts import ACCOUNT_SCHEMA_SQL, write_source_fixture
 
 repo=Path(__file__).resolve().parents[2]
@@ -97,7 +97,29 @@ def query_generation(generation,query):
   if creds is not None:backend.stop_database(creds)
   else:backend.stop_children()
 pair={'client_expected':'retained fixture client'}
-first=invoke('deploy',client_pair=pair,local_zones=False)['deployment'];assert first['accounts']==first['characters']==1
+# Docker supplies /etc/hosts, but the pinned Ubuntu Base archive leaves it empty.
+# Reproduce the phone failure with file-only name lookup, then use the exact
+# packaged hosts file that Android binds into every server guest invocation.
+hosts=Path('/etc/hosts');nss=Path('/etc/nsswitch.conf');original_nss=nss.read_text()
+try:
+ nss.write_text(re.sub(r'(?m)^hosts:.*$', 'hosts: files', original_nss))
+ assert 'hosts: files' in nss.read_text()
+ hosts.write_text('')
+ failed=invoke('deploy',False)
+ assert 'mariadb-install-db' in failed['message'],failed
+ assert "nor 'localhost' could be looked up" in (logs/'operation.log').read_text()
+ assert not (state/'active.json').exists() and (state/'import.sql').read_bytes()==dump
+ assert all((source/name).read_bytes()==content for name,content in original_binaries.items())
+ resolved=subprocess.run(['proot','-r','/','-b',str(repo/'server/hosts')+':/etc/hosts','/usr/bin/resolveip','localhost'],capture_output=True,text=True,timeout=30,env=dict(os.environ,PROOT_NO_SECCOMP='1'))
+ assert resolved.returncode==0 and '127.0.0.1' in resolved.stdout,(resolved.stdout,resolved.stderr)
+ assert hosts.read_bytes()==b'', 'PRoot bind must not replace the host file'
+ hosts.write_bytes((repo/'server/hosts').read_bytes())
+ first=invoke('deploy',client_pair=pair,local_zones=False)['deployment'];assert first['accounts']==first['characters']==1
+ assert (state/'import.sql').read_bytes()==dump
+ assert all((source/name).read_bytes()==content for name,content in original_binaries.items())
+finally:
+ nss.write_text(original_nss)
+print('PASS: empty Ubuntu hosts reproduces MariaDB initialization failure; private PRoot loopback binding resolves localhost and real SQL deployment passes without DNS',flush=True)
 assert (state/'import.sql').read_bytes()==dump
 assert (state/'generations'/first['generation']/'server/settings/default/network.lua').read_text()==(source/'settings/default/network.lua').read_text()
 print('PASS: real MariaDB import, ARM64 binary validation, isolated settings and unchanged source SQL',flush=True)
