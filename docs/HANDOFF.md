@@ -25,14 +25,36 @@ Tests cover error details and preserved binaries, dependency upgrades preserving
 imports/databases, support export, and the upgrade UI. ARM64 integration now uses
 jemalloc-linked server fixtures and a deliberately missing shared library to
 verify failed deployment keeps the active pair and restoring the library permits
-validation without recompilation. Local 30 server unit tests pass; Android/ARM64
-CI and signed delivery results will follow. Actual user's server remains untested.
+validation without recompilation. Local 30 server unit tests pass. Both Android builds and ARM64 integration now
+pass for **f8c845c56d2b7f9ac50aedbd21356b528db0e001**. Push run **36087781630**
+and PR run **36087783616** pass 44 Android tests (including dependency upgrade,
+retained imports/databases, support export and update UI), 43 archive checks,
+82 runtime contracts, 30 server unit tests and all 11 ARM64 integration markers.
+The real jemalloc-linked synthetic processes start/stop and report their allocator
+version. The missing-library fixture fails before import without changing the
+active pair; restoring that library permits validation without recompilation.
+Actual user's server remains untested. Wide/narrow upgrade panels reviewed.
+
+Delivered **LSB-Android-0.5.31.apk**, code 47, 18,329,898 bytes, SHA-256
+`885b44cd25897d57023d0b9d7981f9078dad788bd49328ec3221058fdf10d0da`.
+Library `libfile_52c83fd30b008191b830addd0908a927`, version 0,
+file `file_00000000904881f99fa8a753fc9b6c05`. Original update certificate retained;
+package/version, v2/v3 signatures, alignment and ZIP integrity verify. Complete
+non-signature payload matches push artifact **10844945377**. All 37 client
+runtime/native entries are byte-identical to .30; all five server assets match
+source. Changes are Android manifest/classes, bootstrap.sh, manager.py and signing
+metadata only. No client runtime reinstall, cache reset or source update needed.
+
+Both runs' presentation and Windows gates also pass. Full client CI remains
+running at delivery: push Box64 **107923961292**, FEX **107923961334**;
+PR Box64 **107924095368**, FEX **107924095363**. Check these next turn and do not
+claim all CI green. No unchanged rerun or weakened gates.
 
 Prior .30 follow-through: FEX jobs failed existing optional client performance
 trials: push 107918076905 timed out trial A's pixel check; PR 107918076921 rejected
 trial E because baseline GPL was not confirmed. Both passed earlier FEX/software
-and D3D8 coverage. No retry or weakened check. Box64 jobs still running at review;
-these failures are recorded separately from the phone's server dependency error.
+and D3D8 coverage. No retry or weakened check. Both .30 Box64 jobs completed successfully. These optional client-trial failures
+are recorded separately from the phone's server dependency error.
 
 Next phone test: update APK in place; Server → Import your working server →
 Update server runtime and build tools; then Deploy matching server + database.

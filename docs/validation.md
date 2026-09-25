@@ -11,7 +11,21 @@ checks and support-export coverage. It preserves existing binary bytes and does
 not force allocator overrides. Local 30 server unit tests pass. CI now exercises
 real jemalloc-linked ARM64 processes and a deliberately unavailable shared
 library, checking diagnostics and preservation of the active source/database pair.
-Android/ARM64 integration and signed delivery evidence are pending.
+Both push `36087781630` and PR `36087783616` for source
+`f8c845c56d2b7f9ac50aedbd21356b528db0e001` pass 44 Android tests, 43 archive
+regressions, 82 runtime contracts, 30 server unit tests and all 11 real ARM64
+integration markers. Jemalloc-linked processes start/stop; a real missing ELF
+library is named, and restored library availability passes without recompiling.
+Failed deployment retains source, imported SQL and the active database pair.
+Wide/narrow update panels were visually reviewed.
+
+Signed APK: `LSB-Android-0.5.31.apk`, code 47, 18,329,898 bytes, SHA-256
+`885b44cd25897d57023d0b9d7981f9078dad788bd49328ec3221058fdf10d0da`.
+Original update signer, v2/v3 signatures, alignment, ZIP integrity, package/version
+and non-signature identity with artifact `10844945377` verify. All 37 client
+runtime/native entries match .30; all five server assets match source. Full .31
+Box64/FEX CI remains running at delivery; current job IDs are in the handoff.
+Actual phone deployment of the user's binary archive remains the next check.
 
 ---
 
