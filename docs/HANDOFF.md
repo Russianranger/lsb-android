@@ -1,4 +1,4 @@
-# 0.5.36 in progress: backup browser and staged PlayOnline update
+# 0.5.36 delivered: backup browser and staged PlayOnline update
 
 The owner confirmed on 2026-09-25: "Restore functionality works perfectly."
 Support lsb-support(20260925-131758).zip records successful full restore and
@@ -36,11 +36,57 @@ Fixed Box64 update/verification follows existing preparation; gameplay FEX choic
 is retained and the new generation obtains its own FEX prefix on launch. Actual
 POL UI/network download and newer client/server compatibility need phone testing.
 
-Local checks: 15 storage safety tests, three browser lifecycle/deletion tests,
+Local checks: 15 storage safety tests, four browser lifecycle/deletion tests,
 and ten update UI/activation tests pass. Core checks pass, including 39 prepared
 client checks, 62 archive checks and 353 restore transaction cases; all 88 Python
 runtime contracts pass. Independent updater review found no blocking issues.
-The full Android suite passes all 81 tests. CI and signed APK evidence follow at delivery.
+The full final Android suite passes all 82 tests in both push and PR CI.
+
+Implementation source **49160a630ace2ed245cb409569774f648561f054**, tree
+**7a30ecb7420629721a30f32cacbe6de86d692950**, version .36/code52. Final review
+added explicit browser/scan guards during complete restore/recovery and raw,
+non-creating storage paths. The Android test returns to a paused browser while
+files is absent and confirms no runtime singleton or root is recreated. The APK
+isolation verifier explicitly checks the new private BackupBrowserActivity.
+
+Push **36142309471** and PR **36142315411** Android build jobs
+**108094991396 / 108095005268** pass. Both native ARM64 server jobs
+**108094856553 / 108094876336** pass all 15 markers, including actual 731 MiB
+archive/activation and restored MariaDB boot at a separate app path. Account
+hashes, characters, SQL objects and original-state isolation are verified.
+Presentation and Windows jobs pass in both runs. Long Box64/FEX jobs remain
+running at delivery: push **108096107733 / 108096107907**, PR
+**108096033275 / 108096033547**. Follow up next turn; do not claim all CI green.
+No unchanged reruns or weakened gates.
+
+Both delivered APKs retain certificate SHA256
+f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e:
+
+- **LSB-Android-0.5.36.apk**: 18,379,265 bytes; SHA256
+  b0fab3138211b7d63344337ce238d88ec734789c2086310d4000f1bb2561fe0f.
+  Library libfile_a59ba8380eb48191b99405001e9fd76e, version0,
+  file_00000000f738822f95d9bb329f1cb52b.
+- **LSB-Android-Restore-Test-0.5.36.apk**: 18,375,169 bytes; SHA256
+  f51af147ab28c0058ba0ccc361aa91fe4989183ea20bcde854d97d6c3a4ecb34.
+  Library libfile_596713565080819194d8a485af203851, version0,
+  file_00000000301881f5b64828e441c9ebba.
+
+v2/v3 signatures, alignment, package IDs/version52 and ZIP integrity pass. Signed
+payloads match final CI artifacts. Both APKs have 56 identical code/resource/
+runtime entries outside manifest/resources table. All 36 existing runtime/native
+entries except changed supervisor.py remain byte-identical to .35; the one added
+runtime file is client_update.py. Seven server assets match source unchanged.
+Changes are only Android manifest/classes, supervisor.py, new client_update.py
+and signing metadata. CI artifacts **10867682012** (standard) and **10867362324**
+(test), ZIP SHA256 b513c902fee2f14467a54086f65016ea8156c719969ebfb66fa7829cf675506e
+and 10a9d6563305ce36e26aeab1faaa64bb0e6050b721a0359218e775abb8a5e837.
+
+Install both updates without uninstalling. First review/delete an unwanted
+inactive copy under Manage backups and storage, then prepare/resume PlayOnline
+repair in Restore Test. After POL reports completion, exit, verify, and explicitly
+activate the test copy. The existing server may require a newer matching revision
+before the updated client can connect. Retain the regular app as the working
+installation. No new runtime download or full restore is required for .36.
 
 See docs/client-update.md and docs/complete-session-backup.md for sequence and
 primary repair references. Latest server/database testing follows successful
