@@ -14,13 +14,37 @@ alias a newer BFD library, change imported binaries, or change client defaults.
 Tools marker v4 prompts the existing in-place runtime update. See
 `docs/bfd-compatibility.md` for exact packages, hashes, provenance and checks.
 
-Local 34 server unit tests pass, including invalid-download rejection and
-preservation of live libraries/config after download/loader failure. Android
-regressions now model v3-to-v4 updating while retaining imported source/SQL and
-databases. ARM64 integration adds the exact missing BFD SONAME scenario, actual
-BFD object operations with matching headers, retained system toolchain/binary
-bytes and BFD-linked managed process startup. Native CI and signed APK delivery
-are pending; no actual user server or on-device success is claimed.
+Source commit **145ca88cd6679f0b0dbe38e5bc2bfa8383dc5ae9** passes both native
+ARM64 server jobs: push **108030758382** / run **36122418320**, and PR
+**108030772547** / run **36122422696**. All 12 integration markers pass, including
+reproducing the exact missing BFD SONAME, installing its verified libraries,
+calling real BFD object operations, retaining the current toolchain/imported
+binary bytes, and starting/stopping all four BFD/jemalloc-linked test processes.
+MariaDB deployment, restore, rollback and account checks also pass. The user's
+actual private server archive and phone deployment remain untested here.
+
+Both Android build jobs **108030881245** and **108030881386** pass 44 Android
+checks, 43 tar checks, 82 runtime contracts and 34 server unit tests. Android
+regressions cover the v3-to-v4 upgrade retaining imported source/SQL/databases;
+new package checks cover integrity bounds, archive fallback and preserved live
+libraries/config on download or staged-loader failure. Wide/narrow update panels
+were reviewed. Both presentation and Windows jobs also pass.
+
+Delivered **LSB-Android-0.5.32.apk**, code 48, 18,334,067 bytes, SHA-256
+`a5cd7748b0ce87205aa17aac8c9e8b25503b7694f8e35aacfa7ba460ac155152`.
+Library `libfile_446925fe8d3881919f0f89e75d6ab2bd`, version 0,
+file `file_00000000079481f5bdd0e257dc6f6274`. Original update certificate retained
+(`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`).
+Version/package, v2/v3 signing, alignment and ZIP integrity verify. Non-signature
+payload matches CI artifact **10857348593** (ZIP SHA-256
+`97d5906a2e552a64811674aa1f9f2c67fc120272395736f6fc770daf45bfcc42`).
+All 37 client runtime/native entries are byte-identical to .31; all six server
+assets match source. Payload differences are manifest/classes, bootstrap.sh and
+new bfd_compat.py, plus signing metadata. No client reinstall or cache reset.
+
+Full client jobs are still running at delivery: push Box64 **108031574807**, FEX
+**108031574898**; PR Box64 **108031656085**, FEX **108031656057**. Check these next
+turn; do not claim all CI green. No unchanged retries or weakened gates.
 
 Follow-through on .31 CI: PR run 36087783616 completed successfully, including
 Box64 job 107924095368 and FEX job 107924095363. Push run 36087781630 passed FEX

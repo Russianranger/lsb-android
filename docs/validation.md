@@ -12,7 +12,18 @@ and config on pre-install failures, and ensure the final loader check has no
 LD_LIBRARY_PATH override. Bash/Python syntax and diff checks pass. Android tests
 cover the v3-to-v4 upgrade. The native integration adds real BFD 2.45 operations,
 missing-library reproduction/recovery, unchanged system toolchain and imported
-binary hashes, and BFD-linked managed process startup. Native CI pending.
+binary hashes, and BFD-linked managed process startup. Both ARM64 jobs now pass all 12 integration markers: push 108030758382 and PR
+108030772547. Both Android builds (108030881245 / 108030881386) pass 44 Android
+checks, 43 tar checks, 82 runtime contracts and 34 server units. Both Windows and
+presentation jobs also pass. Full Box64/FEX client jobs remain running at delivery.
+
+Signed .32/code 48 APK: 18,334,067 bytes, SHA-256
+`a5cd7748b0ce87205aa17aac8c9e8b25503b7694f8e35aacfa7ba460ac155152`.
+Retained signer verified with v2/v3 signatures; alignment/package/version/ZIP
+integrity verify. Payload matches CI artifact 10857348593. All 37 client
+runtime/native entries match .31 byte-for-byte; all six server assets match
+commit 145ca88cd6679f0b0dbe38e5bc2bfa8383dc5ae9. Updated runtime controls reviewed
+at wide and narrow widths. The exact private server still needs the phone retry.
 
 .31 follow-through: PR 36087783616 passed all gates; push 36087781630 passed the
 server/Android/Windows/FEX gates but Box64 107923961292 failed D3D8 pixel validation
