@@ -104,6 +104,26 @@ class FakeSupervisor:
             raise RuntimeError(label + ' exited with code ' + str(proc.returncode))
 
 
+class TimedSupervisor(FakeSupervisor):
+    DURATIONS = {'update-registry.log': 2, 'playonline-core-register.log': 3,
+                 'playonline-core-com.log': 4, 'playonline-app-register.log': 5,
+                 'playonline-app-class.log': 6, 'playonline-contents-register.log': 7,
+                 'playonline-contents-class.log': 8, 'playonline-dependencies.log': 9,
+                 'playonline.log': 20, 'playonline-wait.log': 30}
+
+    def __init__(self, session, clock, fail_wait=None, **kwargs):
+        super().__init__(session, **kwargs)
+        self.clock = clock
+        self.fail_wait = fail_wait
+
+    def wait(self, proc, timeout, label, accepted=(0,)):
+        self.clock[0] += self.DURATIONS[proc.name]
+        if proc.name == self.fail_wait:
+            self.waits.append(proc.name)
+            raise RuntimeError('Synthetic worker timeout')
+        return super().wait(proc, timeout, label, accepted)
+
+
 class UpdateContracts(unittest.TestCase):
     def test_codec_override_is_updater_only_and_preserves_game_environment(self):
         game_environment = {'WINEPREFIX': '/prefix', 'WINEDLLOVERRIDES': 'winegstreamer=;d3d8,d3d9=n',
@@ -129,6 +149,60 @@ class UpdateContracts(unittest.TestCase):
                     'pol': 'Viewer', 'game': 'Game', 'executable': 'Viewer/POL.EXE', 'sha256': hashlib.sha256(pe()).hexdigest()}
         (session / 'client-update-manifest.json').write_text(json.dumps(manifest))
         return client, session, logs, manifest
+
+    def test_preparation_timings_use_monotonic_clock_and_exclude_viewer_and_restart_wait(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, session, logs, manifest = self.fixture(Path(tmp))
+            clock = [100.0]
+            with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), \
+                    patch.object(client_update, 'LOGS', logs), patch.object(client_update.time, 'monotonic', side_effect=lambda: clock[0]), \
+                    patch.object(client_update.time, 'time', side_effect=AssertionError('Wall clock must not measure preparation')):
+                s = TimedSupervisor(session, clock)
+                client_update.run(s)
+            report = json.loads((logs / 'client-update.json').read_text())
+            self.assertEqual(report['initial_registry'], {'exit_code': 0, 'elapsed_ms': 2000})
+            steps = [step for row in report['component_registration'] for step in row['steps']]
+            self.assertEqual([step['elapsed_ms'] for step in steps], [3000, 4000, 5000, 6000, 7000, 8000])
+            self.assertEqual(report['dependency_attempts'][0]['elapsed_ms'], 9000)
+            self.assertEqual(report['preparation_elapsed_ms'], 44000)
+            self.assertEqual(report['viewer_start_elapsed_ms'], 44000)
+            self.assertEqual(report['viewer_elapsed_ms'], 20000)
+            self.assertEqual(report['status'], 'verification_pending')
+            messages = [state['message'] for state in s.states if state['phase'] == 'registering_playonline_components']
+            self.assertEqual(messages, [
+                'Preparing PlayOnline components (1/6): registering core',
+                'Preparing PlayOnline components (2/6): checking core',
+                'Preparing PlayOnline components (3/6): registering application',
+                'Preparing PlayOnline components (4/6): checking application',
+                'Preparing PlayOnline components (5/6): registering contents',
+                'Preparing PlayOnline components (6/6): checking contents'])
+
+    def test_failed_preparation_keeps_elapsed_duration_without_claiming_viewer_started(self):
+        cases = [({'registry_ok': False}, 2000, 'registry'),
+                 ({'component_failure': ('app.dll', 'class')}, 20000, 'component'),
+                 ({'fail_wait': 'playonline-app-class.log'}, 20000, 'component'),
+                 ({'missing_component_receipt': True}, 5000, 'component'),
+                 ({'dependency_error': 126}, 44000, 'dependency')]
+        for options, expected_total, phase in cases:
+            with self.subTest(options=options), tempfile.TemporaryDirectory() as tmp:
+                client, session, logs, manifest = self.fixture(Path(tmp))
+                clock = [100.0]
+                with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), \
+                        patch.object(client_update, 'LOGS', logs), patch.object(client_update.time, 'monotonic', side_effect=lambda: clock[0]):
+                    s = TimedSupervisor(session, clock, **options)
+                    with self.assertRaises(RuntimeError):
+                        client_update.run(s)
+                report = json.loads((logs / 'client-update.json').read_text())
+                self.assertEqual(report['preparation_elapsed_ms'], expected_total)
+                self.assertEqual(report['initial_registry']['elapsed_ms'], 2000)
+                self.assertNotIn('viewer_start_elapsed_ms', report)
+                self.assertNotIn('playonline.log', s.waits)
+                self.assertEqual(report['status'], 'interrupted')
+                if phase == 'component':
+                    steps = [step for row in report['component_registration'] for step in row['steps']]
+                    self.assertEqual(steps[-1]['elapsed_ms'], 3000 if options.get('missing_component_receipt') else 6000)
+                elif phase == 'dependency':
+                    self.assertEqual(report['dependency_attempts'][0]['elapsed_ms'], 9000)
 
     def test_viewer_cwd_no_login_and_detached_restart_wait(self):
         with tempfile.TemporaryDirectory() as tmp:

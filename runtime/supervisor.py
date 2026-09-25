@@ -10,6 +10,7 @@ import signal
 import stat
 import struct
 import subprocess
+import sys
 import threading
 import time
 
@@ -48,7 +49,8 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87','performance_trial','proot_acceleration'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87','performance_trial','proot_acceleration','network_preflight'}:raise ValueError('Unexpected runtime request field')
+    if 'network_preflight' in req and (req.get('action')!='update-client' or type(req['network_preflight']) is not bool):raise ValueError('Unsupported network check request')
     if req.get('performance_trial','none') not in ('none','one_compiler','cached_dynamic','gpl_fast','syscall_filter','retain_pipelines','lighter_scene'):raise ValueError('Unsupported performance trial')
     if req.get('engine','box64') not in ('box64','fex'):raise ValueError('Unsupported runtime engine')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
@@ -493,9 +495,30 @@ class Supervisor:
             # optional display helper must never stop the working game launch.
             self.status(native_surface_requested=True,native_surface_fallback=str(error))
 
+    def check_update_network(self):
+        from network_check import validate
+        path=SESSION/'network-check.json'
+        path.unlink(missing_ok=True)
+        self.status('checking_update_network',message='Checking PlayOnline server names using this network')
+        process=self.spawn([sys.executable,str(BUNDLE/'network_check.py')], 'network-check.log',fixed_output=True)
+        try:
+            self.wait(process,12,'PlayOnline network check')
+            if not path.is_file() or path.stat().st_size>8192:raise ValueError('Invalid network receipt')
+            result=validate(json.loads(path.read_text()))
+        except (OSError,ValueError,RuntimeError) as error:
+            self.status(network_check={'status':'check_failed'})
+            raise RuntimeError('PlayOnline network check could not finish. Reopen the updater; if this repeats, export Diagnostics.') from error
+        result=dict(result,session_id=self.req['session_id'])
+        atomic(LOGS/'network-check.json',result)
+        self.status(network_check=result)
+        if not result['any_resolved']:
+            raise RuntimeError('The client runtime cannot resolve PlayOnline server names on this network. Check Wi-Fi or VPN connectivity, then reopen the updater to refresh its network settings. Export Diagnostics if this continues.')
+
     def start(self):
         for p in (SESSION,PREFIX,LOGS):p.mkdir(parents=True,exist_ok=True)
         self.status();bundle=verify_bundle(BUNDLE)
+        if self.req.get('network_preflight',False):
+            self.check_update_network()
         if self.engine=='fex':
             from fex_runtime import verify,select_translator
             self.state['fex_runtime']=verify(Path('/opt/wine'),BUNDLE,PREFIX)

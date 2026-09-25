@@ -15,6 +15,25 @@ FROM lsb-playonline:base
 RUN apt-get update && apt-get install -y --no-install-recommends mesa-vulkan-drivers && apt-get clean && rm -rf /var/lib/apt/lists/*
 DOCKER
 docker build -t lsb-playonline:test out/playonline-test
+# Reproduce the pinned rootfs's empty resolver and prove the app's supplied
+# resolver/hosts bindings work without contacting public DNS or patch services.
+mkdir -p out/playonline-test/network
+python3 - <<'PYDNS'
+from pathlib import Path
+root = Path('out/playonline-test/network')
+(root / 'empty-resolv.conf').write_text('')
+(root / 'empty-hosts').write_text('')
+(root / 'configured-resolv.conf').write_text('nameserver 127.0.0.2\noptions timeout:1 attempts:1\n')
+(root / 'configured-hosts').write_text('127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n')
+PYDNS
+for resolver_case in empty configured; do
+ docker run --rm --network none \
+  -v "$PWD/out/playonline-test/backend:/opt/lsb:ro" -v "$PWD/tests/runtime:/tests:ro" \
+  -v "$PWD/out/playonline-test/network/$resolver_case-resolv.conf:/etc/resolv.conf:ro" \
+  -v "$PWD/out/playonline-test/network/$resolver_case-hosts:/etc/hosts:ro" \
+  -v "$PWD/out/playonline-test/logs:/logs" \
+  lsb-playonline:test python3 /tests/network_smoke.py "$resolver_case"
+done
 sudo apt-get update -qq
 sudo apt-get install -y --no-install-recommends unrar-free msitools
 python3 scripts/prepare-playonline-smoke.py

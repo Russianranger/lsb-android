@@ -12,6 +12,10 @@ SESSION = Path('/session')
 LOGS = Path('/logs')
 
 
+def elapsed_ms(started, ended=None):
+    return max(0, int(((time.monotonic() if ended is None else ended) - started) * 1000))
+
+
 def private_environment(supervisor):
     # The pipe parser emits fixed categories/codes only. DXVK must use that
     # pipe too, rather than retaining an unfiltered application-named log.
@@ -60,17 +64,21 @@ def check_dependencies(supervisor, manifest, executable, environment, report, re
         supervisor.stopped()
         receipt_path.unlink(missing_ok=True)
         supervisor.status('checking_playonline_dependencies', message='Checking PlayOnline dependencies in the staged copy')
-        process = supervisor.spawn(supervisor.wine_command(r'P:\client-launch.exe', 'check',
-            windows_path(manifest['executable']), *expected),
-            'playonline-dependencies' + ('-retry' if attempt else '') + '.log', env=environment)
-        writer = supervisor.logs[-1]
         result = {'exit_code': None, 'receipt_valid': False}
         report['dependency_attempts'].append(result)
+        started = time.monotonic()
+        process = writer = None
         try:
+            process = supervisor.spawn(supervisor.wine_command(r'P:\client-launch.exe', 'check',
+                windows_path(manifest['executable']), *expected),
+                'playonline-dependencies' + ('-retry' if attempt else '') + '.log', env=environment)
+            writer = supervisor.logs[-1]
             supervisor.wait(process, 90, 'PlayOnline dependency check', accepted=(0, 1))
         finally:
-            result['exit_code'] = process.poll()
-            result['startup_diagnostics'] = diagnostics(writer, drain=True)
+            result['exit_code'] = process.poll() if process is not None else None
+            if writer is not None:
+                result['startup_diagnostics'] = diagnostics(writer, drain=True)
+            result['elapsed_ms'] = elapsed_ms(started)
             record()
         # A stale, truncated or malformed receipt never authorizes the viewer.
         try:
@@ -135,21 +143,28 @@ def prepare_playonline_components(supervisor, manifest, environment, report, rec
         report['component_registration'].append(entry)
         components.append((path, class_name, entry))
     record()
+    step_number = 0
     for path, class_name, entry in components:
         windows = windows_path(path.relative_to(client_path('.')).as_posix())
         verify = ('class', [class_name, windows]) if class_name else ('com', [manifest['region'], 'pol', windows])
         for operation, arguments in [('register', [windows]), verify]:
             supervisor.stopped()
+            step_number += 1
+            label = {'core': 'core', 'app': 'application', 'contents': 'contents'}[entry['component']]
+            action = 'registering' if operation == 'register' else 'checking'
             supervisor.status('registering_playonline_components',
-                              message='Preparing PlayOnline components in the staged update')
+                              message='Preparing PlayOnline components (%d/6): %s %s' %
+                                      (step_number, action, label))
             receipt_path = SESSION / 'client-step.json'
             receipt_path.unlink(missing_ok=True)
-            process = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', operation, *arguments),
-                'playonline-' + entry['component'] + '-' + operation + '.log', env=environment)
-            writer = supervisor.logs[-1]
             step = {'operation': operation, 'exit_code': None}
             entry['steps'].append(step)
+            started = time.monotonic()
+            process = writer = None
             try:
+                process = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', operation, *arguments),
+                    'playonline-' + entry['component'] + '-' + operation + '.log', env=environment)
+                writer = supervisor.logs[-1]
                 supervisor.wait(process, 90, 'PlayOnline ' + entry['component'] + ' ' + operation, accepted=(0, 1))
             finally:
                 try:
@@ -165,8 +180,10 @@ def prepare_playonline_components(supervisor, manifest, environment, report, rec
                     safe['operation'] = receipt['operation']
                 if type(receipt.get('ok')) is bool:
                     safe['ok'] = receipt['ok']
-                step.update(exit_code=process.poll(), result=safe,
-                            startup_diagnostics=diagnostics(writer, drain=True))
+                step.update(exit_code=process.poll() if process is not None else None, result=safe)
+                if writer is not None:
+                    step['startup_diagnostics'] = diagnostics(writer, drain=True)
+                step['elapsed_ms'] = elapsed_ms(started)
                 record()
             valid = (safe.get('format') == 1 and safe.get('bits') == 32 and
                      safe.get('operation') == operation and safe.get('ok') is True and
@@ -203,6 +220,8 @@ def validate_manifest(data):
 
 def run(supervisor):
     from supervisor import atomic
+    preparation_started = time.monotonic()
+    viewer_started = None
     manifest = json.loads((SESSION / 'client-update-manifest.json').read_text())
     pol, executable = validate_manifest(manifest)
     report = {'format': 1, 'generation': manifest['generation'], 'session_id': supervisor.req['session_id'],
@@ -210,24 +229,34 @@ def run(supervisor):
               'activation_performed': False, 'credentials_forwarded': False}
 
     def record():
+        # This covers updater preparation only; prefix/display initialization
+        # happens before run(). Freeze it once the viewer process starts.
+        report['preparation_elapsed_ms'] = elapsed_ms(preparation_started, viewer_started)
         atomic(LOGS / 'client-update.json', report)
         supervisor.status(client_update=report)
 
     record()
     writer = None
     viewer = None
-    viewer_started = None
     try:
         # The existing 32-bit helper writes and reads back the regional install
         # paths; viewer-only registrations below stay in the staged prefix.
         result = SESSION / 'client-step.json'
         result.unlink(missing_ok=True)
-        worker = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', 'registry', manifest['region'],
-                                  windows_path(manifest['pol']), windows_path(manifest['game'])), 'update-registry.log')
-        supervisor.wait(worker, 90, 'Staged PlayOnline registration')
-        receipt = json.loads(result.read_text()) if result.is_file() else {}
-        if receipt.get('operation') != 'registry' or receipt.get('ok') is not True or receipt.get('bits') != 32:
-            raise RuntimeError('Missing successful 32-bit staged PlayOnline registry receipt')
+        supervisor.status('registering_playonline_paths', message='Preparing PlayOnline installation paths')
+        registry_started = time.monotonic()
+        worker = None
+        try:
+            worker = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', 'registry', manifest['region'],
+                                      windows_path(manifest['pol']), windows_path(manifest['game'])), 'update-registry.log')
+            supervisor.wait(worker, 90, 'Staged PlayOnline registration')
+            receipt = json.loads(result.read_text()) if result.is_file() else {}
+            if receipt.get('operation') != 'registry' or receipt.get('ok') is not True or receipt.get('bits') != 32:
+                raise RuntimeError('Missing successful 32-bit staged PlayOnline registry receipt')
+        finally:
+            report['initial_registry'] = {'exit_code': worker.poll() if worker is not None else None,
+                                          'elapsed_ms': elapsed_ms(registry_started)}
+            record()
         validate_manifest(manifest)
         # Users operate the official viewer themselves. Never persist arbitrary
         # POL output, which could include a retail account entered in its UI.
@@ -238,10 +267,13 @@ def run(supervisor):
         report['status'] = 'viewer_open'; record()
         supervisor.status('playonline_update', message='In PlayOnline: Check Files → FINAL FANTASY XI → Check Files → File Repair. Exit the viewer after repair completes.')
         (SESSION / 'playonline-process.json').unlink(missing_ok=True)
-        viewer_started = time.monotonic()
+        spawn_started = time.monotonic()
         viewer = supervisor.spawn(supervisor.wine_command(r'P:\playonline-run.exe', windows_path(manifest['executable'])),
                                   'playonline.log', env=environment, cwd=pol)
+        viewer_started = spawn_started
+        report['viewer_start_elapsed_ms'] = elapsed_ms(preparation_started, viewer_started)
         writer = supervisor.logs[-1]
+        record()
         # A self-updater may exit its first process with a nonzero result while
         # a detached replacement is still running. Preserve the result, but do
         # not let supervisor cleanup terminate that replacement prematurely.

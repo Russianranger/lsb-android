@@ -319,6 +319,7 @@ final class ClientRuntime {
                 sessionId=UUID.randomUUID().toString();performance.reset(sessionId);nativePerformance.reset(sessionId);
             }}
             JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action).put("engine",useFex?"fex":"box64");
+            if(action.equals("update-client"))request.put("network_preflight",true);
             if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
                 request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
                 try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}
@@ -359,6 +360,7 @@ final class ClientRuntime {
                 if(action.equals("installer")||action.equals("repair-launcher"))Files.copy(new File(home,"prerequisite.exe").toPath(),new File(run,"prerequisite.exe").toPath());
             }
             new File(root,"client").mkdirs();
+            if(action.equals("update-client"))ClientNetwork.prepare(context,run,logs,sessionId);
             if(sound)audio=AudioBridge.start(context,new File(run,"audio.sock"),new File(logs,"audio.log"));
             File nativeDir=new File(context.getApplicationInfo().nativeLibraryDir);
             List<String> command=new ArrayList<>(Arrays.asList(new File(nativeDir,"libproot.so").getPath(),"--link2symlink","--kill-on-exit","-0","-r",root.getPath(),
@@ -369,6 +371,9 @@ final class ClientRuntime {
                 "LSB_RUNTIME_OWNER="+home.getPath(),"/usr/bin/python3","/opt/lsb/supervisor.py"));
             if(useFex)command.addAll(command.indexOf("-w"),Arrays.asList("-b",selectedFex.wine().getPath()+":/opt/wine"));
             else command.addAll(command.indexOf("-w"),Arrays.asList("-b",new File(backend,"wineserver").getPath()+":/opt/wine/bin/wineserver"));
+            if(action.equals("update-client"))command.addAll(command.indexOf("-w"),Arrays.asList(
+                "-b",new File(run,"resolv.conf").getPath()+":/etc/resolv.conf",
+                "-b",new File(run,"hosts").getPath()+":/etc/hosts"));
             // Android has no native SysV IPC. Enable the already bundled memfd
             // emulation for both Xvnc and its capture helper in this PRoot tree.
             if(request.optBoolean("native_surface",false))command.add(1,"--sysvipc");
