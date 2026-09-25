@@ -1,4 +1,4 @@
-# 0.5.37 in progress: PlayOnline startup repair and diagnostics
+# 0.5.37 delivered: PlayOnline startup repair and diagnostics
 
 The .36 phone test (`lsb-support (1)(6).zip`, SHA256
 1d5be42c2f32cde93d71f02c776c6dbd691c5c44b6aecb6376bd1c09f34a219a) reached
@@ -30,18 +30,68 @@ still requires explicit user File Repair confirmation, verification and activati
 Gameplay/runtime engines, active prefix/registry, server and backup behavior are
 unchanged. Both regular and Restore Test APKs are required for delivery.
 
+Implementation source **5abfc32ee7a29e3b7c7d3f9e89e776f366810e08**, tree
+**3b429c578687fbc6390dce598a5d30633b7e8bbc**. Push 36147559012 and PR 36147562029
+both pass Android builds (108112555485/108112547740) and real native server
+restore jobs (108112403721/108112413605). Push native Windows job 108113479732
+passes all 87 checks. Both FEX jobs 108113479906/108113536786 passed. Box64
+runtime job108113479845 passed, including actual Windows helper execution in
+software Docker and patched PRoot. The duplicate PR runtime job108113536846
+also passed. Both source5abfc32 workflows pass all validation jobs; no unchanged
+rerun or weakened gate was needed.
+
+Signed .37/code53 candidates are ready in delivery and verified against final CI
+payloads, with v2/v3 signatures, ZIP integrity, package/version/label, alignment,
+and matching 57 shared code/resource/runtime entries across the pair. Certificate
+SHA256 f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e.
+All 36 unchanged runtime/native entries match .36, all 7 server assets match source;
+only manifest/classes, client_update.py, startup_diagnostics.py and new
+playonline-run.exe differ. No new runtime download is required.
+
+- LSB-Android-0.5.37.apk: 18,403,920 bytes;
+  SHA256 c099e03a6b2708d49578b52869884c36b263bafd39c4c125c4fb5b0f39b94b70.
+- LSB-Android-Restore-Test-0.5.37.apk:18,403,920 bytes;
+  SHA256 15045f6b78f30a71d25809e2487e1ce68212c8f4969b129df58cf16c223d4f26.
+
+CI artifacts 10870008870/10869499134, archive SHA256
+ad8a76d084e89496240ff76d0c66572b94e464bc2374b562a09ea78aa6badbb9 /
+5ad2b223256b4b377547229e022c8173c9ab1af346b763f221525800d3e84218.
+Both signed APKs have been saved successfully (version0, local metadata applied):
+regular libfile_9c7a2efb436481919937db0b3d69e218 /
+file_00000000fa1c822f88cd0a79b0ec7ad9; Restore Test
+libfile_8e75de2165208191a8517eeaac809e6f /
+file_000000007bc081f599f188d44243e92f.
+Install over the matching existing packages without uninstalling. Use Restore
+Test first: Client → Client update · PlayOnline → Open or resume PlayOnline
+update. The existing complete update candidate is reused. If the phone still
+exits, export a fresh support ZIP for the new full Windows/DLL diagnostics.
+
 Local checks currently pass 95 Python runtime contracts, 82 Android tests and
 all existing core/archive/restore checks. New real Windows and Box64/PRoot
 fixtures cover DLL failures, full DWORD exits, private output and stage retention;
 the native runner and stub compile successfully and independent review found no
-production blockers. Execution checks await CI before delivery. A hash-pinned
-official PlayOnline 1.18.00 viewer is extracted outside artifacts for an offline
-startup comparison. No proprietary files enter the APK or repository. The
-scratch sandbox forbids Unix sockets, so
-real Wine startup cannot run locally; remote CI is used without sandbox bypass.
+production blockers. Real Box64/PRoot checks passed all three new cases:
+visible clean exit, no-window exit0x80004000 (whose low Unix byte is zero), and
+missing DLL error126. They verify private output suppression and that staged
+and independent active-copy data remain unchanged.
 
-.36 CI follow-through: both Box64 jobs108096107733/108096033275 passed. Both FEX
-jobs108096107907/108096033547 failed existing observed-pixel timeouts (compressed
+Push runtime evidence artifact10871906484 has SHA256
+78b49ac1c384777411d7a2d1e3dc63aa5cfa605c07a6897effba09fd72c069ee.
+The hash-pinned official PlayOnline1.18.00 offline comparison reproduced a
+startup failure in the baseline environment: exit0x80000100 after1887ms, no
+visible window or pixels, DLL-load0xC0000135. With only the scoped codec override,
+the same viewer showed a visible window at957ms, 722 colors and304555
+nonbackground pixels, and remained running until deliberate Stop after20s.
+Both variants passed11 DLL preflight checks. The fixed running receipt's
+child_exit0 is a placeholder, not proof of clean exit or completed File Repair.
+This establishes the official offline viewer's failure/workaround; it does not
+prove the user's exact phone failure or online repair. The evidence explicitly
+records phone_failure_reproduced=false. No proprietary viewer files enter the
+APK, repository or uploaded evidence. The scratch sandbox forbids Unix sockets,
+so real Wine execution used remote CI without sandbox bypass.
+
+.36 CI follow-through: both Box64 jobs 108096107733/108096033275 passed. Both FEX
+jobs 108096107907/108096033547 failed existing observed-pixel timeouts (compressed
 texture/UP fixture on push; D3D8 texture/geometry/render-target fixture on PR),
 followed by cancellation startup assertions. Runtime release skipped. No
 unchanged rerun and no weakened check.
