@@ -33,6 +33,7 @@ jobs:
       - name: Core import and recovery checks
         run: |
           python3 scripts/test.py
+          python3 scripts/test-server-runtime-archive.py
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/native_surface.c -o /tmp/lsb-native-surface-test
           /tmp/lsb-native-surface-test
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/draw-stats.c -o /tmp/lsb-draw-stats-test
@@ -71,12 +72,12 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.29.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.30.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.29.apk
+            out/LSB-Android-0.5.30.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/

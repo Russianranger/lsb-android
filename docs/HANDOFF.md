@@ -1,3 +1,35 @@
+# 0.5.30: Ubuntu runtime extraction fix
+
+User reports server runtime installation failed on 0.5.29. Support ZIP
+`lsb-support(20260925-020848).zip` shows `Unsupported runtime tar member (type x)`
+before bootstrap or database deployment. Server source ZIP (4/4 root binaries,
+expected client30251204_1) and20MiB SQL were already imported successfully on
+phone. Keep them; install this APK in place and retry Server → Import your working
+server → Install server runtime and build tools. Then Deploy matching server +
+database. Do not reset app data or reimport client/source/SQL for this error.
+
+The checksum-pinned Ubuntu26.04.1 ARM64 base has6564 PAX per-entry headers with
+atime/ctime/mtime metadata. Old Java extractor reproduces the exact exception on
+this archive. Fix adds bounded PAX parsing before existing extraction safety checks.
+Build gate now extracts the exact pinned download using the production Java parser
+and verifies its file contents, normalized executable modes, hardlinks and symlinks.
+Synthetic regressions cover metadata scopes, overrides and malformed archives.
+Client settings and all native/runtime assets remain unchanged; extraction is shared,
+so GNU/USTAR compatibility must also pass. Version0.5.30/code46. Delivery evidence
+will be recorded after build/sign verification; no physical-device install claimed.
+
+Prior0.5.29 push36066678276 and PR36066682077 now completed **success**, including
+both Box64/FEX runtime gates. The older pending notes below are historical.
+
+Additional received SQL `lsb-database-20260925-015102.sql.gz` statically validates:
+4,422,916 compressed bytes,21,073,107 SQL bytes,125 tables,9 triggers. No actual
+restore of this private SQL has been run here. Actual accounts.id is signed INT
+AUTO_INCREMENT, unlike current reviewed account schema gate. Need review matching
+server source before broadening account creation. No source ZIP supplied to this
+workspace yet; only phone's support inventory. Do not publish private SQL or rows.
+
+---
+
 # 0.5.29: matching server import, player accounts and database recovery
 
 User has accepted the client and now wants to run their matching server ZIP,

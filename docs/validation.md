@@ -1,3 +1,23 @@
+# Server runtime archive extraction 0.5.30
+
+The reported 0.5.29 failure is reproduced by its production Java TarExtractor on
+the exact pinned Ubuntu26.04.1 ARM64 download (SHA-256
+`5a1906794ced63a71a8119c3f211ef5f0bbe0a243001b4bbd41fdf80c5b219fd`).
+The archive has6564 PAX timestamp headers followed by5407 files,755 directories,
+287 symlinks and115 hardlinks; expanded regular content110,784,659 bytes.
+Runtime installation stopped before bootstrap; source and SQL imports are separate
+and remain available for retry. CI now tests this exact archive before packaging.
+
+The parser handles bounded PAX headers with byte-counted records and validates
+UTF-8 and supported data layout. Path/link/size overrides use normal extraction
+validation. Tests exercise GNU/USTAR compatibility, PAX scopes and malformed data.
+Archive download hash, all extracted regular bytes, executable modes and links are
+checked against independent Python tar reading. Local regression results:43 tar checks and full pinned archive comparison pass;
+24 server unit tests and core/credential transport checks pass. Android build/sign
+results follow after CI; physical-device runtime installation remains unverified. No change to accepted client settings or server schema.
+
+---
+
 # 0.5.17 delivered: FEX CPU-feature correction qualified; Thor rendering check next
 
 The exact uploaded client DLLs match the working Box64 and broken FEX exports.
