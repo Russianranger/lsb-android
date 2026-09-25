@@ -1,3 +1,27 @@
+# 0.5.35 in progress: complete-backup POSIX filename repair
+
+The .34 phone export ran from 06:39:55 to 06:48:24 CDT and failed with
+IOException: Unsafe session path. The supplied support ZIP confirms the logical
+SQL backup succeeded and MariaDB shut down cleanly by 06:40:00. It does not record
+the offending filename. Local reproduction shows the old complete-archive
+validator rejects an ordinary Linux filename containing a literal backslash.
+The writer constructs only POSIX slash-separated paths from real filesystem
+entries; it must preserve such names, not normalize them as Windows paths.
+
+The .35/code51 fix supports literal backslashes and other valid UTF-8 Linux
+filename characters while retaining slash traversal, NUL, scope, duplicate,
+link-parent and checksum checks. Errors identify a bounded escaped path. Both
+standard and Restore Test APKs need the update. No game/runtime/server data is
+renamed or skipped; archive format remains v1. Client/runtime/allocator behavior
+is unchanged. See docs/complete-session-backup.md for the retry sequence.
+
+.34 CI follow-through: PR FEX108054909744 passed. Push FEX108054625185 failed a
+D3D8 texture/geometry/render-target pixel timeout followed by cancellation fixture
+not starting. Push/PR Box64 jobs108054625277/108054909695 were still running at
+.35 investigation. No unchanged reruns or weakened gates.
+
+---
+
 # 0.5.34 delivered: complete session backup and isolated restore test
 
 The user confirmed successful world connection on .33 on 2026-09-25 and accepted

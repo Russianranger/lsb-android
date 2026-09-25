@@ -7,11 +7,11 @@ Keep its client/server revision, compiler defaults and graphics settings.
 
 ## First phone test
 
-1. Install **LSB Android 0.5.34** over the working app. Do not uninstall it.
+1. Install **LSB Android 0.5.35** over the working app. Do not uninstall it.
 2. Stop the client and managed server. Open **Client → Backup and recovery →
    Export complete session backup**. Save outside either app's managed storage,
    for example Downloads or an external drive, and wait for export to complete.
-3. Install **LSB Restore Test 0.5.34**. It has a separate launcher name, package
+3. Install **LSB Restore Test 0.5.35**. It has a separate launcher name, package
    ID, Android UID and storage. Open **Client → Backup and recovery → Restore
    complete session backup** and select the exported archive.
 4. Wait for verification and restoration to finish. Check that the selected
@@ -50,7 +50,9 @@ PIDs and other temporary process state that must be recreated on launch.
 The streaming ZIP64 container stores bounded binary records with SHA-256 for
 each regular file and a required SHA-256 completion record for the header and
 payload. It preserves executable/private modes, empty directories, timestamps,
-symbolic links and hardlinks. Symlinks are created only after the entire payload
+symbolic links and hardlinks. Literal Linux filenames, including backslashes,
+are retained without Windows path normalization. Use .35 or newer in both apps.
+Symlinks are created only after the entire payload
 passes verification; extraction never writes through a link. Exact host-root
 link targets relocate to the receiving app; Linux guest absolute targets retain
 their guest meaning. Registry hives, SQL, sources and executables are not edited.

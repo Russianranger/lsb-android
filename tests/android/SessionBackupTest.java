@@ -101,7 +101,7 @@ public class SessionBackupTest {
         File managed=MainActivity.storage(source);
         Map<String,String> files=new LinkedHashMap<>();
         files.put("rt/root/lsb-runtime.sha256","runtime fixture");files.put("rt/root/bin/wine","executable runtime fixture");
-        files.put("rt/prefix/user.reg","Wine settings fixture");files.put("rt/fex/wine-fixture/bin/wine","FEX Wine fixture");
+        files.put("rt/prefix/user.reg","Wine settings fixture");files.put("rt/prefix/drive_c/windows/filename\\with\\backslashes.log","literal Linux filename fixture");files.put("rt/fex/wine-fixture/bin/wine","FEX Wine fixture");
         files.put("rt/clients/state.properties","current="+GENERATION+"\n");
         files.put("rt/clients/"+GENERATION+"/prefix/system.reg","prepared Windows registry");
         files.put("rt/clients/"+GENERATION+"/client/ROM/0/0.DAT","prepared client fixture");

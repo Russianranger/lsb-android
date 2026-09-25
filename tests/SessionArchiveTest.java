@@ -14,6 +14,7 @@ public final class SessionArchiveTest {
     private interface Action {void run()throws Exception;}
     private static void check(boolean ok,String label){if(!ok)throw new AssertionError(label);checks++;System.out.println("PASS "+label);}
     private static void fails(Action task,String label)throws Exception{try{task.run();}catch(IOException e){checks++;System.out.println("PASS "+label);return;}throw new AssertionError("Expected rejection: "+label);}
+    private static String failure(Action task)throws Exception{try{task.run();}catch(IOException e){return e.getMessage();}throw new AssertionError("Expected IOException");}
     private static Map<String,File> roots(Path directory)throws IOException{Map<String,File> roots=new LinkedHashMap<>();for(String scope:new String[]{"files","managed"})roots.put(scope,Files.createDirectories(directory.resolve(scope)).toFile());return roots;}
     private static void put(Path file,String value)throws IOException{Files.createDirectories(file.getParent());Files.write(file,value.getBytes(StandardCharsets.UTF_8));}
     private static String read(Path file)throws IOException{return new String(Files.readAllBytes(file),StandardCharsets.UTF_8);}
@@ -37,6 +38,35 @@ public final class SessionArchiveTest {
     private static SessionArchive.Result restore(byte[] archive,Map<String,File> stage,Map<String,File> target)throws IOException{return SessionArchive.read(new ByteArrayInputStream(archive),stage,target,QUIET,1024*1024,0,10000);}
     private static boolean empty(Map<String,File> roots){for(File f:roots.values())if(f.list().length!=0)return false;return true;}
     private static void remove(Path path)throws IOException{if(Files.isDirectory(path,LinkOption.NOFOLLOW_LINKS)){Files.setPosixFilePermissions(path,PosixFilePermissions.fromString("rwx------"));try(DirectoryStream<Path> children=Files.newDirectoryStream(path)){for(Path child:children)remove(child);}}Files.deleteIfExists(path);}
+    private static void posixNames(Path base)throws Exception{
+        Map<String,File> source=roots(base.resolve("posix-source")),stage=roots(base.resolve("posix-stage")),destination=roots(base.resolve("posix-destination"));
+        Path files=source.get("files").toPath(), managed=source.get("managed").toPath();
+        String wineFolder="rt/fex/prefixes/runtime/generation/drive_c/users/root/AppData/Local/Temp";
+        // Synthetic Windows-style text stored as a POSIX basename: the support log did not record its actual failing path.
+        String wineName="C:\\windows\\temp\\runtime.log";
+        String[] names={wineFolder+"/"+wineName,"rt/wine\\cache/..\\literal.dat","rt/z-control\tline\n\u001b[31m\u007f.dat","rt/trailing . ","rt/settings-\u65e5\u672c\u8a9e-\ud83c\udfae.dat"};
+        for(int i=0;i<names.length;i++)put(files.resolve(names[i]),"content-"+i);
+        put(managed.resolve("session/current/client/USER/literal\\macro.dat"),"managed macros");
+        String hardlink=wineFolder+"/C:\\windows\\temp\\runtime-copy.log",symlink=wineFolder+"/relative\\alias";
+        Files.createLink(files.resolve(hardlink),files.resolve(names[0]));Files.createSymbolicLink(files.resolve(symlink),Paths.get(wineName));
+        byte[] archive=write(source,"{}".getBytes(StandardCharsets.UTF_8));SessionArchive.Result restored=restore(archive,stage,destination);
+        Path extracted=stage.get("files").toPath();
+        for(int i=0;i<names.length;i++)check(read(extracted.resolve(names[i])).equals("content-"+i),"exact POSIX basename survives complete backup case "+(i+1));
+        check(read(stage.get("managed").toPath().resolve("session/current/client/USER/literal\\macro.dat")).equals("managed macros"),"managed scope also preserves literal backslash names");
+        check(Files.isSameFile(extracted.resolve(names[0]),extracted.resolve(hardlink))&&restored.summary.hardlinks==1,"hardlink identity survives names containing literal backslashes");
+        check(Files.readSymbolicLink(extracted.resolve(symlink)).toString().equals(wineName)&&read(extracted.resolve(symlink)).equals("content-0"),"relative symlink target retains literal backslashes and resolves correctly");
+        check(!Files.exists(extracted.resolve(wineFolder+"/C:"))&&!Files.exists(extracted.resolve("rt/wine/cache")),"backslashes never become directory separators during restore");
+        check(read(files.resolve(names[0])).equals("content-0")&&Files.isSameFile(files.resolve(names[0]),files.resolve(hardlink)),"filename compatibility fix leaves original runtime files and aliases intact");
+        Map<String,File> badStage=roots(base.resolve("posix-bad-stage"));
+        Map<String,byte[]> damaged=unzip(archive);replaceEqual(damaged.get(BASE+"files.bin"),"content-2","damaged-2");updateFooter(damaged);byte[] corruptName=zip(damaged);
+        String checksumError=failure(()->restore(corruptName,badStage,destination));
+        check(checksumError.contains("\\u0009")&&checksumError.contains("\\u000a")&&checksumError.contains("\\u001b")&&checksumError.contains("\\u007f")&&!checksumError.contains("\n")&&!checksumError.contains("\t"),"checksum diagnostic quotes and escapes control characters instead of injecting log lines");
+        for(String invalid:new String[]{"files/../escape","files/./escape","files//escape","/files/escape","files/nul\0name","outside/file","files/","files\\escape","files/..\\/../escape"}){
+            ByteArrayOutputStream payload=new ByteArrayOutputStream();DataOutputStream records=new DataOutputStream(payload);node(records,1,"files",null);node(records,1,"managed",null);node(records,2,invalid,"bad");records.writeByte(0);
+            byte[] malformed=custom(archive,payload.toByteArray(),3,3);String error=failure(()->restore(malformed,badStage,destination));check(error.contains("session"),"actual separator traversal, NUL or invalid scope stays rejected");check(empty(badStage),"malformed POSIX path leaves no staged data");
+            if(invalid.indexOf('\0')>=0)check(error.contains("\\u0000")&&error.indexOf('\0')<0,"rejected NUL path is identified with an escaped diagnostic");
+        }
+    }
     public static void main(String[] args)throws Exception{
         Path base=Files.createTempDirectory("lsb-session-archive-");
         try{
@@ -88,6 +118,7 @@ public final class SessionArchiveTest {
             check(Files.readSymbolicLink(badStage.get("files").toPath().resolve("alias")).equals(destination.get("managed").toPath().resolve("data")),"longest original root alias relocates nested managed storage correctly");
             check(!Files.exists(badStage.get("files").toPath().resolve("lsb"))&&read(badStage.get("managed").toPath().resolve("data")).equals("managed"),"internal fallback storage backed up once through managed scope");
             check(read(files.resolve("rt/root/usr/bin/tool")).equals("ELF-test-runtime")&&read(managed.resolve("session/current/client/USER/macros.dat")).equals("player macros"),"all restore trials leave working source untouched");
+            posixNames(base);
             System.out.println("Session archive checks passed: "+checks);
         }finally{Thread.interrupted();remove(base);}
     }

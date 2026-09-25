@@ -36,13 +36,14 @@ public final class SessionArchive {
         int type,mode;long mtime,size;String name,link;Path path;
     }
     private static MessageDigest digest(){try{return MessageDigest.getInstance("SHA-256");}catch(NoSuchAlgorithmException e){throw new AssertionError(e);}}
-    private static void text(DataOutputStream out,String value)throws IOException{byte[] b=value.getBytes(StandardCharsets.UTF_8);if(b.length>MAX_TEXT)throw new IOException("Session path is too long");out.writeInt(b.length);out.write(b);}
+    private static void text(DataOutputStream out,String value)throws IOException{byte[] b=value.getBytes(StandardCharsets.UTF_8);if(b.length>MAX_TEXT)throw pathError("Session path is too long",value);if(!new String(b,StandardCharsets.UTF_8).equals(value))throw pathError("Session path is not valid UTF-8",value);out.writeInt(b.length);out.write(b);}
     private static String text(DataInputStream in)throws IOException{
         int count=in.readInt();if(count<0||count>MAX_TEXT)throw new IOException("Invalid session text length");byte[] bytes=new byte[count];in.readFully(bytes);
         String value=new String(bytes,StandardCharsets.UTF_8);if(!Arrays.equals(bytes,value.getBytes(StandardCharsets.UTF_8)))throw new IOException("Invalid UTF-8 in session path");return value;
     }
     private static Path absolute(File file){return file.toPath().toAbsolutePath().normalize();}
     private static void roots(Map<String,File> roots,boolean empty)throws IOException{
+        if(File.separatorChar!='/')throw new IOException("Complete sessions require an Android or Linux filesystem");
         if(roots.size()!=2||!roots.containsKey("files")||!roots.containsKey("managed"))throw new IOException("Session requires files and managed roots");
         Path a=absolute(roots.get("files")), b=absolute(roots.get("managed"));
         if(empty&&(a.startsWith(b)||b.startsWith(a)))throw new IOException("Session staging roots overlap");
@@ -121,23 +122,42 @@ public final class SessionArchive {
             catch(UnsupportedOperationException|IllegalArgumentException|IOException ignored){}
             if(key!=null&&hardlinks.containsKey(key)){kind=HARDLINK;link=hardlinks.get(key);stats.hardlinks++;}
             else{kind=REGULAR;if(key!=null)hardlinks.put(key,name);stats.files++;}
-        }else throw new IOException("Stop all runtimes before backup; unsupported filesystem object: "+name);
+        }else throw new IOException("Stop all runtimes before backup; unsupported filesystem object: "+displayPath(name));
         out.writeByte(kind);text(out,name);out.writeInt(kind==SYMLINK?0777:mode(path,before.isDirectory(),scope.equals("managed")));out.writeLong(before.lastModifiedTime().toMillis());
         if(kind==REGULAR){
             long expected=before.size();if(expected<0||expected>MAX_BYTES-stats.bytes)throw new IOException("Session exceeds size limit");out.writeLong(expected);MessageDigest hash=digest();long copied=0;
-            try(InputStream in=Files.newInputStream(path,LinkOption.NOFOLLOW_LINKS)){int n;while((n=in.read(buffer))!=-1){SafeZip.checkCancelled();copied+=n;if(copied>expected)throw new IOException("Session changed while exporting "+name);out.write(buffer,0,n);hash.update(buffer,0,n);stats.bytes+=n;report(stats,report,progress,"Exporting complete session");}}
-            if(copied!=expected)throw new IOException("Session changed while exporting "+name);out.write(hash.digest());
+            try(InputStream in=Files.newInputStream(path,LinkOption.NOFOLLOW_LINKS)){int n;while((n=in.read(buffer))!=-1){SafeZip.checkCancelled();copied+=n;if(copied>expected)throw new IOException("Session changed while exporting "+displayPath(name));out.write(buffer,0,n);hash.update(buffer,0,n);stats.bytes+=n;report(stats,report,progress,"Exporting complete session");}}
+            if(copied!=expected)throw new IOException("Session changed while exporting "+displayPath(name));out.write(hash.digest());
         }else if(kind==SYMLINK||kind==HARDLINK)text(out,link);
         else for(File child:FilesEx.children(path.toFile()))walk(out,child.toPath(),scope,relative.isEmpty()?child.getName():relative+"/"+child.getName(),exclude,stats,hardlinks,buffer,report,progress,depth+1);
-        if(!same(before,attributes(path)))throw new IOException("Session changed while exporting "+name);
+        if(!same(before,attributes(path)))throw new IOException("Session changed while exporting "+displayPath(name));
     }
     private static void report(Summary stats,long[] previous,SafeZip.Progress progress,String action){
         long now=System.currentTimeMillis();if(now-previous[0]>500){previous[0]=now;progress.update(action+" · "+stats.entries+" entries / "+stats.bytes/1048576+" MiB");}
     }
+    /** Names are POSIX paths inside binary records, not Windows paths or ZIP member names. */
     private static String safe(String path)throws IOException{
-        if(path.isEmpty()||path.startsWith("/")||path.indexOf('\0')>=0||path.indexOf('\\')>=0||path.getBytes(StandardCharsets.UTF_8).length>MAX_TEXT)throw new IOException("Unsafe session path");
-        String[] parts=path.split("/",-1);if(parts.length>130||(!parts[0].equals("files")&&!parts[0].equals("managed")))throw new IOException("Invalid session scope");
-        for(String p:parts){if(p.isEmpty()||p.equals(".")||p.equals(".."))throw new IOException("Unsafe session path");for(char c:p.toCharArray())if(c<32||c==127)throw new IOException("Control character in session path");}return path;
+        if(path.isEmpty()||path.startsWith("/")||path.indexOf('\0')>=0)throw pathError("Unsafe session path",path);
+        byte[] encoded=path.getBytes(StandardCharsets.UTF_8);
+        if(encoded.length>MAX_TEXT)throw pathError("Session path is too long",path);
+        if(!new String(encoded,StandardCharsets.UTF_8).equals(path))throw pathError("Session path is not valid UTF-8",path);
+        String[] parts=path.split("/",-1);if(parts.length>130||(!parts[0].equals("files")&&!parts[0].equals("managed")))throw pathError("Invalid session scope or nesting",path);
+        // Only slash separates names on Android/Linux. Backslashes, controls and trailing
+        // spaces are valid filename bytes and must survive a complete runtime backup.
+        for(String p:parts)if(p.isEmpty()||p.equals(".")||p.equals(".."))throw pathError("Unsafe session path",path);
+        return path;
+    }
+    private static IOException pathError(String reason,String path){return new IOException(reason+": "+displayPath(path));}
+    private static String displayPath(String path){
+        StringBuilder out=new StringBuilder("\"");int count=Math.min(path.length(),1024);
+        for(int i=0;i<count;i++){
+            char c=path.charAt(i);int type=Character.getType(c);
+            if(c=='\\'||c=='\"')out.append('\\').append(c);
+            else if(Character.isISOControl(c)||type==Character.FORMAT||type==Character.LINE_SEPARATOR||type==Character.PARAGRAPH_SEPARATOR)
+                out.append(String.format(Locale.ROOT,"\\u%04x",(int)c));
+            else out.append(c);
+        }
+        if(count<path.length())out.append("…");return out.append('"').toString();
     }
     private static void validateLink(String link)throws IOException{if(link.isEmpty()||link.indexOf('\0')>=0||link.getBytes(StandardCharsets.UTF_8).length>MAX_TEXT)throw new IOException("Invalid session link target");}
     private static Path target(String name,Map<String,File> roots)throws IOException{
@@ -188,7 +208,7 @@ public final class SessionArchive {
                     if(node.path.getParent().toFile().getUsableSpace()-reserve<node.size)throw new IOException("Not enough storage to restore this session");
                     MessageDigest hash=digest();long remaining=node.size;
                     try(OutputStream out=Files.newOutputStream(node.path,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE)){while(remaining>0){SafeZip.checkCancelled();int n=in.read(buffer,0,(int)Math.min(buffer.length,remaining));if(n<0)throw new EOFException("Truncated session file");if(node.path.getParent().toFile().getUsableSpace()-reserve<n)throw new IOException("Not enough free storage during restore");out.write(buffer,0,n);hash.update(buffer,0,n);remaining-=n;stats.bytes+=n;report(stats,report,progress,"Restoring complete session");}}
-                    byte[] expected=new byte[32];in.readFully(expected);if(!MessageDigest.isEqual(hash.digest(),expected))throw new IOException("Session file checksum failed: "+node.name);
+                    byte[] expected=new byte[32];in.readFully(expected);if(!MessageDigest.isEqual(hash.digest(),expected))throw new IOException("Session file checksum failed: "+displayPath(node.name));
                     restoreAttributes(node);stats.files++;
                 }else{
                     node.link=text(in);if(type==HARDLINK){safe(node.link);if(!Integer.valueOf(REGULAR).equals(paths.get(node.link)))throw new IOException("Invalid session hardlink");stats.hardlinks++;}
