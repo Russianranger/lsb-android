@@ -1,6 +1,7 @@
 """Exercise real Win32 process/registry APIs with stub DLLs in an isolated HKCU key."""
 import os, shutil, subprocess, tempfile, winreg
 from pathlib import Path
+from playonline import test_playonline
 source = Path(__file__).resolve().parents[2]/'out/windows-tests'
 subprocess.run([str(source/'game-window.exe')],check=True,timeout=30)
 subprocess.run([str(source/'version-registry.exe')],check=True,timeout=30)
@@ -39,6 +40,7 @@ def clear_key(root, path):
         winreg.DeleteKeyEx(root,path,winreg.KEY_WOW64_32KEY,0)
     except FileNotFoundError: pass
 try:
+    test_playonline(source, check)
     with tempfile.TemporaryDirectory(prefix='lsb-native-') as temp:
         root = Path(temp)
         for region in ['US','EU','JP']:

@@ -1,3 +1,53 @@
+# 0.5.37 in progress: PlayOnline startup repair and diagnostics
+
+The .36 phone test (`lsb-support (1)(6).zip`, SHA256
+1d5be42c2f32cde93d71f02c776c6dbd691c5c44b6aecb6376bd1c09f34a219a) reached
+successful registry setup and hardware presentation, then pol.exe exited with
+Unix status1. The viewer log and DXVK log were empty because raw output was
+suppressed. This does not prove a graphics or server failure. Historical RpcSs
+warnings also appear in accepted client runs and are not a new diagnosis.
+
+The current prepared generation remains 768f3a6d-8dfb-462f-8b9d-46cdd7101505.
+The complete candidate 05d8856e-7a99-46c1-a9da-07cc4e8b3ec6 is retained in
+repair_pending. Retry Open or resume PlayOnline update in Restore Test; no new
+restore, import, runtime download or full client copy is needed.
+
+.37/code53 disables ir50_32 only in the updater's environment. Wine bug56462
+identifies an unconditional delayed codec call into unavailable winegstreamer;
+upstream fix c0779ad492b2b0f6f4b0bdb1a7d20dc5674dcf97 makes the codec cleanly
+unavailable instead. Our runtime disables winegstreamer. Real official-viewer
+before/after offline startup comparison is included in CI; do not call the phone's
+exact root cause proven from the .36 log.
+
+The updater now loads its actual normal DLL imports in a disposable Wine
+process, records bounded DLL names/error codes, and starts the viewer through
+playonline-run.exe. The runner selects only a canonical D:\...\pol.exe path,
+preserves full unsigned Windows CreateProcess/exit codes, and observes visible
+windows without titles or account text. Wine/DXVK output is normalized in memory;
+no raw POL or per-executable DXVK file is retained. The original viewer's error
+is retained even when detached updater children need time to finish. Clean exit
+still requires explicit user File Repair confirmation, verification and activation.
+Gameplay/runtime engines, active prefix/registry, server and backup behavior are
+unchanged. Both regular and Restore Test APKs are required for delivery.
+
+Local checks currently pass 95 Python runtime contracts, 82 Android tests and
+all existing core/archive/restore checks. New real Windows and Box64/PRoot
+fixtures cover DLL failures, full DWORD exits, private output and stage retention;
+the native runner and stub compile successfully and independent review found no
+production blockers. Execution checks await CI before delivery. A hash-pinned
+official PlayOnline 1.18.00 viewer is extracted outside artifacts for an offline
+startup comparison. No proprietary files enter the APK or repository. The
+scratch sandbox forbids Unix sockets, so
+real Wine startup cannot run locally; remote CI is used without sandbox bypass.
+
+.36 CI follow-through: both Box64 jobs108096107733/108096033275 passed. Both FEX
+jobs108096107907/108096033547 failed existing observed-pixel timeouts (compressed
+texture/UP fixture on push; D3D8 texture/geometry/render-target fixture on PR),
+followed by cancellation startup assertions. Runtime release skipped. No
+unchanged rerun and no weakened check.
+
+---
+
 # 0.5.36 delivered: backup browser and staged PlayOnline update
 
 The owner confirmed on 2026-09-25: "Restore functionality works perfectly."

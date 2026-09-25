@@ -22,7 +22,8 @@ class StartupDiagnostics:
     }
     WINE = re.compile(rb'^(?:[0-9]+\.[0-9]+:)?((?:[0-9a-f]{4,8}:){1,2})(trace|warn|err|fixme):([a-z0-9_]+):([a-z0-9_]+) (.*)$')
     MODULES = {n.lower().encode(): n for n in
-               ('polcore.dll', 'polcoreeu.dll', 'FFXi.dll', 'FFXiMain.dll', 'd3d8.dll', 'd3d9.dll')}
+               ('polcore.dll', 'polcoreeu.dll', 'FFXi.dll', 'FFXiMain.dll', 'd3d8.dll', 'd3d9.dll',
+                'pol.exe', 'PolHook.dll', 'ddraw.dll')}
     CHANNELS = {'ole', 'seh', 'module', 'loaddll', 'vulkan', 'wined3d', 'd3d', 'x11drv', 'wgl', 'rpc', 'service'}
     # Only fixed source labels leave this parser, never unknown function names.
     FUNCTIONS = {'import_dll': 'dll_import', 'find_forwarded_export': 'forwarded_export',

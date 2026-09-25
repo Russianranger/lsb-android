@@ -4,6 +4,7 @@ from pathlib import Path
 import struct
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -14,20 +15,30 @@ import supervisor
 
 
 def pe():
-    data = bytearray(248)
+    data = bytearray(1024)
     data[:2] = b'MZ'; struct.pack_into('<I', data, 60, 64)
     data[64:70] = b'PE\0\0\x4c\x01'; struct.pack_into('<H', data, 84, 160)
     data[88:90] = b'\x0b\x01'
+    struct.pack_into('<H', data, 70, 1)
+    struct.pack_into('<I', data, 192, 4096)
+    struct.pack_into('<IIII', data, 256, 512, 4096, 512, 512)
+    struct.pack_into('<I', data, 524, 4136)
+    data[552:564] = b'PolHook.dll\0'
     return bytes(data)
 
 
 class FakeSupervisor:
-    def __init__(self, session, cancel_wait=False, registry_ok=True):
+    def __init__(self, session, cancel_wait=False, registry_ok=True, child_exit=0, dependency_error=0,
+                 viewer_error=None, missing_receipt=False, malformed_check=False, viewer_output=b''):
         self.req = {'session_id': '12345678-1234-1234-1234-123456789abc'}
         self.env = {'WINEPREFIX': '/prefix'}
         self.private_output = False
         self.calls = []; self.waits = []; self.states = []
+        self.logs = []
         self.session = session; self.cancel_wait = cancel_wait; self.registry_ok = registry_ok
+        self.child_exit = child_exit; self.dependency_error = dependency_error
+        self.viewer_error = viewer_error; self.missing_receipt = missing_receipt
+        self.malformed_check = malformed_check; self.viewer_output = viewer_output
 
     def status(self, phase=None, **fields):
         self.states.append(dict(fields, phase=phase))
@@ -40,17 +51,54 @@ class FakeSupervisor:
 
     def spawn(self, args, name, **kwargs):
         self.calls.append((args, name, kwargs, self.private_output))
-        return name
+        events = supervisor.PrivateEvents()
+        self.logs.append(SimpleNamespace(events=events, thread=SimpleNamespace(join=lambda seconds: None)))
+        process = SimpleNamespace(name=name, returncode=None)
+        process.poll = lambda: process.returncode
+        return process
 
-    def wait(self, proc, timeout, label):
-        self.waits.append(proc)
-        if proc == 'update-registry.log':
+    def stopped(self):
+        pass
+
+    def wait(self, proc, timeout, label, accepted=(0,)):
+        self.waits.append(proc.name)
+        proc.returncode = 0
+        if proc.name == 'update-registry.log':
             (self.session / 'client-step.json').write_text(json.dumps({'operation': 'registry', 'ok': self.registry_ok, 'bits': 32}))
-        if proc == 'playonline-wait.log' and self.cancel_wait:
+        if proc.name.startswith('playonline-dependencies'):
+            proc.returncode = 1 if self.dependency_error else 0
+            data = {'format': 1, 'bits': 32, 'check_policy': 'load_only', 'ok': not self.dependency_error,
+                    'dependencies': [{'name': 'PolHook.dll', 'ok': not self.dependency_error,
+                                      'win32_error': self.dependency_error, 'loaded_path': r'D:\Viewer\PolHook.dll' if not self.dependency_error else ''}]}
+            if self.malformed_check: data['dependencies'][0]['name'] = 'wrong.dll'
+            (self.session / 'loader-check.json').write_text(json.dumps(data))
+        if proc.name == 'playonline.log':
+            proc.returncode = 1 if self.child_exit else 0
+            self.logs[-1].events.feed(self.viewer_output)
+            if not self.missing_receipt:
+                (self.session / 'playonline-process.json').write_text(json.dumps({
+                    'format': 1, 'bits': 32, 'phase': 'exited', 'win32_error': 0,
+                    'child_exit': self.child_exit, 'child_pid': 36, 'window_error': 0,
+                    'visible_window_seen': False, 'elapsed_ms': 15}))
+            if self.viewer_error: raise self.viewer_error
+        if proc.name == 'playonline-wait.log' and self.cancel_wait:
+            proc.returncode = None
             raise supervisor.Stopped()
+        if proc.returncode not in accepted:
+            raise RuntimeError(label + ' exited with code ' + str(proc.returncode))
 
 
 class UpdateContracts(unittest.TestCase):
+    def test_codec_override_is_updater_only_and_preserves_game_environment(self):
+        game_environment = {'WINEPREFIX': '/prefix', 'WINEDLLOVERRIDES': 'winegstreamer=;d3d8,d3d9=n',
+                            'DXVK_LOG_PATH': '/logs', 'WINEDEBUG': '-all'}
+        s = SimpleNamespace(env=dict(game_environment))
+        update_environment = client_update.private_environment(s)
+        self.assertEqual(update_environment['WINEDLLOVERRIDES'], 'winegstreamer=;d3d8,d3d9=n;ir50_32=')
+        self.assertEqual(update_environment['DXVK_LOG_PATH'], 'none')
+        self.assertEqual(s.env, game_environment)
+        self.assertIsNot(update_environment, s.env)
+
     def fixture(self, root):
         client = root / 'client'; client.mkdir()
         (client / 'Viewer').mkdir(); (client / 'Game').mkdir()
@@ -67,12 +115,13 @@ class UpdateContracts(unittest.TestCase):
             client, session, logs, manifest = self.fixture(Path(tmp))
             with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), patch.object(client_update, 'LOGS', logs):
                 s = FakeSupervisor(session); client_update.run(s)
-                self.assertEqual(s.waits, ['update-registry.log', 'playonline.log', 'playonline-wait.log'])
-                viewer = s.calls[1]
-                self.assertEqual(viewer[0], ['wine', r'D:\Viewer\POL.EXE'])
+                self.assertEqual(s.waits, ['update-registry.log', 'playonline-dependencies.log', 'playonline.log', 'playonline-wait.log'])
+                viewer = s.calls[2]
+                self.assertEqual(viewer[0], ['wine', r'P:\playonline-run.exe', r'D:\Viewer\POL.EXE'])
                 self.assertEqual(viewer[2]['cwd'], client / 'Viewer')
                 self.assertNotIn('pipe_input', viewer[2])
-                self.assertEqual(viewer[2]['env']['WINEDEBUG'], '-all')
+                self.assertIn('err+all', viewer[2]['env']['WINEDEBUG'])
+                self.assertEqual(viewer[2]['env']['DXVK_LOG_PATH'], 'none')
                 self.assertTrue(viewer[3])
                 self.assertEqual(s.calls[-1][0], ['wineserver', '-w'])
                 report = json.loads((logs / 'client-update.json').read_text())
@@ -80,6 +129,8 @@ class UpdateContracts(unittest.TestCase):
                 self.assertFalse(report['activation_performed'])
                 self.assertFalse(report['official_repair_confirmed'])
                 self.assertFalse(report['credentials_forwarded'])
+                self.assertEqual(report['process']['child_exit'], 0)
+                self.assertEqual(report['dependency_attempts'][0]['dependencies'], [{'name': 'PolHook.dll', 'ok': True, 'win32_error': 0}])
 
     def test_interrupted_detached_viewer_is_not_reported_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -90,6 +141,86 @@ class UpdateContracts(unittest.TestCase):
                 self.assertEqual(json.loads((logs / 'client-update.json').read_text())['status'], 'interrupted')
                 self.assertFalse(any(state['phase'] == 'completed' for state in s.states))
                 self.assertTrue((client / 'Viewer/POL.EXE').exists())
+
+    def test_nonzero_viewer_waits_for_detached_updater_and_retains_windows_exit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, session, logs, manifest = self.fixture(Path(tmp))
+            with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), patch.object(client_update, 'LOGS', logs):
+                s = FakeSupervisor(session, child_exit=0xc0000135)
+                with self.assertRaisesRegex(RuntimeError, 'Windows exit 0xC0000135'): client_update.run(s)
+                self.assertEqual(s.waits[-1], 'playonline-wait.log')
+                report = json.loads((logs / 'client-update.json').read_text())
+                self.assertEqual(report['status'], 'interrupted')
+                self.assertEqual(report['process']['child_exit'], 0xc0000135)
+                self.assertEqual(report['viewer_exit_code'], 1)
+                self.assertEqual(report['prefix_wait_exit_code'], 0)
+                self.assertFalse(any(state['phase'] == 'completed' for state in s.states))
+
+    def test_dependency_failure_stops_before_viewer_without_arbitrary_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, session, logs, manifest = self.fixture(Path(tmp))
+            with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), patch.object(client_update, 'LOGS', logs):
+                s = FakeSupervisor(session, dependency_error=126)
+                with self.assertRaisesRegex(RuntimeError, r'PolHook.dll \(Windows error 126\)'): client_update.run(s)
+                self.assertNotIn('playonline.log', s.waits)
+                self.assertTrue(s.calls[-1][3])
+                report = json.loads((logs / 'client-update.json').read_text())
+                self.assertNotIn('loaded_path', json.dumps(report))
+                self.assertEqual(report['dependency_attempts'][0]['dependencies'][0]['win32_error'], 126)
+
+    def test_bad_dependency_receipt_stops_before_viewer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, session, logs, manifest = self.fixture(Path(tmp))
+            with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), patch.object(client_update, 'LOGS', logs):
+                s = FakeSupervisor(session, malformed_check=True)
+                with self.assertRaisesRegex(RuntimeError, 'valid receipt'): client_update.run(s)
+                self.assertNotIn('playonline.log', s.waits)
+
+    def test_missing_windows_receipt_cannot_report_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, session, logs, manifest = self.fixture(Path(tmp))
+            with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), patch.object(client_update, 'LOGS', logs):
+                s = FakeSupervisor(session, missing_receipt=True)
+                with self.assertRaisesRegex(RuntimeError, 'missing Windows process receipt'): client_update.run(s)
+                self.assertEqual(s.waits[-1], 'playonline-wait.log')
+                self.assertFalse(any(state['phase'] == 'completed' for state in s.states))
+
+    def test_windows_receipt_rejects_unbounded_or_arbitrary_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = Path(tmp)
+            good = {'format': 1, 'bits': 32, 'phase': 'exited', 'win32_error': 0,
+                    'child_exit': 0xc0000135, 'child_pid': 36, 'window_error': 0,
+                    'visible_window_seen': False, 'elapsed_ms': 15}
+            with patch.object(client_update, 'SESSION', session):
+                path = session / 'playonline-process.json'
+                path.write_text(json.dumps(good)); self.assertEqual(client_update.process_receipt(), good)
+                for change in ({'child_exit': -1}, {'child_exit': 0x100000000}, {'child_exit': True},
+                               {'visible_window_seen': 'true'}, {'phase': 'secret'}, {'account': 'secret'}):
+                    path.write_text(json.dumps(dict(good, **change)))
+                    self.assertIsNone(client_update.process_receipt(), str(change))
+                path.write_text(' ' * 4097); self.assertIsNone(client_update.process_receipt())
+                path.unlink(); self.assertIsNone(client_update.process_receipt())
+
+    def test_failed_wait_keeps_fixed_diagnostics_without_private_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client, session, logs, manifest = self.fixture(Path(tmp))
+            private = b'account=retail-user password=retail-secret\n'
+            output = (private + b'100.1:0024:0028:err:module:import_dll Library private-name.dll (which is needed by retail-secret) not found\n'
+                      b'100.2:0024:0028:trace:loaddll:build_module Loaded L"D:\\\\Viewer\\\\PolHook.dll" at 1234: native\n'
+                      b'100.3:0024:0028:trace:seh:dispatch_exception code=c0000135 flags=0 addr=1234\n')
+            with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), patch.object(client_update, 'LOGS', logs):
+                s = FakeSupervisor(session, viewer_error=supervisor.Stopped(), viewer_output=output)
+                with self.assertRaises(supervisor.Stopped): client_update.run(s)
+                raw = (logs / 'client-update.json').read_text()
+                for value in ('retail-user', 'retail-secret', 'private-name', r'D:\\Viewer'):
+                    self.assertNotIn(value, raw)
+                report = json.loads(raw)
+                rows = report['startup_diagnostics']['records']
+                self.assertTrue(any(row.get('category') == 'dll_import' for row in rows))
+                self.assertTrue(any(row.get('module') == 'PolHook.dll' for row in rows))
+                self.assertTrue(any(row.get('code') == 0xc0000135 for row in rows))
+                self.assertEqual(report['status'], 'interrupted')
+                self.assertGreaterEqual(report['viewer_elapsed_ms'], 0)
 
     def test_registry_receipt_failure_never_opens_viewer(self):
         with tempfile.TemporaryDirectory() as tmp:

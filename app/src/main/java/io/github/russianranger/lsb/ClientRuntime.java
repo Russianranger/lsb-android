@@ -260,7 +260,7 @@ final class ClientRuntime {
     private void assets()throws Exception {
         backend.mkdirs();probes.mkdirs();
         for(String name:context.getAssets().list("runtime")){
-            File dest=new File(name.equals("fex-check.exe")||name.equals("graphics-check.exe")||name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")||name.equals("startup-trace.dll")?probes:backend,name);
+            File dest=new File(name.equals("fex-check.exe")||name.equals("graphics-check.exe")||name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")||name.equals("playonline-run.exe")||name.equals("startup-trace.dll")?probes:backend,name);
             try(InputStream in=context.getAssets().open("runtime/"+name);OutputStream out=new FileOutputStream(dest)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
             if(name.equals("x11-upload-check")||name.equals("vulkan-probe")||name.equals("wineserver")||name.equals("x11-frame-bridge"))Os.chmod(dest.getPath(),0700);
         }

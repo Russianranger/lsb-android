@@ -14,6 +14,18 @@ FROM lsb-runtime:base
 RUN apt-get update && apt-get install -y --no-install-recommends mesa-vulkan-drivers && apt-get clean && rm -rf /var/lib/apt/lists/*
 DOCKER
 docker build -t lsb-runtime:test out/runtime-test
+# The official viewer is only a read-only input to an offline, disposable
+# container. Its installer and client files stay outside uploaded artifacts.
+sudo apt-get install -y --no-install-recommends unrar-free msitools
+python3 scripts/prepare-playonline-smoke.py
+mkdir -p out/runtime-test/logs/official-playonline
+docker run --rm --network none \
+ -v "$PWD/out/runtime-test/backend:/opt/lsb:ro" \
+ -v "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
+ -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" \
+ -v "$PWD/.tools/playonline-smoke/viewer:/official:ro" \
+ -v "$PWD/out/runtime-test/logs/official-playonline:/logs" \
+ lsb-runtime:test python3 /tests/playonline_smoke.py
 python3 scripts/check-display-wire.py --backend docker
 # A separate, disposable modern Mesa environment actually executes DXVK 2.7.1.
 # Upgrade only Mesa and its required dependencies. A full dist-upgrade also
@@ -38,7 +50,7 @@ for renderer in software turnip26; do
   -v "$PWD/out/runtime-test/backend:/opt/lsb:ro" \
   -v "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
   -v "$PWD/out/windows-tests:/fixtures:ro" -v "$PWD/out/runtime-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" \
-  -v "$PWD/out/runtime-test/logs/$renderer:/logs" lsb-runtime:test sh -c 'python3 /tests/integration.py && if [ "$LSB_TEST_RENDERER" = software ]; then python3 /tests/initialization.py && python3 /tests/dependency_check.py && python3 /tests/launching.py && python3 /tests/gamepad.py; fi'
+  -v "$PWD/out/runtime-test/logs/$renderer:/logs" lsb-runtime:test sh -c 'python3 /tests/integration.py && if [ "$LSB_TEST_RENDERER" = software ]; then python3 /tests/initialization.py && python3 /tests/dependency_check.py && python3 /tests/launching.py && python3 /tests/gamepad.py && python3 /tests/updating.py; fi'
  done
 # Test the same rootfs through patched PRoot; no Android device is claimed by CI.
 sudo apt-get install -y build-essential libtalloc-dev gawk
@@ -61,4 +73,4 @@ PROOT_LOADER="$PWD/out/runtime-test/proot-src/src/loader/loader" PROOT_NO_SECCOM
  -b "$PWD/out/runtime-test/backend/wineserver:/opt/wine/bin/wineserver" \
  -b "$PWD/out/runtime-test/probe:/probe" -b "$PWD/tests/runtime:/tests" -b "$PWD/out/windows-tests:/fixtures" \
  -b "$short/session:/session" -b "$short/prefix:/prefix" -b "$short/tmp:/tmp" -b "$PWD/out/runtime-test/proot-logs:/logs" \
- -w /probe /usr/bin/env -i HOME=/root USER=root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 TMPDIR=/tmp PYTHONUNBUFFERED=1 /bin/sh -c 'python3 /tests/integration.py && python3 /tests/initialization.py && python3 /tests/dependency_check.py && python3 /tests/launching.py && python3 /tests/gamepad.py'
+ -w /probe /usr/bin/env -i HOME=/root USER=root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 TMPDIR=/tmp PYTHONUNBUFFERED=1 /bin/sh -c 'python3 /tests/integration.py && python3 /tests/initialization.py && python3 /tests/dependency_check.py && python3 /tests/launching.py && python3 /tests/gamepad.py && python3 /tests/updating.py'
