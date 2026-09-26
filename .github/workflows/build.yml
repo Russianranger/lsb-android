@@ -135,7 +135,7 @@ jobs:
   playonline-startup:
     needs: verify
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -150,7 +150,9 @@ jobs:
         with:
           path: .tools/playonline-smoke/viewer.rar-fragment
           key: lsb-official-viewer-fixture-4607a2e1
-      - name: Compare offline official PlayOnline COM startup and capture error UI
+      - name: Compare official PlayOnline startup and version-check network evidence
+        env:
+          LSB_PLAYONLINE_ONLINE: '1'
         run: bash scripts/check-playonline.sh
       - name: Make official viewer evidence readable
         if: always()

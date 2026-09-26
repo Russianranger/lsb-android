@@ -46,3 +46,21 @@ docker run --rm --network none \
  -v "$PWD/.tools/playonline-smoke/viewer:/official:ro" \
  -v "$PWD/out/playonline-test/logs:/logs" \
  lsb-playonline:test python3 /tests/playonline_smoke.py
+# Separately opt in after the deterministic/offline gates. This uses a new
+# container, empty prefix and public installer copy only. The private trace and
+# internal runtime reports are not under the uploaded logs artifact directory.
+if [[ "${LSB_PLAYONLINE_ONLINE:-0}" == "1" ]]; then
+ online_status=0
+ for online_case in missing-interface msi-interface; do
+ mkdir -p "out/playonline-test/online-private/$online_case"
+ docker run --rm --network bridge \
+  -v "$PWD/out/playonline-test/backend:/opt/lsb:ro" \
+  -v "$PWD/out/playonline-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
+  -v "$PWD/out/playonline-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" \
+  -v "$PWD/.tools/playonline-smoke/viewer:/official:ro" \
+  -v "$PWD/out/playonline-test/online-private/$online_case:/logs" \
+  -v "$PWD/out/playonline-test/logs:/evidence" \
+  lsb-playonline:test python3 /tests/playonline_online_smoke.py "$online_case" || online_status=1
+ done
+ exit "$online_status"
+fi
