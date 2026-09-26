@@ -24,7 +24,7 @@ def read_shared(path):
     if handle == ctypes.c_void_p(-1).value:
         raise ctypes.WinError(ctypes.get_last_error())
     try:
-        data = ctypes.create_string_buffer(512)
+        data = ctypes.create_string_buffer(1024)
         size = wintypes.DWORD()
         if not kernel.ReadFile(handle, data, len(data), ctypes.byref(size), None):
             raise ctypes.WinError(ctypes.get_last_error())
@@ -48,7 +48,9 @@ def test_playonline(source, check):
         receipt_path = receipts/'playonline-process.json'
         runner = str(source/'playonline-run-test.exe')
         keys = {'format', 'bits', 'phase', 'win32_error', 'child_exit', 'child_pid',
-                'visible_window_seen', 'window_error', 'elapsed_ms'}
+                'visible_window_seen', 'window_error', 'elapsed_ms', 'heartbeat_samples',
+                'heartbeat_elapsed_ms', 'cpu_user_ms', 'cpu_kernel_ms', 'cpu_error',
+                'window_found', 'window_responsive', 'window_probe_error'}
 
         def clear():
             receipt_path.unlink(missing_ok=True)
@@ -56,7 +58,8 @@ def test_playonline(source, check):
         def read():
             data = read_shared(receipt_path)
             value = json.loads(data)
-            check(len(data) < 512 and set(value) == keys, 'bounded fixed-field private PlayOnline receipt')
+            check(len(data) < 1024 and set(value) == keys and value['format'] == 2,
+                  'bounded fixed-field private PlayOnline receipt')
             check(b'PRIVATE-' not in data and b'Viewer' not in data and b'pol.exe' not in data,
                   'receipt contains no window title, stdout, stderr or executable path')
             return value
@@ -95,6 +98,48 @@ def test_playonline(source, check):
               'publishes running state before durable final receipt')
         check(value['visible_window_seen'] is True and value['window_error'] == 0 and value['elapsed_ms'] >= 1400,
               'observes visible child window without reading its private title')
+        check(value['heartbeat_samples'] == 1 and value['window_found'] and value['window_responsive']
+              and value['window_probe_error'] == 0 and value['cpu_error'] == 0
+              and value['cpu_user_ms'] + value['cpu_kernel_ms'] > 0,
+              'first visible observation reports response and real nonzero child CPU accounting')
+
+        for visible, delay in ((1, 11500), (2, 6500)):
+            clear(); fixture(0, visible, delay)
+            process = subprocess.Popen([runner, str(executable)], cwd=receipts,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            samples = {}; deadline = time.monotonic() + 20
+            try:
+                while process.poll() is None and time.monotonic() < deadline:
+                    try:
+                        current = json.loads(read_shared(receipt_path))
+                        if current['phase'] == 'running' and current['heartbeat_samples']:
+                            samples[current['heartbeat_samples']] = current
+                    except (PermissionError, FileNotFoundError):
+                        pass
+                    time.sleep(.02)
+                process.communicate(timeout=5)
+            finally:
+                if process.poll() is None:
+                    process.kill(); process.communicate(timeout=5)
+            value = read()
+            check(process.returncode == 0 and value['phase'] == 'exited' and len(samples) >= 2,
+                  'heartbeat continues after first visible window and still preserves normal exit')
+            ordered = [samples[key] for key in sorted(samples)]
+            check(all(b['heartbeat_elapsed_ms'] - a['heartbeat_elapsed_ms'] >= 4900
+                      for a, b in zip(ordered, ordered[1:])),
+                  'ongoing window probes are separated by five seconds')
+            # CreateWindow/ShowWindow may handle an early cross-thread message
+            # before the fixture enters its deliberately unpumped loop. The
+            # subsequent heartbeat must identify that loop as unresponsive.
+            responses = ordered if visible == 1 else ordered[1:]
+            check(all(row['window_found'] and row['window_responsive'] is (visible == 1)
+                      and row['window_probe_error'] == (0 if visible == 1 else 1460) for row in responses),
+                  'distinguishes a pumping UI thread from a hung visible window with a bounded WM_NULL probe')
+            check(all(b['cpu_user_ms'] >= a['cpu_user_ms'] and b['cpu_kernel_ms'] >= a['cpu_kernel_ms']
+                      for a, b in zip(ordered, ordered[1:])) and value['cpu_error'] == 0,
+                  'child CPU times are monotonic across samples and collected at exit')
+            check(value['elapsed_ms'] < delay + 2000 and value['heartbeat_elapsed_ms'] <= value['elapsed_ms'],
+                  'hung UI message probe never blocks process exit tracking')
 
         clear()
         missing = viewer/'missing viewer'/'pol.exe'

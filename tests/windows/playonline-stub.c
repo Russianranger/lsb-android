@@ -28,10 +28,13 @@ int wmain(int argc,WCHAR **argv){
     DWORD code=0,visible=0,delay=0;
     FILE *fixture=_wfopen(L"playonline-fixture.txt",L"rb");
     if(fixture){code=number(fixture);visible=number(fixture);delay=number(fixture);if(fgetc(fixture)!=EOF)return 76;fclose(fixture);}
-    if(delay>30000||visible>1)return 76;
+    if(delay>30000||visible>2)return 76;
     const char output[]="PRIVATE-POL-STDOUT-SENTINEL\n",error[]="PRIVATE-POL-STDERR-SENTINEL\n";DWORD written=0;
     WriteFile(GetStdHandle(STD_OUTPUT_HANDLE),output,sizeof(output)-1,&written,NULL);
     WriteFile(GetStdHandle(STD_ERROR_HANDLE),error,sizeof(error)-1,&written,NULL);
+    /* Give native CPU accounting a deterministic nonzero workload before the
+     * window exists. Mode 2 then deliberately never pumps that UI thread. */
+    if(visible){DWORD began=GetTickCount();volatile DWORD work=0;while(GetTickCount()-began<100)work++;(void)work;}
     HWND window=NULL;
     if(visible){
         /* The title intentionally resembles private data. Neither runner nor
@@ -43,7 +46,7 @@ int wmain(int argc,WCHAR **argv){
     }
     DWORD began=GetTickCount();
     while(GetTickCount()-began<delay){
-        MSG message;while(PeekMessageW(&message,NULL,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}
+        if(visible!=2){MSG message;while(PeekMessageW(&message,NULL,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}}
         Sleep(10);
     }
     if(window)DestroyWindow(window);

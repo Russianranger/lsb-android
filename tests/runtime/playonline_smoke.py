@@ -255,13 +255,16 @@ def main():
             assert '{40555aae-53ad-4abc-ae65-8441755e7d69}' in missing_classes, 'Missing .37 unregistered-app regression evidence'
         else:
             components = report.get('component_registration', [])
+            batch = report.get('component_batch', {})
+            assert (batch.get('policy') == 'live_six_steps_one_process' and batch.get('exit_code') == 0 and
+                    batch.get('receipt_valid') is True), 'Production component batch did not finish successfully'
             assert [entry.get('component') for entry in components] == ['core', 'app', 'contents'], 'Incomplete production registration inventory'
             for entry, operations in zip(components, [('register', 'com'), ('register', 'class'), ('register', 'class')]):
                 steps = entry.get('steps', [])
                 assert tuple(step.get('operation') for step in steps) == operations, 'Missing production register/verify step'
                 for step, operation in zip(steps, operations):
                     result = step.get('result', {})
-                    assert (step.get('exit_code') == 0 and result.get('operation') == operation and
+                    assert (result.get('operation') == operation and
                             result.get('bits') == 32 and result.get('ok') is True and
                             result.get('hresult') == 0 and result.get('win32_error') == 0), 'Production component did not register and verify successfully'
             assert observed and 'screenshot' in metrics, 'Production viewer never provided reviewable display evidence'

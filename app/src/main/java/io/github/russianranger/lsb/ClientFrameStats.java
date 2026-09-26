@@ -9,6 +9,26 @@ final class ClientFrameStats {
     synchronized void payload(long bytes,boolean compressed){payloadBytes+=bytes;totalPayloadBytes+=bytes;if(compressed)zrleRects++;else rawRects++;}
     synchronized void compressedDecode(long ns){zrleNs+=ns;}
     private long generation,drawnGeneration,lastReceived;
+    static final long REFRESH_TIMEOUT_NS=15_000_000_000L;
+    private int refreshCount;
+    private long refreshStarted,refreshElapsed;
+    private String refreshResult="not_requested";
+    synchronized boolean refreshPending(long now){
+        if(refreshResult.equals("pending")&&now-refreshStarted>=REFRESH_TIMEOUT_NS)finishRefresh(now,"timed_out");
+        return refreshResult.equals("pending");
+    }
+    synchronized void requestedRefresh(long now){refreshCount=Math.min(10000,refreshCount+1);refreshStarted=now;refreshElapsed=0;refreshResult="pending";}
+    synchronized void finishRefresh(long now,String result){
+        if(refreshResult.equals("pending")){refreshElapsed=Math.min(REFRESH_TIMEOUT_NS,Math.max(0,now-refreshStarted));refreshResult=result;}
+    }
+    static final class Refresh {
+        final int count;final String result;final double elapsedMs;
+        Refresh(int count,String result,double elapsedMs){this.count=count;this.result=result;this.elapsedMs=elapsedMs;}
+    }
+    synchronized Refresh refresh(long now){
+        boolean pending=refreshPending(now);
+        return new Refresh(refreshCount,refreshResult,(pending?Math.max(0,now-refreshStarted):refreshElapsed)/1e6);
+    }
     ClientFrameStats(){this(System.nanoTime());}
     ClientFrameStats(long now){started=since=now;}
     synchronized void stages(long conversion,long apply){conversionNs+=conversion;applyNs+=apply;}
@@ -23,8 +43,8 @@ final class ClientFrameStats {
     }
     static final class Sample {
         final long connection;
-        final double[] values;
-        Sample(long connection,double[] values){this.connection=connection;this.values=values;}
+        final double[] values;final Refresh refresh;
+        Sample(long connection,double[] values,Refresh refresh){this.connection=connection;this.values=values;this.refresh=refresh;}
     }
     synchronized Sample sample(long now){
         double seconds=(now-since)/1e9;
@@ -38,6 +58,6 @@ final class ClientFrameStats {
             totalUpdates,totalDraws,totalPixels,payloadBytes,zrleRects,rawRects,totalPayloadBytes,zrleNs/1e6};
         since=now;updates=draws=receiveNs=decodeNs=drawNs=pixels=conversionNs=applyNs=0;
         maxGapNs=maxDecodeNs=maxDrawNs=gaps50=gaps100=0;payloadBytes=zrleRects=rawRects=zrleNs=0;
-        return new Sample(started,result);
+        return new Sample(started,result,refresh(now));
     }
 }

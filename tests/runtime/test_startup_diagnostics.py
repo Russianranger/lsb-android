@@ -36,6 +36,15 @@ class StartupContracts(unittest.TestCase):
         self.assertIn({'source':'dxvk','event':'diagnostic','category':'d3d8','severity':'err'},report['records'])
         self.assertNotIn('private',json.dumps(report));self.assertNotIn('secret',json.dumps(report))
 
+    def test_viewer_components_export_fixed_module_names_only(self):
+        raw = b''.join(b'1.23:00fc:0100:trace:loaddll:build_module Loaded L"D:\\private_account\\' + name +
+                       b'" at 7BE70000: native\n' for name in
+                       (b'APP.DLL', b'PolContents.dll', b'polcontentsINT.dll', b'private_password.dll'))
+        _, report = self.parsed(raw)
+        self.assertEqual({row['module'] for row in report['records'] if row['event'] == 'module_loaded'},
+                         {'app.dll', 'PolContents.dll', 'polcontentsINT.dll'})
+        self.assertNotIn('private', json.dumps(report))
+
     def test_exact_wine_com_failures_keep_numeric_component_identity(self):
         clsid='{3501f5dd-7894-42df-866a-a2b6527d8049}'
         iid='{e0516654-ef77-435d-aa7d-50d2c069ce34}'

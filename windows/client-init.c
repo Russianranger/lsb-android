@@ -2,6 +2,9 @@
 #define UNICODE
 #endif
 #define _UNICODE
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600
+#endif
 #define COBJMACROS
 #include <windows.h>
 #include <objbase.h>
@@ -139,6 +142,66 @@ static HRESULT viewer_class(const WCHAR *kind,const WCHAR *expected){
     if(factory)IClassFactory_Release(factory);
     wcscpy(detail,L"PlayOnline class factory checked; no application object, game or login created");return hr;
 }
+/* Updater-only batch. Re-run all six operations on the live selected DLLs on
+ * every launch, but initialize Wine/COM once. No cached registration authorizes
+ * a viewer after its self-updater replaces modules. */
+static struct component_step {
+    const char *component,*operation;
+    HRESULT hr;DWORD error;WCHAR path[2048];ULONGLONG elapsed;
+} component_steps[6];
+static unsigned component_count;
+static int component_report(HRESULT hr){
+    FILE *f=_wfopen(receipt_new,L"wb");if(!f)return 91;
+    fprintf(f,"{\"format\":1,\"bits\":32,\"operation\":\"update-components\",\"complete\":%s,\"ok\":%s,\"hresult\":%lu,\"win32_error\":%lu,\"steps\":[",
+        component_count==6?"true":"false",component_count==6&&SUCCEEDED(hr)?"true":"false",
+        (unsigned long)hr,(unsigned long)error_code);
+    for(unsigned i=0;i<component_count;i++){
+        struct component_step *s=&component_steps[i];if(i)fputc(',',f);
+        fprintf(f,"{\"component\":\"%s\",\"operation\":\"%s\",\"ok\":%s,\"hresult\":%lu,\"win32_error\":%lu,\"elapsed_ms\":%llu,\"loaded_path\":",
+            s->component,s->operation,SUCCEEDED(s->hr)?"true":"false",(unsigned long)s->hr,(unsigned long)s->error,(unsigned long long)s->elapsed);
+        quoted(f,s->path);fputc('}',f);
+    }
+    fputs("]}\n",f);BOOL written=!ferror(f);if(fclose(f))written=FALSE;if(!written)return 91;
+    if(!MoveFileExW(receipt_new,receipt_final,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))return 92;
+    return SUCCEEDED(hr)?0:1;
+}
+static BOOL component_paths(const WCHAR *area,WCHAR **paths){
+    int lang=region(area);if(lang<0)return FALSE;
+    for(unsigned i=0;i<3;i++){
+        if(!client_path(paths[i]))return FALSE;
+        const WCHAR *segment=paths[i]+3;
+        for(const WCHAR *p=segment;;p++){
+            if(*p&&(*p<32||wcschr(L"<>|?*",*p)))return FALSE;
+            if(!*p||*p==L'\\'){
+                if(p==segment||p[-1]==L' '||p[-1]==L'.')return FALSE;
+                if(!*p)break;segment=p+1;
+            }
+        }
+    }
+    const WCHAR *base=wcsrchr(paths[0],L'\\');if(!base||_wcsicmp(base+1,lang==2?L"polcoreeu.dll":L"polcore.dll"))return FALSE;
+    WCHAR expected[2048];wcscpy(expected,paths[0]);WCHAR *tail=wcsrchr(expected,L'\\');
+    wcscpy(tail+1,L"app.dll");if(_wcsicmp(expected,paths[1]))return FALSE;
+    *tail=0;tail=wcsrchr(expected,L'\\');if(!tail||_wcsicmp(tail+1,L"com"))return FALSE;
+    wcscpy(tail+1,lang==0?L"contents\\PolContents.dll":L"contents\\polcontentsINT.dll");
+    return !_wcsicmp(expected,paths[2]);
+}
+static int update_components(const WCHAR *area,WCHAR **paths){
+    if(!component_paths(area,paths))return component_report(E_INVALIDARG);
+    static const char *names[]={"core","app","contents"};
+    for(unsigned i=0;i<3;i++)for(unsigned pass=0;pass<2;pass++){
+        error_code=0;child_exit=0;detail[0]=0;loaded[0]=0;
+        struct component_step *s=&component_steps[component_count];
+        s->component=names[i];s->operation=!pass?"register":i?"class":"com";
+        ULONGLONG started=GetTickCount64();
+        s->hr=!pass?register_file(paths[i]):!i?com(area,L"pol",paths[i]):
+            viewer_class(i==1?L"pol-app":!wcscmp(area,L"JP")?L"pol-contents":L"pol-contents-int",paths[i]);
+        s->elapsed=GetTickCount64()-started;s->error=error_code;wcscpy(s->path,loaded);component_count++;
+        /* Each finished operation is durable even if a later DLL hangs or
+         * crashes; the supervisor still requires the complete successful list. */
+        int result=component_report(s->hr);if(result||FAILED(s->hr))return result;
+    }
+    return 0;
+}
 static HRESULT installer(void){
     WCHAR command[]=L"\"Z:\\session\\prerequisite.exe\"";
     STARTUPINFOW si={0};PROCESS_INFORMATION pi={0};si.cb=sizeof(si);
@@ -157,7 +220,10 @@ int wmain(int argc,WCHAR **argv){
     wcscpy(receipt_final,receipt_new);wcscat(receipt_new,L"\\client-step.new");wcscat(receipt_final,L"\\client-step.json");
 #endif
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|SEM_NOOPENFILEERRORBOX);
-    HRESULT init=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);if(FAILED(init))return report(L"com-apartment",init);
+    BOOL components=argc>1&&!wcscmp(argv[1],L"update-components");
+    HRESULT init=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
+    if(FAILED(init))return components?component_report(init):report(L"com-apartment",init);
+    if(components){int result=argc==6?update_components(argv[2],argv+3):component_report(E_INVALIDARG);CoUninitialize();return result;}
     HRESULT hr=E_INVALIDARG;const WCHAR *op=argc>1?argv[1]:L"arguments";
     if(argc==5&&!wcscmp(op,L"registry"))hr=registry(argv[2],argv[3],argv[4]);
     else if(argc==5&&!wcscmp(op,L"update-registry")){

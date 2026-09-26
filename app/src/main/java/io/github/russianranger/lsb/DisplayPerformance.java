@@ -41,6 +41,8 @@ final class DisplayPerformance {
                 .put("connection_updates",s[18]).put("connection_unique_draws",s[19]).put("connection_pixels",s[20])
                 .put("width",width).put("height",height).put("fast_display",fast).put("display_cap",cap)
                 .put("staging_bitmap_allocations",allocations).put("staging_allocated_bytes",allocatedBytes);
+            if(sample.refresh.count>0)data.put("manual_refresh",new JSONObject()
+                .put("request_count",sample.refresh.count).put("result",sample.refresh.result).put("elapsed_ms",sample.refresh.elapsedMs));
             if(history.size()==LIMIT)history.removeFirst();history.addLast(data);windows++;
             JSONObject report=new JSONObject().put("format",2).put("session_id",session)
                 .put("measurement","Display transport and Android draw submission; not game FPS or GPU presentation. Idle scenes can have long update gaps.")

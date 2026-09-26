@@ -105,3 +105,91 @@ def test_playonline_classes(source, check):
             code, value = invoke('class', *arguments)
             check(code == 1 and not value['ok'] and value['hresult'] == 0x80070057,
                   'unknown class, mismatched DLL or noncanonical path rejected')
+
+    test_playonline_components(source, check)
+
+
+def test_playonline_components(source, check):
+    """Six real operations in one process, including failure short-circuit."""
+    core_classes = ('{07974581-0DF6-4EF0-BD05-604B3ADA9BE9}',
+                    '{3501F5DD-7894-42DF-866A-A2B6527D8049}',
+                    '{E5966FB3-C97B-42EB-84BF-37F95EE54A9F}')
+    classes = core_classes + tuple(row[2] for row in CLASSES)
+    view = winreg.KEY_WOW64_32KEY
+    cases = [('US', None), ('EU', None), ('JP', None)]
+    cases += [('US', index) for index in range(6)]
+    for region, failure in cases:
+        with tempfile.TemporaryDirectory(prefix='lsb-pol-batch-', dir='D:\\') as temporary:
+            root = Path(temporary)
+            base = root/'Viewer ñ with spaces'/'viewer'
+            (base/'com').mkdir(parents=True)
+            (base/'contents').mkdir()
+            paths = [base/'com'/('polcoreeu.dll' if region == 'EU' else 'polcore.dll'),
+                     base/'com'/'app.dll',
+                     base/'contents'/('PolContents.dll' if region == 'JP' else 'polcontentsINT.dll')]
+            for path in paths:
+                shutil.copyfile(source/'pol-class-stub.dll', path)
+            original = [path.read_bytes() for path in paths]
+            if failure is not None:
+                suffix = '.fail-factory' if failure % 2 else '.fail-register'
+                Path(str(paths[failure // 2]) + suffix).touch()
+            for clsid in classes:
+                for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                    try:
+                        with winreg.OpenKey(hive, 'Software\\Classes\\CLSID\\'+clsid, 0, winreg.KEY_READ | view):
+                            raise AssertionError('Batch fixture requires unused class registrations')
+                    except FileNotFoundError:
+                        pass
+            try:
+                receipt = root/'client-step.json'
+                result = subprocess.run([str(source/'client-init-test.exe'), 'update-components', region,
+                                         *(str(path) for path in paths)], cwd=root, capture_output=True, timeout=30)
+                value = json.loads(receipt.read_text(encoding='utf-8'))
+                count = 6 if failure is None else failure + 1
+                check(result.returncode == (0 if failure is None else 1), 'batch returns real component result')
+                check(value['format'] == 1 and value['bits'] == 32 and value['operation'] == 'update-components'
+                      and value['complete'] == (count == 6) and value['ok'] == (failure is None),
+                      'batch receipt describes completion without skipping a failed operation')
+                check(len(value['steps']) == count, 'batch stops exactly at the first failed operation')
+                for index, row in enumerate(value['steps']):
+                    expected = ('register', 'com', 'register', 'class', 'register', 'class')[index]
+                    check(row['component'] == ('core', 'app', 'contents')[index // 2]
+                          and row['operation'] == expected and row['ok'] == (index != failure)
+                          and isinstance(row['elapsed_ms'], int) and 0 <= row['elapsed_ms'] <= 30000,
+                          'batch records ordered operation, result and elapsed time')
+                    if row['ok']:
+                        check(row['loaded_path'] == str(paths[index // 2]) and row['hresult'] == 0,
+                              'batch verifies the exact staged module path')
+                check([path.read_bytes() for path in paths] == original, 'batch preserves all source DLL bytes')
+                if failure is None:
+                    check(Path(str(paths[0])+'.created').exists() and Path(str(paths[0])+'.object-released').exists(),
+                          'batched core verifies and releases the regional COM interface')
+                    check(all(Path(str(path)+'.factory').exists() and not Path(str(path)+'.created').exists()
+                              for path in paths[1:]), 'batched viewer factories never create viewer objects')
+                elif failure < 4:
+                    check(not Path(str(paths[failure // 2 + 1])+'.registered').exists(),
+                          'batch failure never registers a later component')
+            finally:
+                for clsid in classes:
+                    name = 'Software\\Classes\\CLSID\\'+clsid
+                    for key in (name+'\\InprocServer32', name):
+                        try:
+                            winreg.DeleteKeyEx(winreg.HKEY_LOCAL_MACHINE, key, view, 0)
+                        except FileNotFoundError:
+                            pass
+
+    with tempfile.TemporaryDirectory(prefix='lsb-pol-batch-path-', dir='D:\\') as temporary:
+        root = Path(temporary)
+        core = str(root/'viewer'/'com'/'polcore.dll')
+        app = str(root/'viewer'/'com'/'app.dll')
+        contents = str(root/'viewer'/'contents'/'polcontentsINT.dll')
+        for arguments in (('XX', core, app, contents), ('US', core, app),
+                          ('EU', core, app, contents), ('US', core, app, contents.replace('contents', 'patchfiles')),
+                          ('US', core, app.replace('com', 'other'), contents),
+                          ('US', core.replace('viewer', 'viewer.'), app, contents),
+                          ('US', core.replace('viewer', 'viewer\\..\\viewer'), app, contents)):
+            result = subprocess.run([str(source/'client-init-test.exe'), 'update-components', *arguments],
+                                    cwd=root, capture_output=True, timeout=30)
+            value = json.loads((root/'client-step.json').read_text(encoding='utf-8'))
+            check(result.returncode == 1 and not value['ok'] and not value['steps']
+                  and value['hresult'] == 0x80070057, 'invalid batch paths fail before any registration')

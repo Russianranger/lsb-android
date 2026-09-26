@@ -72,13 +72,33 @@ public final class RuntimeActivity extends Activity {
         Fullscreen.apply(this);if(status!=null){status.setVisibility(Fullscreen.enabled(this)?View.GONE:View.VISIBLE);updateStatus();}
     }
     private void showMenu(){
-        new AlertDialog.Builder(this).setTitle("FFXI").setItems(new String[]{"Back to launcher","Keyboard","Send Esc","Controller mapping",Fullscreen.enabled(this)?"Exit fullscreen":"Enter fullscreen","Client status","Stop client"},(d,which)->{
+        ArrayList<String> actions=new ArrayList<>(Arrays.asList("Back to launcher","Keyboard","Send Esc","Controller mapping",Fullscreen.enabled(this)?"Exit fullscreen":"Enter fullscreen","Client status","Stop client"));
+        if(updatingClient())actions.add("Refresh display");
+        new AlertDialog.Builder(this).setTitle("FFXI").setItems(actions.toArray(new String[0]),(d,which)->{
             switch(which){case 0:finish();break;case 1:keyboard();break;case 2:tapKey(0xff1b);break;
                 case 3:startActivity(new android.content.Intent(this,MainActivity.class).putExtra("tab","Controller"));break;
                 case 4:Fullscreen.set(this,!Fullscreen.enabled(this));applyFullscreen();break;
                 case 5:new AlertDialog.Builder(this).setTitle("Client status").setMessage(statusText()).setPositiveButton("Close",null).show();break;
-                case 6:startForegroundService(new android.content.Intent(this,RuntimeService.class).setAction("stop"));finish();break;}
+                case 6:startForegroundService(new android.content.Intent(this,RuntimeService.class).setAction("stop"));finish();break;
+                case 7:refreshDisplay();break;}
         }).show();
+    }
+    private boolean updatingClient(){
+        try{return "update-client".equals(new org.json.JSONObject(ClientRuntime.read(new File(ClientRuntime.get(this).run,"request.json"),16384)).optString("action"));}
+        catch(Exception e){return false;}
+    }
+    private void refreshDisplay(){
+        RfbConnection c=connection;DisplaySession display=displaySession;
+        if(!updatingClient()||c==null||display==null||nativeDisplay!=null){Toast.makeText(this,"The PlayOnline display is not connected yet.",Toast.LENGTH_SHORT).show();return;}
+        send(current->{
+            if(current!=c||connection!=c||!viewing||!updatingClient())return;
+            boolean sent=false;
+            try{sent=c.refreshDisplay();}
+            catch(IOException e){ui.post(()->Toast.makeText(this,"Display refresh failed. Export a support ZIP.",Toast.LENGTH_LONG).show());return;}
+            finally{recordFrames(display);}
+            final String message=sent?"Display refresh requested. If it stays blank, export a support ZIP.":"A display refresh is already pending.";
+            ui.post(()->Toast.makeText(this,message,Toast.LENGTH_LONG).show());
+        });
     }
     private void button(LinearLayout row,String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setOnClickListener(v->action.run());row.addView(b,new LinearLayout.LayoutParams(0,-2,1));}
     @Override protected void onResume(){super.onResume();applyFullscreen();viewing=true;connect();ui.post(refresh);ui.post(padTick);}

@@ -24,14 +24,21 @@
 static DWORD child_pid,window_error;
 static BOOL visible_window_seen;
 static ULONGLONG launched_at;
+static DWORD heartbeat_samples,cpu_error,window_probe_error;
+static ULONGLONG heartbeat_elapsed_ms,cpu_user_ms,cpu_kernel_ms;
+static BOOL window_found,window_responsive;
+static HWND observed_window;
 
 static BOOL receipt(const char *phase,DWORD error,DWORD code){
-    char data[512];
+    char data[1024];
     int length=snprintf(data,sizeof(data),
-        "{\"format\":1,\"bits\":32,\"phase\":\"%s\",\"win32_error\":%lu,\"child_exit\":%lu,\"child_pid\":%lu,\"visible_window_seen\":%s,\"window_error\":%lu,\"elapsed_ms\":%llu}\n",
+        "{\"format\":2,\"bits\":32,\"phase\":\"%s\",\"win32_error\":%lu,\"child_exit\":%lu,\"child_pid\":%lu,\"visible_window_seen\":%s,\"window_error\":%lu,\"elapsed_ms\":%llu,\"heartbeat_samples\":%lu,\"heartbeat_elapsed_ms\":%llu,\"cpu_user_ms\":%llu,\"cpu_kernel_ms\":%llu,\"cpu_error\":%lu,\"window_found\":%s,\"window_responsive\":%s,\"window_probe_error\":%lu}\n",
         phase,(unsigned long)error,(unsigned long)code,(unsigned long)child_pid,
         visible_window_seen?"true":"false",(unsigned long)window_error,
-        launched_at?(unsigned long long)(GetTickCount64()-launched_at):0ULL);
+        launched_at?(unsigned long long)(GetTickCount64()-launched_at):0ULL,
+        (unsigned long)heartbeat_samples,(unsigned long long)heartbeat_elapsed_ms,
+        (unsigned long long)cpu_user_ms,(unsigned long long)cpu_kernel_ms,(unsigned long)cpu_error,
+        window_found?"true":"false",window_responsive?"true":"false",(unsigned long)window_probe_error);
     if(length<=0||(size_t)length>=sizeof(data))return FALSE;
     HANDLE file=CreateFileW(RECEIPT_NEW,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
     if(file==INVALID_HANDLE_VALUE)return FALSE;
@@ -67,14 +74,46 @@ static BOOL executable_path(const WCHAR *path,WCHAR *directory){
 
 static BOOL CALLBACK observe_window(HWND window,LPARAM unused){
     (void)unused;DWORD pid=0;GetWindowThreadProcessId(window,&pid);
-    if(pid==child_pid&&IsWindowVisible(window))visible_window_seen=TRUE;
+    if(!observed_window&&pid==child_pid&&IsWindowVisible(window))observed_window=window;
     return TRUE;
 }
-static void observe(void){
-    SetLastError(0);
+static void observe_visibility(void){
+    observed_window=NULL;window_error=0;SetLastError(0);
     if(!EnumWindows(observe_window,0)){
         DWORD error=GetLastError();window_error=error?error:ERROR_GEN_FAILURE;
     }
+    if(observed_window)visible_window_seen=TRUE;
+}
+static void observe_cpu(HANDLE process){
+    FILETIME created,exited,kernel,user;
+    cpu_error=0;cpu_user_ms=cpu_kernel_ms=0;
+    if(GetProcessTimes(process,&created,&exited,&kernel,&user)){
+        cpu_user_ms=(((ULONGLONG)user.dwHighDateTime<<32)|user.dwLowDateTime)/10000;
+        cpu_kernel_ms=(((ULONGLONG)kernel.dwHighDateTime<<32)|kernel.dwLowDateTime)/10000;
+    }else{cpu_error=GetLastError();if(!cpu_error)cpu_error=ERROR_GEN_FAILURE;}
+}
+static void observe(HANDLE process){
+    window_found=window_responsive=FALSE;window_probe_error=0;
+    observe_cpu(process);
+    observe_visibility();
+    if(observed_window){
+        DWORD pid=0;GetWindowThreadProcessId(observed_window,&pid);
+        if(pid==child_pid&&IsWindowVisible(observed_window)){
+            visible_window_seen=window_found=TRUE;
+            DWORD_PTR result=0;SetLastError(0);
+            /* WM_NULL asks only whether this thread pumps messages. Probe one
+             * own-PID window at most; never read its title, text or inputs.
+             * Do not use SMTO_NOTIMEOUTIFNOTHUNG, which can exceed this bound. */
+            window_responsive=SendMessageTimeoutW(observed_window,WM_NULL,0,0,
+                SMTO_ABORTIFHUNG|SMTO_BLOCK,200,&result)!=0;
+            if(!window_responsive){
+                window_probe_error=GetLastError();
+                if(!window_probe_error)window_probe_error=ERROR_TIMEOUT;
+            }
+        }
+    }
+    if(heartbeat_samples<MAXDWORD)heartbeat_samples++;
+    heartbeat_elapsed_ms=GetTickCount64()-launched_at;
 }
 
 static BOOL duplicate_output(DWORD kind,HANDLE *result){
@@ -119,16 +158,21 @@ int wmain(int argc,WCHAR **argv){
     if(!started)return receipt("create_failed",error,0)?1:90;
     CloseHandle(process.hThread);child_pid=process.dwProcessId;launched_at=GetTickCount64();
     if(!receipt("running",0,0)){TerminateProcess(process.hProcess,90);CloseHandle(process.hProcess);return 90;}
-    DWORD waited,code=0;ULONGLONG recorded_at=launched_at;
-    while((waited=WaitForSingleObject(process.hProcess,visible_window_seen?INFINITE:100))==WAIT_TIMEOUT){
-        observe();
-        if(visible_window_seen||GetTickCount64()-recorded_at>=1000){
+    DWORD waited,code=0;ULONGLONG recorded_at=launched_at,sampled_at=launched_at;
+    while((waited=WaitForSingleObject(process.hProcess,visible_window_seen?5000:100))==WAIT_TIMEOUT){
+        /* Preserve the startup-only visibility latency measurement, then stop
+         * frequent scanning. CPU/message probes run at most once per 5 seconds
+         * except the first visible-window observation. */
+        BOOL sample=visible_window_seen;
+        if(!sample){observe_visibility();sample=visible_window_seen||GetTickCount64()-sampled_at>=5000;}
+        if(sample){observe(process.hProcess);sampled_at=GetTickCount64();}
+        if(sample||GetTickCount64()-recorded_at>=1000){
             if(!receipt("running",0,0)){TerminateProcess(process.hProcess,90);CloseHandle(process.hProcess);return 90;}
             recorded_at=GetTickCount64();
         }
     }
     BOOL ok=waited==WAIT_OBJECT_0&&GetExitCodeProcess(process.hProcess,&code);
-    error=ok?0:GetLastError();CloseHandle(process.hProcess);
+    error=ok?0:GetLastError();observe_cpu(process.hProcess);CloseHandle(process.hProcess);
     if(!receipt(ok?"exited":"wait_failed",error,code))return 91;
     return ok&&code==0?0:1;
 }

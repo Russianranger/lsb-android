@@ -68,7 +68,8 @@ public final class ZrleTest {
             check(messages.readUnsignedByte()==2,"SetEncodings");messages.readByte();int count=messages.readUnsignedShort();
             check(count==(compressed?4:3),"Encoding count");check(messages.readInt()==(compressed?16:0),"Preferred encoding/fallback");
             messages.skipBytes((count-1)*4);check(messages.available()==0,"Input-only handshake must not request pixels");
-            sent.reset();c.key(0xff1b,true);check(sent.size()==8,"Input-only connection retains keyboard");
+            sent.reset();check(!c.refreshDisplay()&&sent.size()==0,"Input-only native display must not request a refresh");
+            c.key(0xff1b,true);check(sent.size()==8,"Input-only connection retains keyboard");
             sent.reset();c.startFrames();check(sent.size()==10&&sent.toByteArray()[0]==3&&sent.toByteArray()[1]==0,"Fallback requests a full framebuffer");c.close();
         }
         Deflater z=new Deflater(1);

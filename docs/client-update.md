@@ -1,7 +1,7 @@
 # Staged client updates and storage management
 
 The owner confirmed that 0.5.35 full-session restore works. Keep the regular app
-and LSB Restore Test installed separately. Version 0.5.40 updates each in place;
+and LSB Restore Test installed separately. Version 0.5.41 updates each in place;
 never uninstall the regular app to install an update.
 
 ## Manage copies stored in the app
@@ -21,7 +21,7 @@ arbitrary device folders.
 
 ## First PlayOnline update test
 
-1. Install both 0.5.40 APK updates and use **LSB Restore Test** for this test.
+1. Install both 0.5.41 APK updates and use **LSB Restore Test** for this test.
    Keep the original app's server stopped. Stop the test app's client/server too.
 2. Open **Client → Client update · PlayOnline → Prepare update and open
    PlayOnline**. Confirm creation of a separate full client and Windows copy.
@@ -159,3 +159,16 @@ from the phone was absent from the support ZIP. The phone test must confirm
 whether POL-1168 clears and the official repair completes. If the error remains,
 export a fresh support ZIP; its `viewer_version_config` report identifies whether
 the value was preserved, restored, unavailable or did not match a known format.
+
+## Retrying a blank panel after the viewer update
+
+Version 0.5.41 combines the six component checks into one process to reduce
+repeated startup work. The official viewer still needs to finish updating and
+restart before its main menu offers Check Files. Reuse the existing candidate
+with **Open or resume PlayOnline update**.
+
+If the center stays blank, tap **☰ → Refresh display** once and allow up to
+15 seconds. If controls remain absent, export a new support ZIP. It now records
+window responsiveness, bounded update-file metadata and the refresh result.
+The blank panel's cause is not yet confirmed; these checks distinguish the
+remaining possibilities. See [evidence and limits](playonline-panel-0541.md).

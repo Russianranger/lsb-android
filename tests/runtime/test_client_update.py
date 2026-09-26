@@ -74,18 +74,24 @@ class FakeSupervisor:
         if proc.name == 'update-registry.log':
             (self.session / 'client-step.json').write_text(json.dumps({'operation': 'update-registry',
                 'ok': self.registry_ok, 'bits': 32, 'viewer_version_config': self.version_config}))
-        if len(proc.args) > 2 and proc.args[1] == r'P:\client-init.exe' and proc.args[2] in ('register', 'com', 'class'):
-            operation = proc.args[2]
-            dll = proc.args[-1].split('\\')[-1].lower()
-            failed = self.component_failure == (dll, operation)
+        if proc.name == 'playonline-components.log':
+            rows = []
+            for component, path, operations in zip(('core', 'app', 'contents'), proc.args[4:],
+                                                    (('register', 'com'), ('register', 'class'), ('register', 'class'))):
+                for operation in operations:
+                    failed = self.component_failure == (path.split('\\')[-1].lower(), operation)
+                    row = {'component': component, 'operation': operation, 'ok': not failed,
+                           'hresult': 0x80040154 if failed else 0, 'win32_error': 0,
+                           'elapsed_ms': (len(rows) + 1) * 100, 'loaded_path': path}
+                    row.update(self.component_receipt_changes)
+                    rows.append(row)
+                    if failed: break
+                if failed: break
             proc.returncode = int(failed)
-            receipt = {'format': 1, 'bits': 32, 'operation': operation, 'ok': not failed,
-                       'hresult': 0x80040154 if failed else 0, 'win32_error': 0,
-                       'child_exit': 0, 'loaded_path': proc.args[-1],
-                       'detail': 'PRIVATE-COMPONENT-DETAIL account=retail-secret'}
-            receipt.update(self.component_receipt_changes)
+            data = {'format': 1, 'bits': 32, 'operation': 'update-components', 'complete': len(rows) == 6,
+                    'ok': not failed, 'hresult': rows[-1]['hresult'], 'win32_error': rows[-1]['win32_error'], 'steps': rows}
             if not self.missing_component_receipt:
-                (self.session / 'client-step.json').write_text(json.dumps(receipt))
+                (self.session / 'client-step.json').write_text(json.dumps(data))
         if proc.name.startswith('playonline-dependencies'):
             proc.returncode = 1 if self.dependency_error else 0
             data = {'format': 1, 'bits': 32, 'check_policy': 'load_only', 'ok': not self.dependency_error,
@@ -98,9 +104,11 @@ class FakeSupervisor:
             self.logs[-1].events.feed(self.viewer_output)
             if not self.missing_receipt:
                 (self.session / 'playonline-process.json').write_text(json.dumps({
-                    'format': 1, 'bits': 32, 'phase': 'exited', 'win32_error': 0,
+                    'format': 2, 'bits': 32, 'phase': 'exited', 'win32_error': 0,
                     'child_exit': self.child_exit, 'child_pid': 36, 'window_error': 0,
-                    'visible_window_seen': False, 'elapsed_ms': 15}))
+                    'visible_window_seen': False, 'elapsed_ms': 15, 'heartbeat_samples': 0,
+                    'heartbeat_elapsed_ms': 0, 'cpu_user_ms': 0, 'cpu_kernel_ms': 0, 'cpu_error': 0,
+                    'window_found': False, 'window_responsive': False, 'window_probe_error': 0}))
             if self.viewer_error: raise self.viewer_error
         if proc.name == 'playonline-wait.log' and self.cancel_wait:
             proc.returncode = None
@@ -110,11 +118,8 @@ class FakeSupervisor:
 
 
 class TimedSupervisor(FakeSupervisor):
-    DURATIONS = {'update-registry.log': 2, 'playonline-core-register.log': 3,
-                 'playonline-core-com.log': 4, 'playonline-app-register.log': 5,
-                 'playonline-app-class.log': 6, 'playonline-contents-register.log': 7,
-                 'playonline-contents-class.log': 8, 'playonline-dependencies.log': 9,
-                 'playonline.log': 20, 'playonline-wait.log': 30}
+    DURATIONS = {'update-registry.log': 2, 'playonline-components.log': 12,
+                 'playonline-dependencies.log': 9, 'playonline.log': 20, 'playonline-wait.log': 30}
 
     def __init__(self, session, clock, fail_wait=None, **kwargs):
         super().__init__(session, **kwargs)
@@ -145,7 +150,7 @@ class UpdateContracts(unittest.TestCase):
                 report = json.loads((logs / 'client-update.json').read_text())
                 self.assertEqual(report['viewer_version_config'], config)
                 self.assertEqual(s.calls[0][0], ['wine', r'P:\client-init.exe', 'update-registry', 'EU', r'D:\Viewer', r'D:\Game'])
-                self.assertEqual(len(s.waits), 10)  # No additional Wine startup.
+                self.assertEqual(len(s.waits), 5)  # Registry, one component batch, imports, viewer, prefix wait.
 
     def test_invalid_version_repair_metadata_never_authorizes_viewer_or_leaks_values(self):
         config = dict(state='restored_missing', candidate='zero', version='20260925_1',
@@ -200,27 +205,22 @@ class UpdateContracts(unittest.TestCase):
             report = json.loads((logs / 'client-update.json').read_text())
             self.assertEqual(report['initial_registry'], {'exit_code': 0, 'elapsed_ms': 2000})
             steps = [step for row in report['component_registration'] for step in row['steps']]
-            self.assertEqual([step['elapsed_ms'] for step in steps], [3000, 4000, 5000, 6000, 7000, 8000])
+            self.assertEqual([step['elapsed_ms'] for step in steps], [100, 200, 300, 400, 500, 600])
+            self.assertEqual(report['component_batch']['elapsed_ms'], 12000)
             self.assertEqual(report['dependency_attempts'][0]['elapsed_ms'], 9000)
-            self.assertEqual(report['preparation_elapsed_ms'], 44000)
-            self.assertEqual(report['viewer_start_elapsed_ms'], 44000)
+            self.assertEqual(report['preparation_elapsed_ms'], 23000)
+            self.assertEqual(report['viewer_start_elapsed_ms'], 23000)
             self.assertEqual(report['viewer_elapsed_ms'], 20000)
             self.assertEqual(report['status'], 'verification_pending')
             messages = [state['message'] for state in s.states if state['phase'] == 'registering_playonline_components']
-            self.assertEqual(messages, [
-                'Preparing PlayOnline components (1/6): registering core',
-                'Preparing PlayOnline components (2/6): checking core',
-                'Preparing PlayOnline components (3/6): registering application',
-                'Preparing PlayOnline components (4/6): checking application',
-                'Preparing PlayOnline components (5/6): registering contents',
-                'Preparing PlayOnline components (6/6): checking contents'])
+            self.assertEqual(messages, ['Preparing and checking PlayOnline components'])
 
     def test_failed_preparation_keeps_elapsed_duration_without_claiming_viewer_started(self):
         cases = [({'registry_ok': False}, 2000, 'registry'),
-                 ({'component_failure': ('app.dll', 'class')}, 20000, 'component'),
-                 ({'fail_wait': 'playonline-app-class.log'}, 20000, 'component'),
-                 ({'missing_component_receipt': True}, 5000, 'component'),
-                 ({'dependency_error': 126}, 44000, 'dependency')]
+                 ({'component_failure': ('app.dll', 'class')}, 14000, 'component'),
+                 ({'fail_wait': 'playonline-components.log'}, 14000, 'component'),
+                 ({'missing_component_receipt': True}, 14000, 'component'),
+                 ({'dependency_error': 126}, 23000, 'dependency')]
         for options, expected_total, phase in cases:
             with self.subTest(options=options), tempfile.TemporaryDirectory() as tmp:
                 client, session, logs, manifest = self.fixture(Path(tmp))
@@ -238,7 +238,11 @@ class UpdateContracts(unittest.TestCase):
                 self.assertEqual(report['status'], 'interrupted')
                 if phase == 'component':
                     steps = [step for row in report['component_registration'] for step in row['steps']]
-                    self.assertEqual(steps[-1]['elapsed_ms'], 3000 if options.get('missing_component_receipt') else 6000)
+                    self.assertEqual(report['component_batch']['elapsed_ms'], 12000)
+                    if options.get('component_failure'):
+                        self.assertEqual(steps[-1]['elapsed_ms'], 400)
+                    else:
+                        self.assertEqual(steps, [])
                 elif phase == 'dependency':
                     self.assertEqual(report['dependency_attempts'][0]['elapsed_ms'], 9000)
 
@@ -249,7 +253,7 @@ class UpdateContracts(unittest.TestCase):
                 s = FakeSupervisor(session); client_update.run(s)
                 self.assertEqual(s.waits[0], 'update-registry.log')
                 self.assertEqual(s.waits[-3:], ['playonline-dependencies.log', 'playonline.log', 'playonline-wait.log'])
-                self.assertEqual(len(s.waits), 10)
+                self.assertEqual(len(s.waits), 5)
                 viewer = next(call for call in s.calls if call[1] == 'playonline.log')
                 self.assertEqual(viewer[0], ['wine', r'P:\playonline-run.exe', r'D:\Viewer\POL.EXE'])
                 self.assertEqual(viewer[2]['cwd'], client / 'Viewer')
@@ -279,17 +283,14 @@ class UpdateContracts(unittest.TestCase):
             self.assertEqual(row['sha256'], hashlib.sha256(pe()).hexdigest())
             self.assertEqual([step['operation'] for step in row['steps']], operations)
             for step in row['steps']:
-                self.assertEqual(step['exit_code'], 0)
                 self.assertEqual(step['result'], {'format': 1, 'bits': 32, 'operation': step['operation'],
                                                   'ok': True, 'hresult': 0, 'win32_error': 0})
-                self.assertEqual(step['startup_diagnostics']['policy'], 'fixed_metadata_only')
+        self.assertEqual(report['component_batch']['startup_diagnostics']['policy'], 'fixed_metadata_only')
         component_calls = [call for call in supervisor.calls if call[0][1] == r'P:\client-init.exe' and
-                           call[0][2] in ('register', 'com', 'class')]
-        self.assertEqual(len(component_calls), 6)
-        self.assertEqual([call[0][2] for call in component_calls], ['register', 'com', 'register', 'class', 'register', 'class'])
-        self.assertEqual(component_calls[1][0][3:5], [manifest['region'], 'pol'])
-        self.assertEqual(component_calls[3][0][3], 'pol-app')
-        self.assertEqual(component_calls[5][0][3], 'pol-contents' if manifest['region'] == 'JP' else 'pol-contents-int')
+                           call[0][2] == 'update-components']
+        self.assertEqual(len(component_calls), 1)
+        self.assertEqual(component_calls[0][0][3], manifest['region'])
+        self.assertEqual(len(component_calls[0][0]), 7)
         self.assertTrue(all(call[3] and call[2]['env']['DXVK_LOG_PATH'] == 'none' for call in component_calls))
         encoded = json.dumps(registration)
         for private in ('loaded_path', 'PRIVATE-COMPONENT-DETAIL', 'retail-secret', 'D:\\Viewer'):
@@ -366,14 +367,14 @@ class UpdateContracts(unittest.TestCase):
                     self.assertNotIn('playonline-dependencies.log', s.waits)
                     self.assertNotIn('playonline.log', s.waits)
                     report = json.loads((logs / 'client-update.json').read_text())
-                    failed = next(step for row in report['component_registration'] for step in row['steps'] if step['exit_code'] == 1)
+                    failed = next(step for row in report['component_registration'] for step in row['steps'] if not step['result']['ok'])
                     self.assertEqual(failed['operation'], failure[1])
                     self.assertFalse(failed['result']['ok'])
                     self.assertEqual(failed['result']['hresult'], 0x80040154)
                     self.assertNotIn('PRIVATE-COMPONENT-DETAIL', json.dumps(report))
 
     def test_component_receipts_must_be_current_32_bit_success_for_exact_staged_dll(self):
-        malformed = ({'format': 2}, {'bits': 64}, {'operation': 'registry'}, {'ok': False},
+        malformed = ({'extra_private': 'retail-secret'}, {'component': 'wrong'}, {'operation': 'registry'}, {'ok': False},
                      {'hresult': 0x80040154}, {'hresult': -1}, {'hresult': 0x100000000},
                      {'hresult': True}, {'win32_error': 5}, {'win32_error': False},
                      {'loaded_path': r'D:\active\app.dll'}, {'loaded_path': ''})
@@ -451,15 +452,32 @@ class UpdateContracts(unittest.TestCase):
     def test_windows_receipt_rejects_unbounded_or_arbitrary_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             session = Path(tmp)
-            good = {'format': 1, 'bits': 32, 'phase': 'exited', 'win32_error': 0,
+            good = {'format': 2, 'bits': 32, 'phase': 'exited', 'win32_error': 0,
                     'child_exit': 0xc0000135, 'child_pid': 36, 'window_error': 0,
-                    'visible_window_seen': False, 'elapsed_ms': 15}
+                    'visible_window_seen': False, 'elapsed_ms': 15, 'heartbeat_samples': 0,
+                    'heartbeat_elapsed_ms': 0, 'cpu_user_ms': 0, 'cpu_kernel_ms': 0, 'cpu_error': 0,
+                    'window_found': False, 'window_responsive': False, 'window_probe_error': 0}
             with patch.object(client_update, 'SESSION', session):
                 path = session / 'playonline-process.json'
                 path.write_text(json.dumps(good)); self.assertEqual(client_update.process_receipt(), good)
                 for change in ({'child_exit': -1}, {'child_exit': 0x100000000}, {'child_exit': True},
-                               {'visible_window_seen': 'true'}, {'phase': 'secret'}, {'account': 'secret'}):
+                               {'visible_window_seen': 'true'}, {'phase': 'secret'}, {'account': 'secret'},
+                               {'format': 1}, {'format': 2.0}, {'bits': 32.0},
+                               {'heartbeat_samples': True}, {'heartbeat_samples': 0x100000000},
+                               {'heartbeat_elapsed_ms': 16}, {'heartbeat_elapsed_ms': 1},
+                               {'cpu_user_ms': -1}, {'cpu_kernel_ms': 0x10000000000000000},
+                               {'cpu_error': True}, {'window_found': 'true'}, {'window_responsive': True},
+                               {'window_probe_error': 1460}, {'cpu_error': 5, 'cpu_user_ms': 1}):
                     path.write_text(json.dumps(dict(good, **change)))
+                    self.assertIsNone(client_update.process_receipt(), str(change))
+                responsive = dict(good, elapsed_ms=15000, heartbeat_samples=2, heartbeat_elapsed_ms=10005,
+                                  visible_window_seen=True, window_found=True, window_responsive=True,
+                                  cpu_user_ms=0x100000000, cpu_kernel_ms=30)
+                for sample in (responsive, dict(responsive, window_responsive=False, window_probe_error=1460),
+                               dict(responsive, window_found=False, window_responsive=False)):
+                    path.write_text(json.dumps(sample)); self.assertEqual(client_update.process_receipt(), sample)
+                for change in ({'window_probe_error': 1460}, {'visible_window_seen': False}, {'window_responsive': False}):
+                    path.write_text(json.dumps(dict(responsive, **change)))
                     self.assertIsNone(client_update.process_receipt(), str(change))
                 path.write_text(' ' * 4097); self.assertIsNone(client_update.process_receipt())
                 path.unlink(); self.assertIsNone(client_update.process_receipt())
@@ -521,6 +539,52 @@ class UpdateContracts(unittest.TestCase):
             self.assertEqual(supervisor.validate_request(dict(req, action=action))['action'], action)
             for change in ({'password': 'secret'}, {'command': 'pol.exe'}, {'display_profile': 'preserve'}):
                 with self.assertRaises(ValueError): supervisor.validate_request(dict(req, action=action, **change))
+
+
+    def test_batch_receipt_rejects_truncation_reordering_and_inconsistent_success(self):
+        expected = [({'component': name}, operation, 'D:\\Viewer\\' + name + '.dll')
+                    for name, operations in [('core', ('register', 'com')), ('app', ('register', 'class')),
+                                             ('contents', ('register', 'class'))] for operation in operations]
+        rows = [{'component': entry['component'], 'operation': operation, 'ok': True, 'hresult': 0,
+                 'win32_error': 0, 'elapsed_ms': 12, 'loaded_path': path} for entry, operation, path in expected]
+        good = {'format': 1, 'bits': 32, 'operation': 'update-components', 'complete': True,
+                'ok': True, 'hresult': 0, 'win32_error': 0, 'steps': rows}
+        self.assertEqual(client_update.component_receipt(good, expected), good)
+        for change in ({'format': True}, {'bits': 64}, {'complete': False}, {'ok': False},
+                       {'hresult': True}, {'win32_error': -1}, {'operation': 'register'},
+                       {'steps': rows[:5]}, {'steps': list(reversed(rows))}, {'steps': rows + rows[:1]},
+                       {'steps': []}, {'private': 'retail-secret'}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                client_update.component_receipt(dict(good, **change), expected)
+        for change in ({'elapsed_ms': True}, {'elapsed_ms': 180001}, {'elapsed_ms': -1},
+                       {'hresult': True}, {'win32_error': 3}, {'ok': 1}, {'component': 'secret'},
+                       {'loaded_path': 'D:\\active\\core.dll'}, {'private': 'retail-secret'}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                client_update.component_receipt(dict(good, steps=[dict(rows[0], **change), *rows[1:]]), expected)
+
+    def test_batch_cancellation_retains_completed_steps_without_authorizing_viewer(self):
+        class InterruptedBatch(FakeSupervisor):
+            def wait(self, process, *args, **kwargs):
+                super().wait(process, *args, **kwargs)
+                if process.name == 'playonline-components.log':
+                    path = self.session / 'client-step.json'
+                    partial = json.loads(path.read_text())
+                    partial.update(complete=False, ok=False, steps=partial['steps'][:3])
+                    path.write_text(json.dumps(partial))
+                    process.returncode = None
+                    raise supervisor.Stopped()
+        with tempfile.TemporaryDirectory() as tmp:
+            client, session, logs, manifest = self.fixture(Path(tmp))
+            with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), patch.object(client_update, 'LOGS', logs):
+                instance = InterruptedBatch(session)
+                with self.assertRaises(supervisor.Stopped): client_update.run(instance)
+            report = json.loads((logs / 'client-update.json').read_text())
+            self.assertEqual(report['status'], 'interrupted')
+            self.assertTrue(report['component_batch']['receipt_valid'])
+            self.assertIsNone(report['component_batch']['exit_code'])
+            self.assertEqual(sum(len(entry['steps']) for entry in report['component_registration']), 3)
+            self.assertNotIn('playonline-dependencies.log', instance.waits)
+            self.assertNotIn('playonline.log', instance.waits)
 
 
 if __name__ == '__main__': unittest.main()

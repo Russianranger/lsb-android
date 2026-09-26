@@ -237,7 +237,7 @@ def main(variant):
     diagnostics.finish()
     report = read_json(LOGS / 'client-update.json')
     components = [{'component': entry.get('component'), 'steps': [
-        {key: step.get(key) for key in ('operation', 'exit_code', 'elapsed_ms')}
+        {key: step.get(key) for key in ('operation', 'result', 'elapsed_ms')}
         for step in entry.get('steps', [])]} for entry in report.get('component_registration', [])]
     result = {'format': 1, 'network': 'enabled', 'source': 'fresh_public_installer', 'variant': variant,
               'official_viewer_sha256': POL_SHA, 'session_id': request['session_id'],
@@ -250,7 +250,8 @@ def main(variant):
               'network_trace': diagnostics.snapshot(), 'trace_capture': read_json(LOGS / 'public-trace-size.json'),
               'network_preflight': read_json(LOGS / 'network-check.json'),
               'interface_comparison': read_json(LOGS / 'fixture-interface.json'),
-              'component_preparation': components, 'files_before': before, 'files_after': file_metadata(),
+              'component_preparation': components, 'component_batch': report.get('component_batch'),
+              'files_before': before, 'files_after': file_metadata(),
               'preparation_elapsed_ms': report.get('preparation_elapsed_ms'),
               'viewer_elapsed_ms': report.get('viewer_elapsed_ms'),
               'elapsed_ms': int((time.monotonic() - started) * 1000)}

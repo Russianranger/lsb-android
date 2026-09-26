@@ -7,6 +7,7 @@ import time
 
 from client_setup import client_path, imports, windows_path
 from client_launch import retry_network_initialization, valid_check_rows
+from viewer_inventory import snapshot as viewer_snapshot
 
 SESSION = Path('/session')
 LOGS = Path('/logs')
@@ -63,13 +64,27 @@ def process_receipt():
     except (OSError, ValueError):
         return None
     fields = {'format', 'bits', 'phase', 'win32_error', 'child_exit', 'child_pid',
-              'window_error', 'visible_window_seen', 'elapsed_ms'}
-    if (not isinstance(value, dict) or set(value) != fields or value['format'] != 1 or value['bits'] != 32 or
+              'window_error', 'visible_window_seen', 'elapsed_ms', 'heartbeat_samples',
+              'heartbeat_elapsed_ms', 'cpu_user_ms', 'cpu_kernel_ms', 'cpu_error',
+              'window_found', 'window_responsive', 'window_probe_error'}
+    if (not isinstance(value, dict) or set(value) != fields or
+            type(value['format']) is not int or value['format'] != 2 or
+            type(value['bits']) is not int or value['bits'] != 32 or
             value['phase'] not in ('running', 'exited', 'create_failed', 'wait_failed') or
-            type(value['visible_window_seen']) is not bool or
+            any(type(value[key]) is not bool for key in ('visible_window_seen', 'window_found', 'window_responsive')) or
             any(type(value[key]) is not int or not 0 <= value[key] <= 0xffffffff
-                for key in ('win32_error', 'child_exit', 'child_pid', 'window_error')) or
-            type(value['elapsed_ms']) is not int or not 0 <= value['elapsed_ms'] <= 0xffffffffffffffff):
+                for key in ('win32_error', 'child_exit', 'child_pid', 'window_error', 'heartbeat_samples',
+                            'cpu_error', 'window_probe_error')) or
+            any(type(value[key]) is not int or not 0 <= value[key] <= 0xffffffffffffffff
+                for key in ('elapsed_ms', 'heartbeat_elapsed_ms', 'cpu_user_ms', 'cpu_kernel_ms'))):
+        return None
+    if (value['heartbeat_elapsed_ms'] > value['elapsed_ms'] or
+            (not value['heartbeat_samples'] and (value['heartbeat_elapsed_ms'] or value['window_found'])) or
+            (value['window_found'] and not value['visible_window_seen']) or
+            (value['window_responsive'] and (not value['window_found'] or value['window_probe_error'])) or
+            (value['window_found'] and not value['window_responsive'] and not value['window_probe_error']) or
+            (not value['window_found'] and value['window_probe_error']) or
+            (value['cpu_error'] and (value['cpu_user_ms'] or value['cpu_kernel_ms']))):
         return None
     return value
 
@@ -163,58 +178,87 @@ def prepare_playonline_components(supervisor, manifest, environment, report, rec
         report['component_registration'].append(entry)
         components.append((path, class_name, entry))
     record()
-    step_number = 0
+    expected = []
     for path, class_name, entry in components:
         windows = windows_path(path.relative_to(client_path('.')).as_posix())
-        verify = ('class', [class_name, windows]) if class_name else ('com', [manifest['region'], 'pol', windows])
-        for operation, arguments in [('register', [windows]), verify]:
-            supervisor.stopped()
-            step_number += 1
-            label = {'core': 'core', 'app': 'application', 'contents': 'contents'}[entry['component']]
-            action = 'registering' if operation == 'register' else 'checking'
-            supervisor.status('registering_playonline_components',
-                              message='Preparing PlayOnline components (%d/6): %s %s' %
-                                      (step_number, action, label))
-            receipt_path = SESSION / 'client-step.json'
-            receipt_path.unlink(missing_ok=True)
-            step = {'operation': operation, 'exit_code': None}
-            entry['steps'].append(step)
-            started = time.monotonic()
-            process = writer = None
-            try:
-                process = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', operation, *arguments),
-                    'playonline-' + entry['component'] + '-' + operation + '.log', env=environment)
-                writer = supervisor.logs[-1]
-                supervisor.wait(process, 90, 'PlayOnline ' + entry['component'] + ' ' + operation, accepted=(0, 1))
-            finally:
-                try:
-                    receipt = json.loads(receipt_path.read_text()) if receipt_path.stat().st_size <= 32 * 1024 else {}
-                except (OSError, ValueError):
-                    receipt = {}
-                if not isinstance(receipt, dict):
-                    receipt = {}
-                # Do not copy the helper's free-form strings into private POL logs.
-                safe = {key: receipt[key] for key in ('format', 'bits', 'hresult', 'win32_error')
-                        if type(receipt.get(key)) is int and 0 <= receipt[key] <= 0xffffffff}
-                if receipt.get('operation') in ('register', 'com', 'class'):
-                    safe['operation'] = receipt['operation']
-                if type(receipt.get('ok')) is bool:
-                    safe['ok'] = receipt['ok']
-                step.update(exit_code=process.poll() if process is not None else None, result=safe)
-                if writer is not None:
-                    step['startup_diagnostics'] = diagnostics(writer, drain=True)
-                step['elapsed_ms'] = elapsed_ms(started)
-                record()
-            valid = (safe.get('format') == 1 and safe.get('bits') == 32 and
-                     safe.get('operation') == operation and safe.get('ok') is True and
-                     type(safe.get('hresult')) is int and safe['hresult'] < 0x80000000 and
-                     safe.get('win32_error') == 0 and isinstance(receipt.get('loaded_path'), str) and
-                     receipt['loaded_path'].casefold() == windows.casefold())
-            if process.returncode != 0 or not valid:
-                code = safe.get('hresult')
-                detail = (' (HRESULT 0x%08X)' % code) if code is not None else ' (invalid component receipt)'
-                raise RuntimeError('PlayOnline ' + entry['dll'] + ' ' + operation + ' failed' + detail +
-                                   '. The staged copy is retained; export Diagnostics')
+        for operation in ('register', 'class' if class_name else 'com'):
+            expected.append((entry, operation, windows))
+    # Keep the guarded version/paths worker and load-only dependency worker
+    # separate. Six live COM operations now share one disposable Wine process;
+    # nothing is cached or skipped when PlayOnline replaces its own files.
+    supervisor.stopped()
+    supervisor.status('registering_playonline_components', message='Preparing and checking PlayOnline components')
+    receipt_path = SESSION / 'client-step.json'
+    receipt_path.unlink(missing_ok=True)
+    process = writer = None
+    receipt = None
+    started = time.monotonic()
+    report['component_batch'] = {'policy': 'live_six_steps_one_process', 'exit_code': None}
+    try:
+        process = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', 'update-components',
+            manifest['region'], *(expected[index][2] for index in (0, 2, 4))),
+            'playonline-components.log', env=environment)
+        writer = supervisor.logs[-1]
+        # A batch remains cancellable through Supervisor.wait and has one
+        # bounded timeout, including initialization and all component checks.
+        supervisor.wait(process, 180, 'PlayOnline component preparation', accepted=(0, 1))
+    finally:
+        try:
+            data = json.loads(receipt_path.read_text()) if receipt_path.stat().st_size <= 32 * 1024 else {}
+            receipt = component_receipt(data, expected)
+        except (OSError, ValueError, TypeError):
+            receipt = None
+        if receipt is not None:
+            for row, (entry, operation, windows) in zip(receipt['steps'], expected):
+                entry['steps'].append({'operation': operation, 'elapsed_ms': row['elapsed_ms'],
+                    'result': {'format': 1, 'bits': 32, **{key: row[key] for key in
+                               ('operation', 'ok', 'hresult', 'win32_error')}}})
+        report['component_batch'].update(exit_code=process.poll() if process is not None else None,
+                                         receipt_valid=receipt is not None)
+        if writer is not None:
+            report['component_batch']['startup_diagnostics'] = diagnostics(writer, drain=True)
+        report['component_batch']['elapsed_ms'] = elapsed_ms(started)
+        record()
+    if receipt is None:
+        raise RuntimeError('PlayOnline component checker did not return a valid receipt; export Diagnostics')
+    failed = next((row for row in receipt['steps'] if not row['ok']), None)
+    if failed:
+        raise RuntimeError('PlayOnline ' + failed['component'] + ' ' + failed['operation'] +
+                           ' failed (HRESULT 0x%08X). The staged copy is retained; export Diagnostics' % failed['hresult'])
+    if process.returncode != 0 or receipt['ok'] is not True:
+        raise RuntimeError('PlayOnline component preparation did not complete; export Diagnostics')
+
+
+def component_receipt(data, expected):
+    """Validate a complete or interrupted batch before retaining fixed results."""
+    fields = {'format', 'bits', 'operation', 'complete', 'ok', 'hresult', 'win32_error', 'steps'}
+    row_fields = {'component', 'operation', 'ok', 'hresult', 'win32_error', 'elapsed_ms', 'loaded_path'}
+    uint = lambda value: type(value) is int and 0 <= value <= 0xffffffff
+    if (not isinstance(data, dict) or set(data) != fields or type(data['format']) is not int or data['format'] != 1 or
+            type(data['bits']) is not int or data['bits'] != 32 or data['operation'] != 'update-components' or
+            type(data['complete']) is not bool or type(data['ok']) is not bool or
+            not uint(data['hresult']) or not uint(data['win32_error']) or
+            not isinstance(data['steps'], list) or len(data['steps']) > 6):
+        raise ValueError('Invalid component batch receipt')
+    for index, row in enumerate(data['steps']):
+        entry, operation, windows = expected[index]
+        if (not isinstance(row, dict) or set(row) != row_fields or row['component'] != entry['component'] or
+                row['operation'] != operation or type(row['ok']) is not bool or
+                not uint(row['hresult']) or not uint(row['win32_error']) or
+                type(row['elapsed_ms']) is not int or not 0 <= row['elapsed_ms'] <= 180000 or
+                row['ok'] != (row['hresult'] < 0x80000000) or
+                (row['ok'] and row['win32_error'] != 0) or
+                (not row['ok'] and index != len(data['steps']) - 1) or
+                not isinstance(row['loaded_path'], str) or
+                (row['ok'] and row['loaded_path'].casefold() != windows.casefold())):
+            raise ValueError('Invalid component step receipt')
+    rows = data['steps']
+    if (data['complete'] != (len(rows) == 6) or
+            data['ok'] != (len(rows) == 6 and all(row['ok'] for row in rows)) or
+            (rows and (data['hresult'] != rows[-1]['hresult'] or data['win32_error'] != rows[-1]['win32_error'])) or
+            (not rows and data['hresult'] < 0x80000000)):
+        raise ValueError('Inconsistent component batch receipt')
+    return data
 
 
 def validate_manifest(data):
@@ -255,6 +299,7 @@ def run(supervisor):
         atomic(LOGS / 'client-update.json', report)
         supervisor.status(client_update=report)
 
+    report['viewer_files_before'] = viewer_snapshot(pol, manifest['region'])
     record()
     writer = None
     viewer = None
@@ -291,7 +336,7 @@ def run(supervisor):
         prepare_playonline_components(supervisor, manifest, environment, report, record)
         check_dependencies(supervisor, manifest, executable, environment, report, record)
         report['status'] = 'viewer_open'; record()
-        supervisor.status('playonline_update', message='In PlayOnline: Check Files → FINAL FANTASY XI → Check Files → File Repair. Exit the viewer after repair completes.')
+        supervisor.status('playonline_update', message='Finish the PlayOnline Viewer update and restart it if prompted. At its main menu: Check Files → FINAL FANTASY XI → Check Files → File Repair. Exit after repair completes.')
         (SESSION / 'playonline-process.json').unlink(missing_ok=True)
         spawn_started = time.monotonic()
         viewer = supervisor.spawn(supervisor.wine_command(r'P:\playonline-run.exe', windows_path(manifest['executable'])),
@@ -335,6 +380,10 @@ def run(supervisor):
         report['status'] = 'interrupted'; report['error'] = str(error) or type(error).__name__; record()
         raise
     finally:
+        # This is an end-of-attempt observation. On Stop, children may still
+        # be closing; stable file hashes do not certify a completed update.
+        report['viewer_files_after'] = viewer_snapshot(pol, manifest['region'])
+        record()
         if writer is not None:
             report['startup_diagnostics'] = diagnostics(writer, drain=True)
             report['viewer_exit_code'] = viewer.poll()

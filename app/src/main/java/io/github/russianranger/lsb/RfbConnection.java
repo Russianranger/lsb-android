@@ -2,6 +2,7 @@ package io.github.russianranger.lsb;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.util.BitSet;
 
 /** Small RFB 3.8 client for the app-private Unix display socket (ZRLE/raw/copy/resize). */
 final class RfbConnection {
@@ -15,7 +16,31 @@ final class RfbConnection {
     final DataInputStream in;
     private final DataOutputStream out;
     private final Screen screen;
-    int width,height;
+    volatile int width,height;
+    // Allocated only for an explicit updater refresh, at most 512 KiB at the
+    // existing 4,194,304-pixel frame bound. No extra reader or periodic requests.
+    // RFB has no request IDs: completion means full pixel coverage observed after
+    // this action, not proof that a particular reply was caused by the request.
+    private final Object refreshLock=new Object();
+    private BitSet refreshCoverage;
+    private long refreshSerial;
+    boolean refreshDisplay()throws IOException {
+        synchronized(refreshLock){
+            long now=System.nanoTime();
+            if(!autoFrames||width<1||height<1||stats.refreshPending(now))return false;
+            refreshCoverage=new BitSet(width*height);refreshSerial++;stats.requestedRefresh(now);
+            try{request(false);}catch(IOException e){refreshCoverage=null;stats.finishRefresh(System.nanoTime(),"write_failed");throw e;}
+            return true;
+        }
+    }
+    private void refreshedRectangle(long serial,int x,int y,int w,int h){
+        synchronized(refreshLock){
+            if(serial!=refreshSerial||refreshCoverage==null)return;
+            if(!stats.refreshPending(System.nanoTime())){refreshCoverage=null;return;}
+            for(int row=y;row<y+h;row++)refreshCoverage.set(row*width+x,row*width+x+w);
+            if(refreshCoverage.nextClearBit(0)>=width*height){refreshCoverage=null;stats.finishRefresh(System.nanoTime(),"full_frame_received");}
+        }
+    }
     private volatile boolean autoFrames=true;
     // Borrowed only during Screen.pixels(); grow to the largest rectangle seen.
     // An 800x600 moving scene no longer allocates another 1.8 MiB per update.
@@ -59,7 +84,11 @@ final class RfbConnection {
     }
     private void resize(int w,int h)throws IOException {
         if(w<1||h<1||w>4096||h>2160||(long)w*h>4_194_304)throw new IOException("Unsupported client display dimensions");
-        width=w;height=h;screen.resize(w,h);
+        synchronized(refreshLock){
+            width=w;height=h;
+            if(refreshCoverage!=null){refreshCoverage=null;stats.finishRefresh(System.nanoTime(),"resized");}
+        }
+        screen.resize(w,h);
     }
     private void rectangle(int x,int y,int w,int h)throws IOException {
         if(w<1||h<1||x<0||y<0||(long)x+w>width||(long)y+h>height)throw new IOException("Display rectangle is outside the framebuffer");
@@ -69,6 +98,8 @@ final class RfbConnection {
         if(message==2)return; // Bell.
         if(message==3){bytes(3);bytes(in.readInt());return;} // No clipboard integration.
         if(message!=0)throw new IOException("Unexpected display message: "+message);
+        long refresh;
+        synchronized(refreshLock){refresh=refreshCoverage==null?0:refreshSerial;}
         long started=System.nanoTime(),decode=0,pixelCount=0;boolean resized=false;
         in.readUnsignedByte();int count=in.readUnsignedShort();
         for(int i=0;i<count;i++) {
@@ -88,13 +119,16 @@ final class RfbConnection {
                 if(rgb565)apply565(x,y,w,h);else screen.pixels(x,y,w,h,pixelBuffer);
                 cost=System.nanoTime()-apply;decode+=cost;stats.stages(0,cost);stats.payload(length+4,true);
                 pixelCount+=(long)w*h;
+                if(refresh!=0)refreshedRectangle(refresh,x,y,w,h);
             } else if(encoding==0) {
                 stats.payload((long)w*h*(rgb565?2:4),false);
                 if(rgb565){
                     int length=w*h*2;if(rawBuffer.length<length)rawBuffer=new byte[length];
                     in.readFully(rawBuffer,0,length);long apply=System.nanoTime();
                     apply565(x,y,w,h);
-                    long cost=System.nanoTime()-apply;decode+=cost;stats.stages(0,cost);pixelCount+=(long)w*h;continue;
+                    long cost=System.nanoTime()-apply;decode+=cost;stats.stages(0,cost);pixelCount+=(long)w*h;
+                    if(refresh!=0)refreshedRectangle(refresh,x,y,w,h);
+                    continue;
                 }
                 if(pixelBuffer.length<w*h)pixelBuffer=new int[w*h];
                 int rows=Math.max(1,65536/(w*4));
@@ -108,6 +142,7 @@ final class RfbConnection {
                 }
                 long apply=System.nanoTime();screen.pixels(x,y,w,h,pixelBuffer);long cost=System.nanoTime()-apply;decode+=cost;stats.stages(0,cost);
                 pixelCount+=(long)w*h;
+                if(refresh!=0)refreshedRectangle(refresh,x,y,w,h);
             } else if(encoding==1) {
                 int sx=in.readUnsignedShort(),sy=in.readUnsignedShort();rectangle(sx,sy,w,h);
                 long apply=System.nanoTime();screen.copy(x,y,w,h,sx,sy);long cost=System.nanoTime()-apply;decode+=cost;stats.stages(0,cost);
@@ -122,7 +157,10 @@ final class RfbConnection {
         for(int n=0;n<w*h;n++){int v=(rawBuffer[n*2]&255)|((rawBuffer[n*2+1]&255)<<8);int r=(v>>11)&31,g=(v>>5)&63,b=v&31;pixelBuffer[n]=0xff000000|((r*255/31)<<16)|((g*255/63)<<8)|(b*255/31);}
         screen.pixels(x,y,w,h,pixelBuffer);
     }
-    void close(){if(zrle!=null){zrle.close();zrle=null;}}
+    void close(){
+        synchronized(refreshLock){refreshCoverage=null;stats.finishRefresh(System.nanoTime(),"closed");}
+        if(zrle!=null){zrle.close();zrle=null;}
+    }
     void startFrames()throws IOException {autoFrames=true;request(false);}
     void request(boolean incremental)throws IOException {
         synchronized(out){out.writeByte(3);out.writeByte(incremental?1:0);out.writeShort(0);out.writeShort(0);out.writeShort(width);out.writeShort(height);out.flush();}

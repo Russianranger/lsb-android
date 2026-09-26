@@ -114,16 +114,17 @@ def main():
             assert report['activation_performed'] is False and report['official_repair_confirmed'] is False, report
             assert report['credentials_forwarded'] is False, report
             registration = report['component_registration']
+            batch = report['component_batch']
+            assert batch['policy'] == 'live_six_steps_one_process' and batch['exit_code'] == 0 and batch['receipt_valid'], batch
+            assert batch['startup_diagnostics']['policy'] == 'fixed_metadata_only', batch
             assert [row['component'] for row in registration] == ['core', 'app', 'contents'], registration
             assert [row['dll'] for row in registration] == [path.name for path in components], registration
             for row, operations in zip(registration, [('register', 'com'), ('register', 'class'), ('register', 'class')]):
                 assert row['sha256'] == component_hash, row
                 assert [step['operation'] for step in row['steps']] == list(operations), row
                 for step in row['steps']:
-                    assert step['exit_code'] == 0, step
                     assert step['result'] == {'format': 1, 'bits': 32, 'operation': step['operation'],
                                               'ok': True, 'hresult': 0, 'win32_error': 0}, step
-                    assert step['startup_diagnostics']['policy'] == 'fixed_metadata_only', step
             assert 'loaded_path' not in json.dumps(registration) and 'detail' not in json.dumps(registration), registration
             attempts = report['dependency_attempts']
             assert len(attempts) == 1 and attempts[0]['receipt_valid'] is True, attempts
@@ -140,7 +141,7 @@ def main():
             else:
                 assert attempts[0]['exit_code'] == 0 and all(row['ok'] and row['win32_error'] == 0 for row in dependencies), attempts
                 native = report['process']
-                assert native['format'] == 1 and native['bits'] == 32 and native['phase'] == 'exited', native
+                assert native['format'] == 2 and native['bits'] == 32 and native['phase'] == 'exited', native
                 assert native['child_exit'] == exit_code and native['child_pid'] > 0, native
                 assert native['win32_error'] == 0 and native['window_error'] == 0, native
                 assert native['visible_window_seen'] is window and native['elapsed_ms'] >= 0, native
