@@ -1,3 +1,171 @@
+# 0.5.40: guarded PlayOnline viewer version-registration repair
+
+The owner’s .39 test reaches POL-1168, “Unable to verify version information”.
+Current support: lsb-support (5)(3).zip, SHA-256
+`0034457538f01fcce497bf3a5609922403c862522bf3e38e2e178813466fa6f0`,
+Library libfile_6a18c01256348191b9e54a9024a9e57c / uploaded
+file_00000000495081f58c43ed18db641d33. Screenshot_20260925-212227.png:
+libfile_1e6db960eea081919633f5b815c5b6c7 / file_00000000430c81f58d3044c77d1c1347.
+Latest session `9f51c760-ea5c-4ea6-9ca4-1f325898fcae`, update candidate
+`05d8856e-7a99-46c1-a9da-07cc4e8b3ec6`. All six COM operations and eleven
+imports pass; viewer remains open until intentional Stop. Preparation: 72.067 s;
+first window: 17.842 s after viewer start; viewer lifetime: 219.826 s. General DNS
+works for www.playonline.com. Hardware renderer is still Turnip 26 / Adreno 740,
+DXVK 2.5.3 / Box64. Do not change the accepted FEX gameplay configuration based on
+static updater dialogs or sparse RFB updates.
+
+Correction to .39: qc000.pol.com is an obsolete diagnostic target; public DNS
+also returns NXDOMAIN. Its failure is not proof of bad phone DNS. .40 checks
+ci000.pol.com (content_info) plus www.playonline.com; successful resolution still
+does not establish patch service health. No public DNS fallback or forced IP.
+
+See docs/playonline-version-0540.md for evidence and boundaries. The official
+viewer app’s successful 288-byte version-read path calls common-table decoder
+0x124c, then explicitly stores -1168 on a negative result (app RVAs 0x296367 /
+0x296385). Official app hash differs from the user's app, so don't claim exact
+phone control-flow capture. The official MSI sets the regional 32-bit `Interface`
+key's `1000` value to `REG_SZ` data `001b1394`; our setup omitted viewer value
+`1000`, while the accepted gameplay repair covers the same key's `0001` value.
+IDs format as decimal `%04d` (1000 is not hex 0x1000).
+
+The user's exact polcore, hash
+`73b1864bf522d3aa6ec28e9f4bb226fcee956f7f4848a238c9c2d756dc703b06`,
+was recovered from earlier patch_pol.zip (Library libfile_aa1f75670e208191a1af39574ca3a998,
+file_00000000083081fb8104e318e3871de8). Its unchanged original encoder RVA 0x81a0
+and decoder RVA 0x4a0e0 were executed in isolated x86 emulation. Only registry
+lookup RVA 0x49f80 was substituted. Independently generated synthetic viewer
+records for content ID 1000 decode `20260925_1` with the matching known zero/official
+candidate, and fail with missing/wrong registry values; input bytes stay intact.
+The actual earlier game record still decodes `30251204_1`. No proprietary bytes,
+raw user registry or arbitrary candidate keys enter source/APKs.
+
+Production source c53f25cc4ee7e3665271370b8dc9a7ac712ee5cb, tree
+3bd99102a7d44ea273482974f620ff116c4f2d46, version 0.5.40 / code 56:
+
+- Read-only generalized codec accepts known zero/official-installer candidates
+  only after full 288-byte length, checksum, padding and version-format validation.
+  Existing `patch_version_zero` game behavior is preserved.
+- New native update-registry operation combines old install path setup with
+  missing-only repair of the viewer `Interface` key's `1000` value. Existing
+  values of every type stay untouched; recheck before write, exact readback,
+  rollback on readback failure. It reads the staged POL root's `patch.ver` only;
+  never rewrites the file or active copy.
+- Fixed `viewer_version_config` receipt fields: state, candidate, validated version,
+  win32_error, rollback_error, content_id 1000. Unknown/missing files are no-write
+  states and leave the normal viewer path available. Registry access/write errors
+  stop with numeric diagnostics. No extra Wine startup process was added.
+- Runtime validates receipt fields and retains safe metadata. DNS target corrected.
+
+All 120 local runtime tests, 1,174 host codec checks and existing core/archive/recovery
+checks pass. Independent review found no blocker; UBSan passes. Native tests
+cover JP/US/EU, both candidates, malformed/missing files, existing types/values,
+second-query preservation, errors/rollback, game key and source-byte preservation.
+Native/Android/guest CI and signed delivery evidence follow below.
+
+Diagnostic commit 27c3cbfe38344bb2c710bed94ec239e240cf6139 adds an account-free public
+installer online comparison with/without the exact MSI data for the `Interface`
+key's `1000` value. Its first CI reached all offline screens but online setup
+rejected the existing stock /prefix
+mountpoint before any online attempt. .40 corrects this with fresh disposable
+`/prefix`, `/client` and `/session` tmpfs mounts and empty-directory validation. This was a
+fixture setup failure, not a phone/viewer network result. Trace is capped at 8 MiB
+and excluded from artifacts; only fixed Winsock metadata and account-free PNGs
+are exported. Observation success is not completed update/repair acceptance.
+
+The exact phone viewer `patch.ver` and the `Interface` key's `1000` value are not
+in the support ZIP.
+This repair addresses a verified failure mode and will write only if the actual
+staged file validates. Do not claim phone POL-1168 definitively resolved until
+owner retests. If it remains, inspect `viewer_version_config` first. Preserve active
+generation 768f3a6d-8dfb-462f-8b9d-46cdd7101505; no reimport/restore/runtime download
+is required. Newest-server/database experiments remain deferred.
+
+## Verification and delivery
+
+Source workflows: push 36212503733 and PR 36212506490. Both Android verification
+jobs pass (push 108321894135, PR 108321902629), including 120 runtime unit
+methods, 1,174 codec checks, 89 Android tests, 43 archive checks and the exact
+Ubuntu archive check. Both server deployment jobs pass. Both native Windows
+jobs pass (push 108322416403, PR 108322278277); their completed logs explicitly
+confirm the new viewer Interface `1000` fixture, existing game-version fixture
+and all 143 native Windows checks. Do not mistake compilation for fixture execution.
+
+Both signed APKs match the tested CI payload, every runtime Python module and
+all seven server assets. Verified v2/v3 signatures, alignment, ZIP integrity,
+version 0.5.40/code 56, separate app identities, private non-launcher components,
+and 58 identical shared code/resource/runtime entries. Certificate SHA256 remains
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+
+- Regular: LSB-Android-0.5.40.apk, 18,416,285 bytes,
+  package `io.github.russianranger.lsb`, SHA256
+  `d42bf2ff118021f847c4276a653411b5bda25b18632bcf62924da2e39e58a210`.
+- Restore Test: LSB-Android-Restore-Test-0.5.40.apk, 18,412,189 bytes,
+  package `io.github.russianranger.lsb.restoretest`, SHA256
+  `d5663a16efd59015ce2eb872445400951928c6c55cc56283c337d085a5723e7e`.
+
+CI archive digests verified before signing:
+- runtime-device-build 10895629901 SHA256
+  `220b1deb138b7d5ac118580875776c51a6e09c494e8b561c38905714e882836a`.
+- restore-test-device-build 10896795021 SHA256
+  `b490fed7e64e548a7d5ba22f6b29f562fac23424e46b02c2ea9b0bf5a847187e`.
+
+Both deliverables saved successfully at version 0 with local metadata applied:
+- Regular: libfile_5ef61147c8e481919492e81d769d5447 /
+  file_0000000036f881f6aac111e1dbe8d606.
+- Restore Test: libfile_a90c6dbb7e908191bb4bca2afec48c2a /
+  file_00000000e92081f68a32ef3fb76bf403.
+
+Install over the matching existing apps without uninstalling. Use Restore Test
+first: Client → Client update · PlayOnline → Open or resume PlayOnline update.
+Reuse the existing staged copy. If POL-1168 remains, request a fresh support ZIP;
+the new fixed `viewer_version_config` fields distinguish a preserved existing
+value, unsupported/missing file, validated repair, and registry failure.
+
+
+## Focused viewer evidence and limits
+
+On source c53f25c, both focused jobs passed the controlled guest DNS and offline
+viewer gates, then completed the first online observation. PR job 108322278200
+and push job 108322416432 ended as failures because the second, MSI-value
+comparison stopped in fixture setup before launching the viewer. This is not a
+successful full comparison or a phone patch-service failure.
+
+PR evidence artifact 10895683636 SHA256
+`4371478a329fd00a549bc550ad84799920ddca732ec6c3a8af7c30801a5faef1`.
+Push evidence artifact 10895843421 SHA256
+`31d42ced34784f7b077bd35a983dbdef00d860c048a41e7ee3e039b530f97fdb`.
+Root inspected the PR production PNG: Setup → Version Update with Next/Cancel,
+no error modal. SHA256
+`bba30c7edb9b20cd915ac896713fe52c3bb441f90f1111cea17a0ca34215bd50`.
+All component checks succeed, capture_failures=[], known_missing_class_errors=false.
+Empty guest network files fail both DNS names and localhost; configured files
+resolve both names and localhost through the controlled DNS fixture.
+
+The fresh public installation's missing-interface case has no viewer patch.ver
+and no Interface value 1000. It reaches the official Update prompt after Next:
+“Prepare for update / Download files / Install files”, with Update/Back buttons.
+Root inspected the 170-second PNG, SHA256
+`11f8a511cccb904351778b88f6fb8e96a70647533de3ab20e906a831062eb69f`.
+No POL-1168 appears there. Fixed Winsock metadata records port 54000 connection
+attempts, one completed send and two completed receives; pending connect entries
+alone are not claimed as success. No Update click, file download, completed
+repair or phone acceptance was tested. The missing Interface value alone does
+not fail a fresh viewer without patch.ver; the guarded repair specifically
+addresses the existing-record decoder failure path.
+
+The MSI comparison exits before Next or any viewer screenshot, with an empty
+comparison receipt. Its first implementation read only the first 8 KiB of noisy
+registry-query output. The exact private setup output was deliberately excluded
+from artifacts, so truncation is a demonstrated fixture defect and a suspected
+cause, not a captured explanation of that particular failure. A test-only
+correction suppresses registry-query startup noise, scans the complete bounded
+log, and records fixed stage/return-code/match metadata before assertions. Four
+local regressions pass, including a valid value after more than 8 KiB of noise,
+UTF-16 output, wrong/duplicate values and the size bound. The follow-up CI was
+not complete at delivery; inspect it before claiming the second comparison passed.
+No runtime/APK payload is changed by the fixture correction.
+
+
 # 0.5.39: PlayOnline DNS repair and preparation timings
 
 The owner confirmed .38 gets past COM startup but reported a slow viewer and

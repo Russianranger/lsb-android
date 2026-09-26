@@ -1,7 +1,7 @@
 # Staged client updates and storage management
 
 The owner confirmed that 0.5.35 full-session restore works. Keep the regular app
-and LSB Restore Test installed separately. Version 0.5.39 updates each in place;
+and LSB Restore Test installed separately. Version 0.5.40 updates each in place;
 never uninstall the regular app to install an update.
 
 ## Manage copies stored in the app
@@ -21,7 +21,7 @@ arbitrary device folders.
 
 ## First PlayOnline update test
 
-1. Install both 0.5.39 APK updates and use **LSB Restore Test** for this test.
+1. Install both 0.5.40 APK updates and use **LSB Restore Test** for this test.
    Keep the original app's server stopped. Stop the test app's client/server too.
 2. Open **Client → Client update · PlayOnline → Prepare update and open
    PlayOnline**. Confirm creation of a separate full client and Windows copy.
@@ -138,3 +138,24 @@ Client update · PlayOnline → Open or resume PlayOnline update**. The existing
 staged copy is reused. Continue the viewer update, then Check Files/File Repair.
 If POL-0019 or a long wait remains, export a new support ZIP so the network and
 step timing reports can identify the remaining failure.
+
+## Retrying POL-1168 / unable to verify version information
+
+Version 0.5.40 checks PlayOnline's regional 32-bit `Interface` key's `1000` value
+in the staged Windows environment. It restores a missing value only when
+one known candidate fully validates the staged viewer's `patch.ver` length,
+checksum, padding and version format. Existing values of every type are
+preserved. The check does not rewrite `patch.ver` or change the active client.
+Diagnostics record only fixed state and candidate labels, validated version
+text and bounded numeric error codes; they do not include raw registry values.
+
+Install each matching .40 APK without uninstalling. In **LSB Restore Test**, use
+**Client → Client update · PlayOnline → Open or resume PlayOnline update** to
+reuse the existing candidate. No new import, restore or runtime download is
+needed. Continue the official update and Check Files/File Repair steps above.
+
+Automated tests cover this metadata failure mode, but the exact viewer metadata
+from the phone was absent from the support ZIP. The phone test must confirm
+whether POL-1168 clears and the official repair completes. If the error remains,
+export a fresh support ZIP; its `viewer_version_config` report identifies whether
+the value was preserved, restored, unavailable or did not match a known format.

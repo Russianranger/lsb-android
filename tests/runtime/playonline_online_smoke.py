@@ -34,6 +34,16 @@ FIXED_FILES = {'viewer_executable': 'pol.exe', 'viewer_patch_version': 'patch.ve
                'viewer_core': 'viewer/com/polcore.dll'}
 
 
+def interface_readback(raw):
+    # reg.exe writes its result after Wine startup diagnostics. Inspect the
+    # complete bounded log rather than its first 8 KiB. Match only the fixed
+    # registry value, including redirected UTF-16 output; retain no raw text.
+    if len(raw) > 2 * 1024 * 1024:
+        return False
+    matches = re.findall(rb'(?im)^\s*1000\s+REG_SZ\s+([0-9a-f]{8})\s*$', raw.replace(b'\0', b''))
+    return matches == [INTERFACE_VERSION.encode('ascii')]
+
+
 def file_metadata():
     results = {}
     for label, relative in FIXED_FILES.items():
@@ -68,29 +78,36 @@ def worker(variant):
     clipped = False
 
     def query_interface(instance, name):
+        quiet = dict(instance.env, WINEDEBUG='-all', BOX64_LOG='0', BOX64_NOBANNER='1')
         process = instance.spawn(instance.wine_command('reg', 'query',
-            r'HKLM\Software\PlayOnlineUS\Interface', '/v', '1000', '/reg:32'), name)
+            r'HKLM\Software\PlayOnlineUS\Interface', '/v', '1000', '/reg:32'), name, env=quiet)
         instance.wait(process, 90, 'Public fixture interface readback', accepted=(0, 1))
         instance.logs[-1].thread.join(2)
-        raw = (LOGS / name).read_bytes()[:8192]
-        # Accept only the precise known MSI version, never arbitrary registry
-        # content or Wine text in the uploaded diagnostic.
-        matches = re.findall(rb'(?im)^\s*1000\s+REG_SZ\s+([0-9a-f]{8})\s*$', raw.replace(b'\0', b''))
-        return process.returncode, matches == [INTERFACE_VERSION.encode('ascii')]
+        raw = (LOGS / name).read_bytes()
+        return process.returncode, interface_readback(raw), len(raw)
 
     def fixture_run(instance):
-        before_code, before_matches = query_interface(instance, 'fixture-interface-before.log')
+        comparison = {'variant': variant, 'stage': 'before_query', 'readback_verified': False}
+        destination = LOGS / 'fixture-interface.json'
+        destination.write_text(json.dumps(comparison))
+        before_code, before_matches, before_bytes = query_interface(instance, 'fixture-interface-before.log')
+        comparison.update(stage='before_checked', before_exit_code=before_code,
+                          before_value_matches=before_matches, before_log_bytes=before_bytes)
+        destination.write_text(json.dumps(comparison))
         assert before_code == 1 and not before_matches, 'Fresh prefix unexpectedly contains viewer interface version'
         if variant == 'msi-interface':
             process = instance.spawn(instance.wine_command('reg', 'add',
                 r'HKLM\Software\PlayOnlineUS\Interface', '/v', '1000', '/t', 'REG_SZ',
                 '/d', INTERFACE_VERSION, '/f', '/reg:32'), 'fixture-interface-add.log')
             instance.wait(process, 90, 'Public fixture MSI interface value')
-        after_code, after_matches = query_interface(instance, 'fixture-interface-after.log')
+        after_code, after_matches, after_bytes = query_interface(instance, 'fixture-interface-after.log')
+        comparison.update(stage='after_checked', after_exit_code=after_code,
+                          after_value_matches=after_matches, after_log_bytes=after_bytes)
+        destination.write_text(json.dumps(comparison))
         assert (after_code, after_matches) == ((0, True) if variant == 'msi-interface' else (1, False)), 'Fixture interface comparison did not read back'
-        (LOGS / 'fixture-interface.json').write_text(json.dumps({
-            'variant': variant, 'initially_absent': True, 'value_installed': variant == 'msi-interface',
-            'readback_verified': True, 'msi_interface_version': INTERFACE_VERSION if after_matches else None}))
+        comparison.update(stage='verified', initially_absent=True, value_installed=variant == 'msi-interface',
+                          readback_verified=True, msi_interface_version=INTERFACE_VERSION if after_matches else None)
+        destination.write_text(json.dumps(comparison))
         original_run(instance)
 
     def fixture_environment(instance):
