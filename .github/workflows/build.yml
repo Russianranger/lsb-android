@@ -1,0 +1,326 @@
+name: Verify baseline
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  presentation:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/build-presentation.py guest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-presentation
+          path: out/presentation/
+  verify:
+    needs: presentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-presentation
+          path: out/presentation
+      - name: Core import and recovery checks
+        run: |
+          python3 scripts/test.py
+          python3 scripts/test-server-runtime-archive.py
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/native_surface.c -o /tmp/lsb-native-surface-test
+          /tmp/lsb-native-surface-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/draw-stats.c -o /tmp/lsb-draw-stats-test
+          /tmp/lsb-draw-stats-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/version-codec.c -o /tmp/lsb-version-codec-test
+          /tmp/lsb-version-codec-test
+          python3 -m unittest discover -s tests/runtime -p 'test_*.py'
+          python3 -m unittest discover -s tests/server -p 'test_*.py'
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+
+      - name: Build x86 Windows launcher and native test fixtures
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686-posix clang lld
+          python3 scripts/build-launcher.py --tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-launcher-tests
+          path: out/windows-tests/
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android SDK packages
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018'
+      - name: Android 13 display pixels, timing history and controller lifecycle
+        run: python3 scripts/test-android.py --android-jar "$ANDROID_HOME/platforms/android-35/android.jar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-ui-previews
+          path: out/ui-previews/
+      - name: Compile, dex, package and verify
+        run: |
+          python3 scripts/build-apk.py \
+            --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
+            --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
+            --keystore "$RUNNER_TEMP/ci-only.jks" \
+            --with-restore-test
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.40.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-Restore-Test-0.5.40.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-device-build
+          path: |
+            out/LSB-Android-0.5.40.apk
+            out/runtime-probes/
+            out/runtime-assets/
+            out/presentation/
+            out/windows-tests/client-com-stub.dll
+            out/windows-tests/loader-stub.exe
+            out/windows-tests/prerequisite-stub.exe
+            out/windows-tests/login-stub.exe
+            out/windows-tests/playonline-stub.exe
+            out/windows-tests/display-config.exe
+            out/windows-tests/game-window.exe
+            out/windows-tests/version-registry.exe
+            out/windows-tests/gamepad-check.exe
+            out/windows-tests/fex-crash.exe
+            out/windows-tests/texture-submission.exe
+            out/windows-tests/cpu-dispatch.exe
+            out/windows-tests/game-math.exe
+            out/windows-tests/x87-flags.exe
+            out/windows-tests/login-missing.exe
+            out/windows-tests/dependency-detach.dll
+            out/windows-tests/dependency-attach.dll
+            out/windows-tests/dependency-cycle.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: restore-test-device-build
+          path: |
+            out/LSB-Android-Restore-Test-0.5.40.apk
+            out/LSB-Android-Restore-Test-0.5.40.apk.sha256
+      - name: Preserve APK verification tools
+        run: |
+          mkdir -p out/apk-tools/lib out/apk-tools/lib64
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" out/apk-tools/lib/
+          cp "$ANDROID_HOME/build-tools/35.0.0/aapt2" "$ANDROID_HOME/build-tools/35.0.0/zipalign" out/apk-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib64/libc++.so" out/apk-tools/lib64/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-verification-tools
+          path: out/apk-tools/
+      - name: Note device build signing
+        run: echo 'This is a disposable-certificate build check. Use the separately delivered device APK for updates.' >> "$GITHUB_STEP_SUMMARY"
+  windows-launcher:
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-launcher-tests
+          path: out/windows-tests
+      - name: Native registration and process checks with stub client files
+        run: python tests/windows/run.py
+
+  playonline-startup:
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-device-build
+          path: out
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+      - uses: actions/cache@v4
+        with:
+          path: .tools/playonline-smoke/viewer.rar-fragment
+          key: lsb-official-viewer-fixture-4607a2e1
+      - name: Compare official PlayOnline startup and version-check network evidence
+        env:
+          LSB_PLAYONLINE_ONLINE: '1'
+        run: bash scripts/check-playonline.sh
+      - name: Make official viewer evidence readable
+        if: always()
+        run: |
+          if [ -d out/playonline-test/logs ]; then sudo chown -R "$(id -u):$(id -g)" out/playonline-test/logs; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playonline-startup-evidence
+          path: |
+            out/playonline-test/logs/*.json
+            out/playonline-test/logs/*.png
+      - name: Show official viewer fixed diagnostic summary
+        if: always()
+        run: |
+          python3 - <<'PYLOG'
+          from pathlib import Path
+          result = Path('out/playonline-test/logs/official-playonline-smoke.json')
+          if result.exists(): print(result.read_text())
+          PYLOG
+
+  runtime:
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-device-build
+          path: out
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+      - name: Execute PE32 registry COM D3D8 audio and input checks on ARM64
+        run: bash scripts/check-runtime.sh
+      - name: Make container evidence readable by the artifact uploader
+        if: always()
+        run: |
+          for directory in out/runtime-test/logs out/runtime-test/proot-logs out/display-wire; do
+            if [ -d "$directory" ]; then sudo chown -R "$(id -u):$(id -g)" "$directory"; fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-evidence
+          path: |
+            out/runtime-test/logs/
+            out/runtime-test/proot-logs/
+            out/display-wire/
+      - name: Show runtime failure evidence
+        if: failure()
+        run: |
+          python3 - <<'PYLOG'
+          from pathlib import Path
+          for path in list(Path('out/runtime-test').rglob('*.log'))+list(Path('out/display-wire').glob('*.log')):
+              print(path, path.read_text(errors='replace')[-6000:])
+          PYLOG
+  fex-runtime:
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-device-build
+          path: out
+      - uses: actions/download-artifact@v4
+        with:
+          name: fex-runtime
+          path: out/fex-runtime
+          run-id: 35932750549
+          github-token: ${{ github.token }}
+      - name: Verify pinned FEX artifact identity
+        run: python3 scripts/verify-fex-artifact.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+      - name: Real FEX native Wine, migration, pixels, audio, controller and PRoot
+        run: bash scripts/check-fex.sh
+      - name: Preserve FEX evidence
+        if: always()
+        run: |
+          if [ -d out/fex-test/logs ]; then sudo chown -R "$(id -u):$(id -g)" out/fex-test/logs; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fex-runtime-evidence
+          path: out/fex-test/logs/
+      - name: Show FEX failure evidence
+        if: failure()
+        run: |
+          python3 - <<'PYLOG'
+          from pathlib import Path
+          for p in Path('out/fex-test/logs').rglob('*.log'):
+              print(p, p.read_text(errors='replace')[-5000:])
+          PYLOG
+
+  server-deployment:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Real MariaDB deployment and recovery on ARM64
+        run: docker run --rm -v "$PWD:/src:ro" ubuntu:26.04 bash /src/tests/server/check.sh
+
+  runtime-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/codex/client-baseline'
+    needs: [verify, windows-launcher, playonline-startup, runtime, fex-runtime, server-deployment]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .tools/runtime
+          key: lsb-runtime-probe-v1-08c639c2
+      - run: python3 scripts/prepare-runtime.py --release
+      - uses: actions/download-artifact@v4
+        with:
+          name: fex-runtime
+          path: out/fex-runtime
+          run-id: 35932750549
+          github-token: ${{ github.token }}
+      - run: python3 scripts/verify-fex-artifact.py
+      - name: Publish qualified FEX runtime and corresponding sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view runtime-fex-v3 >/dev/null 2>&1; then
+            gh release create runtime-fex-v3 --target "$GITHUB_SHA" --prerelease --title 'LSB native ARM64 Wine / FEX runtime v3' --notes 'Pinned Wine 10 ARM64 + FEX 2510 WoW64, built on Bookworm for the existing Android rootfs. Separate runtime and prefixes; Box64 rollback retained. Preserves guest condition flags across x87 stores; fixes a reproduced wrong-branch defect in full80 and strict64. Retains the Windows/CPUID feature correction. Independent before/after regressions and rendering checks qualify the translator; actual Thor FFXI rendering still needs a device result. Regular compatibility gates pass. This is not the GameHub Proton/async-DXVK fork. Includes exact corresponding sources and build recipe. No client, loader or server files.'
+          fi
+          for file in runtime-fex-arm64.tar.gz runtime-fex-sources.tar.gz fex-bundle.json; do
+            if ! gh release view runtime-fex-v3 --json assets --jq '.assets[].name' | grep -qx "$file"; then
+              gh release upload runtime-fex-v3 "out/fex-runtime/$file"
+            else
+              mkdir -p "$RUNNER_TEMP/fex-existing"
+              gh release download runtime-fex-v3 --pattern "$file" --dir "$RUNNER_TEMP/fex-existing"
+              cmp "out/fex-runtime/$file" "$RUNNER_TEMP/fex-existing/$file"
+            fi
+          done
+      - name: Publish immutable open runtime and corresponding sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view runtime-probe-v1 >/dev/null 2>&1; then
+            gh release create runtime-probe-v1 --target "$GITHUB_SHA" --prerelease --title 'LSB experimental Windows runtime v1' --notes 'Pinned Wine 10 WoW64 / Box64 0.4.4 runtime and corresponding source archives, reused from the owner’s TRASC project. No game files. This is an independent compatibility candidate, not the GameHub Proton/FEX environment.'
+          fi
+          for file in components.apk runtime-arm64.tar.gz runtime-sources.tar.gz launcher-sources.tar.gz; do
+            if ! gh release view runtime-probe-v1 --json assets --jq '.assets[].name' | grep -qx "$file"; then
+              gh release upload runtime-probe-v1 ".tools/runtime/$file"
+            fi
+          done

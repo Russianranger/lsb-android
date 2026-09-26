@@ -1,0 +1,28 @@
+name: Build isolated FEX runtime
+on:
+  push:
+    paths: ['native/fex/**', 'tests/windows/cpu-dispatch.c', 'tests/windows/x87-flags.c', 'scripts/build-fex.sh', '.github/workflows/fex-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fex-build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: native/fex/Dockerfile
+          tags: lsb-fex-build
+          load: true
+          cache-from: type=gha,scope=lsb-fex-wine10
+          cache-to: type=gha,mode=max,scope=lsb-fex-wine10
+      - run: bash scripts/build-fex.sh --pack-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fex-runtime
+          path: out/fex-runtime/
+          compression-level: 0

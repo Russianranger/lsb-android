@@ -1,0 +1,11 @@
+<resources>
+    <style name="LsbTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:colorAccent">#D9B875</item>
+        <item name="android:colorButtonNormal">#294654</item>
+        <item name="android:windowBackground">#091526</item>
+        <item name="android:statusBarColor">#091526</item>
+        <item name="android:navigationBarColor">#091526</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

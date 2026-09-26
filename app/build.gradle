@@ -1,0 +1,55 @@
+plugins { id 'com.android.application' }
+android {
+    ndkVersion '27.2.12479018'
+    namespace 'io.github.russianranger.lsb'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'io.github.russianranger.lsb'
+        minSdk 26
+        targetSdk 35
+        versionCode 56
+        versionName '0.5.40'
+    }
+    flavorDimensions += 'installation'
+    productFlavors {
+        standard { dimension 'installation' }
+        restoreTest {
+            dimension 'installation'
+            applicationIdSuffix '.restoretest'
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+    sourceSets.main.assets.srcDir rootProject.file('out/launcher-assets')
+    sourceSets.main.assets.srcDir rootProject.file('out/server-packaged-assets')
+    sourceSets.main.assets.srcDir rootProject.file('out/runtime-packaged-assets')
+    sourceSets.main.jniLibs.srcDir rootProject.file('out/runtime-libs')
+    packaging { jniLibs { useLegacyPackaging true; keepDebugSymbols += ['**/libproot.so', '**/libproot-loader.so'] } }
+    buildTypes { release { minifyEnabled false } }
+}
+
+tasks.register('buildWindowsLauncher', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'scripts/build-launcher.py'
+    inputs.files(rootProject.fileTree('windows') { include '*.c', '*.h' }, rootProject.file('scripts/build-launcher.py'))
+    outputs.file(rootProject.file('out/launcher-assets/LSB-FFXI.exe'))
+    outputs.dir(rootProject.file('out/runtime-probes'))
+}
+tasks.named('preBuild').configure { dependsOn 'buildWindowsLauncher' }
+
+tasks.register('prepareRuntime', Exec) {
+    dependsOn 'buildWindowsLauncher'
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'scripts/prepare-runtime.py'
+}
+tasks.named('preBuild').configure { dependsOn 'prepareRuntime' }
+
+tasks.register('buildNativePresentation', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'scripts/build-presentation.py', 'android', '--ndk', android.ndkDirectory
+    doFirst {
+        if (!rootProject.file('out/presentation/x11-frame-bridge').isFile()) {
+            throw new GradleException('Build/download the ARM64 presentation artifact first (scripts/build-presentation.py guest).')
+        }
+    }
+}
+tasks.named('prepareRuntime').configure { dependsOn 'buildNativePresentation' }
