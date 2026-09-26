@@ -24,7 +24,7 @@ class NetworkCheckTests(unittest.TestCase):
         self.assertEqual([row['address_count'] for row in result['checks']], [1, 1])
         self.assertFalse(result['patch_connection_verified'])
         text = json.dumps(result)
-        for private in ('192.0.2.42', 'PRIVATE-', 'qc000.pol.com', 'www.playonline.com'):
+        for private in ('192.0.2.42', 'PRIVATE-', 'ci000.pol.com', 'www.playonline.com'):
             self.assertNotIn(private, text)
 
     def test_lookup_errors_are_numeric_and_partial_dns_is_distinct(self):

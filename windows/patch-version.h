@@ -1,7 +1,7 @@
-/* Read-only compatibility check for the common Interface="0" patch.ver format.
+/* Read-only compatibility check for known Interface patch.ver formats.
  * Derived from the supplied polcore decoder (RVAs 0x7bc0, 0x8000, 0x8130),
  * independently checked against its original instructions. No client bytes,
- * encryption keys for other installations, or writable codec are bundled.
+ * arbitrary installation keys, or writable codec are bundled.
  */
 #include <stdint.h>
 #include <string.h>
@@ -14,11 +14,22 @@ static void patch_bytes(unsigned char *p,uint64_t value){for(unsigned n=0;n<8;n+
 
 /* Accept only a complete, checksummed, canonically padded version record.
  * This deliberately rejects formats that this repair cannot validate. */
-static int patch_version_zero(const unsigned char *blob,size_t size,char version[18]){
+static int patch_version_known(const unsigned char *blob,size_t size,unsigned content_id,
+                               const char *key,char version[18]){
     unsigned char schedule[8],plain[288];uint64_t word;uint32_t sum=0;
-    version[0]=0;if(size!=sizeof(plain))return 0;
-    /* content id 1 + ASCII '0' (0x30); rotate/swap the seed as polcore does. */
-    patch_bytes(schedule,(uint64_t)0x3100<<32);
+    version[0]=0;if(size!=sizeof(plain)||!blob||!key||
+        (content_id!=1&&content_id!=1000)||
+        (strcmp(key,"0")&&strcmp(key,"001b1394")))return 0;
+    /* polcore adds the decimal content id to the cyclic eight-byte registry
+     * accumulator, rotates each half, then swaps them. The two candidate keys
+     * are the existing common format and the official viewer installer's
+     * documented value. A candidate is never accepted without full validation. */
+    uint64_t seed=0;unsigned char accumulator[8]={0};
+    for(unsigned n=0;key[n];n++)accumulator[n&7]=(unsigned char)(accumulator[n&7]+(unsigned char)key[n]);
+    seed=patch_u64(accumulator)+content_id;
+    uint32_t low=(uint32_t)seed,high=(uint32_t)(seed>>32);
+    low=(low<<8)|(low>>24);high=(high>>16)|(high<<16);
+    patch_bytes(schedule,(uint64_t)low<<32|high);
     schedule[0]=(unsigned char)(schedule[0]+0x45);
     for(unsigned n=1;n<8;n++)schedule[n]=(unsigned char)(((schedule[n]+schedule[n-1]-0x2c)&255)^(schedule[n-1]<<2)^0x45);
     uint64_t first=patch_u64(schedule);word=first;
@@ -49,4 +60,23 @@ static int patch_version_zero(const unsigned char *blob,size_t size,char version
     }
     for(unsigned n=24+length;n<280;n++)if(plain[n])return 0;
     memcpy(version,plain+24,length);version[length]=0;return 1;
+}
+
+/* Preserve the established game decoder's behavior and narrow key scope. */
+static int patch_version_zero(const unsigned char *blob,size_t size,char version[18]){
+    return patch_version_known(blob,size,1,"0",version);
+}
+
+/* Never choose a registry value when no candidate or multiple candidates match. */
+static int patch_version_viewer(const unsigned char *blob,size_t size,char version[18],
+                                const char **matched_key){
+    static const char *const candidates[]={"0","001b1394"};
+    char checked[18]={0},selected[18]={0};unsigned matches=0;const char *key=NULL;
+    version[0]=0;*matched_key=NULL;
+    for(unsigned n=0;n<sizeof(candidates)/sizeof(candidates[0]);n++)
+        if(patch_version_known(blob,size,1000,candidates[n],checked)){
+            matches++;key=candidates[n];memcpy(selected,checked,sizeof(selected));
+        }
+    if(matches!=1)return 0;
+    memcpy(version,selected,sizeof(selected));*matched_key=key;return 1;
 }

@@ -10,7 +10,7 @@ import socket
 import threading
 import time
 
-TARGETS = (('patch_server', 'qc000.pol.com'), ('official_web', 'www.playonline.com'))
+TARGETS = (('content_info', 'ci000.pol.com'), ('official_web', 'www.playonline.com'))
 
 
 def validate(result):

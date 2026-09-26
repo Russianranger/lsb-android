@@ -16,6 +16,26 @@ def elapsed_ms(started, ended=None):
     return max(0, int(((time.monotonic() if ended is None else ended) - started) * 1000))
 
 
+def viewer_version_config(receipt):
+    """Allow only fixed repair metadata, never registry strings or paths."""
+    data = receipt.get('viewer_version_config') if isinstance(receipt, dict) else None
+    states = {'not_checked', 'existing_preserved', 'registry_unavailable', 'file_unavailable',
+              'format_not_matched', 'invalid_path', 'restore_failed', 'restored_missing'}
+    fields = {'state', 'version', 'candidate', 'win32_error', 'rollback_error', 'content_id'}
+    if (not isinstance(data, dict) or set(data) != fields or not isinstance(data['state'], str) or data['state'] not in states or
+            not isinstance(data['candidate'], str) or data['candidate'] not in ('none', 'zero', 'official_installer') or
+            type(data['content_id']) is not int or data['content_id'] != 1000 or
+            any(type(data[key]) is not int or not 0 <= data[key] <= 0xffffffff
+                for key in ('win32_error', 'rollback_error')) or
+            not isinstance(data['version'], str) or
+            (data['version'] and not re.fullmatch(r'[0-9]{8}_[A-Za-z0-9]{1,8}', data['version']))):
+        raise RuntimeError('Invalid PlayOnline version-metadata receipt; export Diagnostics')
+    if data['state'] == 'restored_missing' and (not data['version'] or data['candidate'] == 'none' or
+                                              data['win32_error'] or data['rollback_error']):
+        raise RuntimeError('Inconsistent PlayOnline version repair receipt; export Diagnostics')
+    return dict(data)
+
+
 def private_environment(supervisor):
     # The pipe parser emits fixed categories/codes only. DXVK must use that
     # pipe too, rather than retaining an unfiltered application-named log.
@@ -243,15 +263,21 @@ def run(supervisor):
         # paths; viewer-only registrations below stay in the staged prefix.
         result = SESSION / 'client-step.json'
         result.unlink(missing_ok=True)
-        supervisor.status('registering_playonline_paths', message='Preparing PlayOnline installation paths')
+        supervisor.status('registering_playonline_paths', message='Checking PlayOnline version metadata and installation paths')
         registry_started = time.monotonic()
         worker = None
+        receipt = {}
         try:
-            worker = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', 'registry', manifest['region'],
+            worker = supervisor.spawn(supervisor.wine_command(r'P:\client-init.exe', 'update-registry', manifest['region'],
                                       windows_path(manifest['pol']), windows_path(manifest['game'])), 'update-registry.log')
-            supervisor.wait(worker, 90, 'Staged PlayOnline registration')
-            receipt = json.loads(result.read_text()) if result.is_file() else {}
-            if receipt.get('operation') != 'registry' or receipt.get('ok') is not True or receipt.get('bits') != 32:
+            supervisor.wait(worker, 90, 'Staged PlayOnline registration', accepted=(0, 1))
+            try:
+                receipt = json.loads(result.read_text()) if result.stat().st_size <= 32768 else {}
+            except (OSError, ValueError):
+                receipt = {}
+            report['viewer_version_config'] = viewer_version_config(receipt)
+            if (worker.returncode != 0 or receipt.get('operation') != 'update-registry' or
+                    receipt.get('ok') is not True or receipt.get('bits') != 32):
                 raise RuntimeError('Missing successful 32-bit staged PlayOnline registry receipt')
         finally:
             report['initial_registry'] = {'exit_code': worker.poll() if worker is not None else None,

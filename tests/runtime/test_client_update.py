@@ -30,7 +30,8 @@ def pe():
 class FakeSupervisor:
     def __init__(self, session, cancel_wait=False, registry_ok=True, child_exit=0, dependency_error=0,
                  viewer_error=None, missing_receipt=False, malformed_check=False, viewer_output=b'',
-                 component_failure=None, component_receipt_changes=None, missing_component_receipt=False):
+                 component_failure=None, component_receipt_changes=None, missing_component_receipt=False,
+                 version_config=None):
         self.req = {'session_id': '12345678-1234-1234-1234-123456789abc'}
         self.env = {'WINEPREFIX': '/prefix'}
         self.private_output = False
@@ -43,6 +44,9 @@ class FakeSupervisor:
         self.component_failure = component_failure
         self.component_receipt_changes = component_receipt_changes or {}
         self.missing_component_receipt = missing_component_receipt
+        self.version_config = version_config if version_config is not None else {
+            'state': 'file_unavailable', 'version': '', 'candidate': 'none',
+            'win32_error': 2, 'rollback_error': 0, 'content_id': 1000}
 
     def status(self, phase=None, **fields):
         self.states.append(dict(fields, phase=phase))
@@ -68,7 +72,8 @@ class FakeSupervisor:
         self.waits.append(proc.name)
         proc.returncode = 0
         if proc.name == 'update-registry.log':
-            (self.session / 'client-step.json').write_text(json.dumps({'operation': 'registry', 'ok': self.registry_ok, 'bits': 32}))
+            (self.session / 'client-step.json').write_text(json.dumps({'operation': 'update-registry',
+                'ok': self.registry_ok, 'bits': 32, 'viewer_version_config': self.version_config}))
         if len(proc.args) > 2 and proc.args[1] == r'P:\client-init.exe' and proc.args[2] in ('register', 'com', 'class'):
             operation = proc.args[2]
             dll = proc.args[-1].split('\\')[-1].lower()
@@ -125,6 +130,39 @@ class TimedSupervisor(FakeSupervisor):
 
 
 class UpdateContracts(unittest.TestCase):
+    def test_viewer_version_repair_is_recorded_in_staged_registry_worker(self):
+        for state, candidate, version in [('restored_missing', 'official_installer', '20260925_1'),
+                                           ('restored_missing', 'zero', '20260925_1'),
+                                           ('existing_preserved', 'none', ''),
+                                           ('format_not_matched', 'none', '')]:
+            config = dict(state=state, candidate=candidate, version=version,
+                          win32_error=0, rollback_error=0, content_id=1000)
+            with self.subTest(state=state, candidate=candidate), tempfile.TemporaryDirectory() as tmp:
+                client, session, logs, manifest = self.fixture(Path(tmp))
+                with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), patch.object(client_update, 'LOGS', logs):
+                    s = FakeSupervisor(session, version_config=config)
+                    client_update.run(s)
+                report = json.loads((logs / 'client-update.json').read_text())
+                self.assertEqual(report['viewer_version_config'], config)
+                self.assertEqual(s.calls[0][0], ['wine', r'P:\client-init.exe', 'update-registry', 'EU', r'D:\Viewer', r'D:\Game'])
+                self.assertEqual(len(s.waits), 10)  # No additional Wine startup.
+
+    def test_invalid_version_repair_metadata_never_authorizes_viewer_or_leaks_values(self):
+        config = dict(state='restored_missing', candidate='zero', version='20260925_1',
+                      win32_error=0, rollback_error=0, content_id=1000)
+        cases = [{'state': []}, {'state': 'PRIVATE-STATE'}, {'candidate': 'PRIVATE-KEY'},
+                 {'version': 'PRIVATE-ACCOUNT'}, {'content_id': True}, {'win32_error': -1},
+                 {'rollback_error': True}, {'version': ''}, {'candidate': 'none'},
+                 {'win32_error': 5}, {'raw_registry': 'PRIVATE-REGISTRY'}]
+        for changes in cases:
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as tmp:
+                client, session, logs, manifest = self.fixture(Path(tmp))
+                with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), patch.object(client_update, 'LOGS', logs):
+                    s = FakeSupervisor(session, version_config=dict(config, **changes))
+                    with self.assertRaises(RuntimeError): client_update.run(s)
+                self.assertNotIn('playonline.log', s.waits)
+                self.assertNotIn('PRIVATE-', (logs / 'client-update.json').read_text())
+
     def test_codec_override_is_updater_only_and_preserves_game_environment(self):
         game_environment = {'WINEPREFIX': '/prefix', 'WINEDLLOVERRIDES': 'winegstreamer=;d3d8,d3d9=n',
                             'DXVK_LOG_PATH': '/logs', 'WINEDEBUG': '-all'}

@@ -53,7 +53,7 @@ if [[ "${LSB_PLAYONLINE_ONLINE:-0}" == "1" ]]; then
  online_status=0
  for online_case in missing-interface msi-interface; do
  mkdir -p "out/playonline-test/online-private/$online_case"
- docker run --rm --network bridge \
+ docker run --rm --network bridge --tmpfs /prefix --tmpfs /client --tmpfs /session \
   -v "$PWD/out/playonline-test/backend:/opt/lsb:ro" \
   -v "$PWD/out/playonline-test/backend/wineserver:/opt/wine/bin/wineserver:ro" \
   -v "$PWD/out/playonline-test/probe:/probe:ro" -v "$PWD/tests/runtime:/tests:ro" \

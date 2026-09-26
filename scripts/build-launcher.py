@@ -49,6 +49,7 @@ if args.tests:
     build('tests/windows/display-config.c', tests/'display-config.exe', ['-mconsole'])
     build('tests/windows/gamepad-check.c', tests/'gamepad-check.exe', ['-mconsole','-ldinput8','-ldxguid'])
     build('tests/windows/version-registry.c', tests/'version-registry.exe', ['-mconsole'])
+    build('tests/windows/viewer-version-registry.c', tests/'viewer-version-registry.exe', ['-mconsole'])
     build('tests/windows/missing-dependency.c', tests/'lsb-missing-fixture.dll', ['-shared', '-Wl,--out-implib,'+str(tests/'libmissing.a')])
     build('tests/windows/login-stub.c', tests/'login-missing.exe', ['-mconsole','-DMISSING_IMPORT','-L'+str(tests),'-lmissing'])
     build('tests/windows/dependency-lifetime.c', tests/'dependency-detach.dll', ['-shared'])

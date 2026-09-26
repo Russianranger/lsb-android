@@ -38,6 +38,8 @@ jobs:
           /tmp/lsb-native-surface-test
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/draw-stats.c -o /tmp/lsb-draw-stats-test
           /tmp/lsb-draw-stats-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/version-codec.c -o /tmp/lsb-version-codec-test
+          /tmp/lsb-version-codec-test
           python3 -m unittest discover -s tests/runtime -p 'test_*.py'
           python3 -m unittest discover -s tests/server -p 'test_*.py'
       - uses: actions/cache@v4
@@ -73,13 +75,13 @@ jobs:
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks" \
             --with-restore-test
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.39.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-Restore-Test-0.5.39.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.40.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-Restore-Test-0.5.40.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.39.apk
+            out/LSB-Android-0.5.40.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/
@@ -105,8 +107,8 @@ jobs:
         with:
           name: restore-test-device-build
           path: |
-            out/LSB-Android-Restore-Test-0.5.39.apk
-            out/LSB-Android-Restore-Test-0.5.39.apk.sha256
+            out/LSB-Android-Restore-Test-0.5.40.apk
+            out/LSB-Android-Restore-Test-0.5.40.apk.sha256
       - name: Preserve APK verification tools
         run: |
           mkdir -p out/apk-tools/lib out/apk-tools/lib64

@@ -145,9 +145,9 @@ def main(variant):
         directory.mkdir(exist_ok=True)
     # These paths belong only to this new disposable container. Never mount an
     # existing working client or prefix into this diagnostic invocation.
-    assert not Path('/prefix').exists(), 'Online fixture requires a fresh prefix'
+    Path('/prefix').mkdir(exist_ok=True)
+    assert not any(Path('/prefix').iterdir()), 'Online fixture requires an empty prefix'
     assert not (CLIENT / 'Viewer').exists(), 'Online fixture requires a fresh client'
-    Path('/prefix').mkdir()
     shutil.copytree('/official', CLIENT / 'Viewer')
     (CLIENT / 'Game').mkdir()
     assert hashlib.sha256((CLIENT / 'Viewer/pol.exe').read_bytes()).hexdigest() == POL_SHA

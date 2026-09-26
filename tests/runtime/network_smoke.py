@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 
-TARGETS = {'qc000.pol.com': bytes([192, 0, 2, 40]),
+TARGETS = {'ci000.pol.com': bytes([192, 0, 2, 40]),
            'www.playonline.com': bytes([192, 0, 2, 41])}
 SERVER = '127.0.0.2'
 
@@ -121,7 +121,7 @@ def main(mode):
         assert preflight['format'] == 1 and preflight['layer'] == 'guest_ipv4_resolver'
         assert preflight['any_resolved'] is configured and preflight['all_resolved'] is configured
         assert preflight['patch_connection_verified'] is False
-        assert [row['target'] for row in preflight['checks']] == ['patch_server', 'official_web']
+        assert [row['target'] for row in preflight['checks']] == ['content_info', 'official_web']
         for row in preflight['checks']:
             assert set(row) == {'target', 'ok', 'address_count', 'error', 'error_code', 'elapsed_ms'}
             assert row['ok'] is configured and row['address_count'] == int(configured)

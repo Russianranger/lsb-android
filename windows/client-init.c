@@ -7,6 +7,7 @@
 #include <objbase.h>
 #include <stdio.h>
 #include <wchar.h>
+#include "viewer-version-registry.h"
 
 /* Class/interface identifiers: LandSandBoat/xiloader src/defines.h at
  * 370a1a11e4d3c5b58b793bd83096de34d5942ed6. No game methods are invoked. */
@@ -32,7 +33,12 @@ static int report(const WCHAR *op,HRESULT hr){
     FILE *f=_wfopen(receipt_new,L"wb");if(!f)return 91;
     fprintf(f,"{\"format\":1,\"bits\":32,\"operation\":");quoted(f,op);
     fprintf(f,",\"ok\":%s,\"hresult\":%lu,\"win32_error\":%lu,\"child_exit\":%lu,\"detail\":",SUCCEEDED(hr)?"true":"false",(unsigned long)hr,(unsigned long)error_code,(unsigned long)child_exit);quoted(f,detail);
-    fputs(",\"loaded_path\":",f);quoted(f,loaded);fputs("}\n",f);fclose(f);
+    fputs(",\"loaded_path\":",f);quoted(f,loaded);
+    if(!wcscmp(op,L"update-registry"))fprintf(f,
+        ",\"viewer_version_config\":{\"state\":\"%s\",\"version\":\"%s\",\"candidate\":\"%s\",\"win32_error\":%lu,\"rollback_error\":%lu,\"content_id\":1000}",
+        viewer_version_state,viewer_version,viewer_version_candidate,
+        (unsigned long)viewer_version_error,(unsigned long)viewer_version_rollback_error);
+    fputs("}\n",f);fclose(f);
     if(!MoveFileExW(receipt_new,receipt_final,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))return 92;
     wprintf(L"%ls: HRESULT=0x%08lx Win32=%lu %ls\n",op,(unsigned long)hr,(unsigned long)error_code,detail);fflush(stdout);
     return SUCCEEDED(hr)?0:1;
@@ -154,6 +160,13 @@ int wmain(int argc,WCHAR **argv){
     HRESULT init=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);if(FAILED(init))return report(L"com-apartment",init);
     HRESULT hr=E_INVALIDARG;const WCHAR *op=argc>1?argv[1]:L"arguments";
     if(argc==5&&!wcscmp(op,L"registry"))hr=registry(argv[2],argv[3],argv[4]);
+    else if(argc==5&&!wcscmp(op,L"update-registry")){
+        hr=registry(argv[2],argv[3],argv[4]);
+        if(SUCCEEDED(hr)){
+            LONG error=viewer_version_registry(argv[2],argv[3]);error_code=(DWORD)error;
+            hr=HRESULT_FROM_WIN32(error);wcscpy(detail,L"Staged installation paths checked; viewer version configuration inspected");
+        }
+    }
     else if(argc==3&&!wcscmp(op,L"register"))hr=register_file(argv[2]);
     else if(argc==5&&!wcscmp(op,L"com"))hr=com(argv[2],argv[3],argv[4]);
     else if(argc==4&&!wcscmp(op,L"class"))hr=viewer_class(argv[2],argv[3]);
