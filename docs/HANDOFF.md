@@ -1,3 +1,138 @@
+# 0.5.41: batched updater preparation and blank-panel diagnostics
+
+Owner reports PlayOnline updated, but the center of its Version Update page is
+blank, preventing access to Check Files; the entire updater still feels slow.
+Support `lsb-support(20260926-185554).zip`, SHA256
+`d606a75658b161755603e6156991873eccd7b01fa86588b4244db61c7bdc4537`,
+Library libfile_a4c714cfeab8819186ff70e1c890cc26 /
+file_000000004f8881f5894f386177e77e7d. Screenshot_20260926-135337.png is
+file_000000008e8081f597168327035b78cd. Latest session
+`05c099a9-9711-40f3-8e36-ea0ad12c5ea4`, staged generation
+`05d8856e-7a99-46c1-a9da-07cc4e8b3ec6`; accepted generation remains
+`768f3a6d-8dfb-462f-8b9d-46cdd7101505`.
+
+Current preparation is 85.997 s: registry 8.321 s; core register/check
+10.918/10.771 s; app 11.535/10.924 s; contents 9.562/17.567 s; dependencies
+6.081 s. Six component workers alone consume 71.277 s, repeating Wine/Box64
+and explorer/RPC startup. First window is visible 14.732 s after viewer start.
+Viewer runs 289.539 s until intentional Stop; no recorded crash. DNS checks pass.
+Android decode/draw is inexpensive, and the long no-damage interval does not
+establish slow Android rendering or prove that the guest window is healthy.
+
+Prior .40 session `330b7623-2bf5-463b-a5f9-3732abcd8400` ran approximately
+109.5 minutes before the original viewer exited 0; a second pol.exe appears.
+The existing prefix wait preserved the replacement until Stop. Live core/app/
+contents hashes stay the same. `viewer_version_config` changes from
+file_unavailable/error 2 to format_not_matched, making no registration repair
+in either case. Do not force a replacement value or claim that .40's guarded
+repair ran. The owner observed the update, but the available metadata cannot
+independently certify which files were applied or diagnose the blank panel.
+
+Source `7a6b9cfc56e6d67e5b98170c9c585cd47e10d04f`, tree
+`2e51a364f9f7f49f4f567a07a40677c1ca7a7373`, version 0.5.41 / code 57.
+See docs/playonline-panel-0541.md for detailed evidence and bounds.
+
+- Six live registration/COM operations share one disposable helper process.
+  Exact staged module paths, ordering, failure short-circuit, strict receipts,
+  outcomes and timings remain. No cache or skipped checks. Guarded registration
+  and load-only dependency check stay separate. Phone timing still needs testing.
+- Updater-only display menu **Refresh display** requests one full framebuffer;
+  duplicates while pending are suppressed. Optional bounded pixel coverage is
+  active only after that action. Existing display-performance JSON contains
+  refresh result/count/time, never screen contents. Full coverage is not proof
+  of guest rendering health or which RFB request caused the response.
+- Viewer receipt schema 2 preserves fast initial visibility sampling, then
+  records CPU counters and a bounded own-window WM_NULL probe every five seconds.
+  It reads no window titles or account text. It tracks the original child only;
+  it does not classify detached replacement windows. Prefix waiting is unchanged.
+- Before/end-of-attempt fixed-file snapshots retain status/size/hash only with
+  two-second aggregate budget, 16 MiB/file and descriptor-relative nofollow
+  traversal. On Stop, children can still be closing; never treat these as a
+  completed-update certificate. Fixed app/regional contents module labels are
+  added to the private diagnostics allowlist.
+- Client guidance explains viewer update/restart before main-menu File Repair.
+
+Local checks: all 134 runtime unit methods pass; core import/recovery checks,
+62 session archive checks, 353 transaction recovery checks, display transport
+and 92 ZRLE checks pass. Independent review found no blocking findings. Native
+batch and heartbeat execution, Android packaging and official viewer evidence
+follow below. The prior 640a167 push/PR workflows both passed (36213312191 /
+36213314227), including the corrected fixture readback; both online cases only
+reached the fresh installer's Update confirmation. Neither downloaded the viewer
+or reproduced this phone's blank panel.
+
+Keep the regular app and Restore Test isolated. Do not change the accepted FEX
+gameplay profile or extend syscall filtering to Box64 without qualifying that
+new profile. The current updater remains Box64/DXVK 2.5.3. This release reduces
+repeated preparation work and adds a targeted refresh/diagnostic path; it does
+not claim a proven fix for the blank panel or all ongoing UI slowness. Newest
+server/database experiments remain deferred until client updating is accepted.
+
+Retry in Restore Test with **Client → Client update · PlayOnline → Open or resume
+PlayOnline update**; no new restore/import/runtime download. If the panel stays
+blank, use **☰ → Refresh display** once, wait up to 15 seconds, export fresh
+support if still blank. Inspect refresh coverage, process heartbeat/CPU and
+viewer_files_before/after. Never activate until official File Repair completes
+and staged verification passes.
+
+## 0.5.41 validation and signed delivery
+
+Source CI: push run `36265028738`, PR run `36265030842` on
+`7a6b9cfc56e6d67e5b98170c9c585cd47e10d04f`. Android verify and native Windows
+jobs passed in both runs. Verify confirms 134 runtime tests, 39 server tests,
+and 1,174 codec checks. Actual Windows execution passed 283 checks per run,
+including all three regions, all six batch failure positions, seven invalid
+batch paths, COM release/factory-only behavior, source preservation, and
+responsive/hung-window heartbeat tests. Native jobs: `108468571515` (push),
+`108468442201` (PR). No corrective source changes were needed.
+
+APKs are version 0.5.41 / code 57, signed using the retained certificate
+SHA256 `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Both v2/v3 signatures, alignment, ZIP integrity and byte-identical CI payloads
+verified. All 12 runtime and 7 server assets match the checked-out source.
+Pair verification confirms separate application IDs/labels/private components
+and 59 identical shared code/resource/runtime entries. Both are 18,420,461 bytes.
+
+- Regular `LSB-Android-0.5.41.apk`, package `io.github.russianranger.lsb`.
+  SHA256 `e13bf1dbd67dfef35fe18eb131e7f313e0d33bafaaf336864765278ceed2cb65`.
+  Saved Library `libfile_90349a519d188191a5e4145141547f7a` /
+  `file_00000000547481f5b960e76006239bf4`, version 0.
+  Unsigned CI artifact `10913507252`, archive SHA256
+  `655b7b0b770893a78eb6dd1b08d2485408fd4eae70e28e7caecaf8fba6f1536c`.
+- Test `LSB-Android-Restore-Test-0.5.41.apk`, package
+  `io.github.russianranger.lsb.restoretest`.
+  SHA256 `7d1da309010fd1f56a4c470fd9c71777f536fb52288598c23d2cc3cb2835b31f`.
+  Saved Library `libfile_95feb11443708191a940b829b171dd37` /
+  `file_00000000369c81f5bf00ff1be29bcbb2`, version 0.
+  Unsigned CI artifact `10914310824`, archive SHA256
+  `5936062f5188b46521a20f7571838b856f4761f298ad3117ada0b2614fc92fc6`.
+
+Focused PlayOnline jobs passed in both runs: `108468571524` (push),
+`108468442200` (PR). Push evidence artifact `10913992320` was downloaded and
+verified against SHA256
+`3178255d0061d0071f56875b3ca2698da09c405452522d8b73e4a0a2a96b7575`.
+Root and viewer reviewer visually inspected production.png and both
+online-*-after-next-170.png screenshots. The production fresh official viewer
+shows the complete Setup / Version Update page, including Next/Cancel controls.
+Both online variants reach the complete Update confirmation with Prepare /
+Download / Install text and Update/Back buttons. There is no blank-panel
+regression in this fixture, but it does not reproduce the owner's updated copy,
+perform a viewer download, or establish successful client File Repair.
+
+In this CI environment, the valid production batch exits 0 in 1,052 ms and
+preparation takes 1,853 ms; these are not phone performance measurements.
+All six component results succeed with HRESULT and Win32 error 0. Fixed-file
+snapshots each take 4 ms. Production heartbeat schema 2 has six samples,
+a responsive window and valid CPU/error fields. Both online observations
+complete their windows with no screenshot-capture failures. Unchanged broad
+graphics jobs may still run; no claim is made that every workflow job completed.
+
+This handoff-only commit follows the tested source commit and uses `[skip ci]`.
+The APKs above contain exactly the tested source; this subsequent documentation
+change does not alter their payload.
+
+---
+
 # 0.5.40: guarded PlayOnline viewer version-registration repair
 
 The owner’s .39 test reaches POL-1168, “Unable to verify version information”.
