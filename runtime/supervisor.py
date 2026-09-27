@@ -202,6 +202,50 @@ class Supervisor:
         if proc.returncode not in accepted:raise RuntimeError(label+' exited with code '+str(proc.returncode)+'; export Diagnostics')
     def wine(self,args,timeout=180,label='Wine setup'):
         self.wait(self.spawn(self.wine_command(*args),'wine-setup.log'),timeout,label)
+    def prepare_prefix(self,ready):
+        if self.engine=='fex' and not ready:
+            from fex_runtime import refresh_host_builtins
+            self.state['fex_migrated_host_files']=refresh_host_builtins(Path('/opt/wine'),PREFIX)
+        if self.engine!='fex' or ready or self.req.get('action')!='update-client':
+            self.wine(['wineboot','-i' if ready else '-u'],240,'Fresh Windows prefix initialization')
+            return
+        # Wine's Unix loader first runs wineboot --init. A following -u forces
+        # the entire host/WoW64 registration a second time. Invalidate only the
+        # isolated, unready updater clone's timestamp so --init updates once.
+        # A failed attempt stays unready and therefore repeats the full update
+        # safely on retry; this is not Wine's "disable updates" timestamp.
+        (PREFIX/'.update-timestamp').unlink(missing_ok=True)
+        started=time.monotonic();last_status=0.0
+        report={'format':1,'policy':'single_fex_updater_initialization','state':'running',
+                'timeout_seconds':600,'elapsed_ms':0,'exit_code':None}
+        def progress(state):
+            report.update(state=state,elapsed_ms=int((time.monotonic()-started)*1000))
+            self.status('preparing_prefix',prefix_initialization=dict(report),
+                message='Preparing the separate FEX updater environment · '+str(report['elapsed_ms']//1000)+' s')
+        progress('running')
+        try:
+            proc=self.spawn(self.wine_command('wineboot','-i'),'wine-setup.log')
+            while proc.poll() is None:
+                self.stopped()
+                elapsed=time.monotonic()-started
+                if elapsed>=600:raise RuntimeError('Separate FEX updater environment initialization timed out; export Diagnostics')
+                if elapsed-last_status>=5:
+                    progress('running');last_status=elapsed
+                time.sleep(.15)
+            report['exit_code']=proc.returncode
+            if proc.returncode!=0:raise RuntimeError('Separate FEX updater environment initialization exited with code '+str(proc.returncode)+'; export Diagnostics')
+            self.logs[-1].thread.join(3)
+            # Wine's own bootstrap wait is also bounded. Its loader can carry
+            # on after that wait expires; do not mistake exit 0 for readiness.
+            if b'boot event wait timed out' in (LOGS/'wine-setup.log').read_bytes():
+                raise RuntimeError('Wine could not finish preparing the separate FEX updater environment; export Diagnostics')
+        except Stopped:
+            progress('stopped');raise
+        except Exception:
+            progress('failed');raise
+        # Completion here means wineboot exited; the PE32 files and actual FEX
+        # parent/child execution still must pass before the ready marker below.
+        progress('completed')
     def graphics(self,bundle):
         if self.req['renderer']=='software':
             self.env['WINEDLLOVERRIDES']+=';d3d8,d3d9=b'
@@ -416,6 +460,8 @@ class Supervisor:
         # PRoot's mode is fixed in the parent process. Read the host's session-
         # matched receipt; an unsafe baseline must stop this launch, never claim
         # an in-process fallback that cannot actually disable syscall filtering.
+        updater=self.req.get('action')=='update-client'
+        setting='Updater runtime acceleration in Client update' if updater else 'Runtime syscall filtering'
         deadline=time.monotonic()+2
         try:
             while True:
@@ -449,11 +495,27 @@ class Supervisor:
         except (OSError,ValueError,TypeError,KeyError) as error:
             report.update(active='unconfirmed',launch_blocked=True,note=str(error))
             self.status(**{status_key:report})
-            raise RuntimeError('Syscall-filter activation unconfirmed; disable Runtime syscall filtering and relaunch') from error
+            raise RuntimeError('Syscall-filter activation unconfirmed; disable '+setting+' and relaunch') from error
         report.update(active='syscall_filter',host_preflight='passed',host_launch_observed=True,
                       option='PRoot syscall filtering',
                       scope='Host syscall translation; graphics configuration unchanged')
         baseline=self.state.get('graphics_tuning',{}).get('active',{})
+        if updater:
+            # This separate updater profile is qualified for both engines with
+            # DXVK 2.5.3 and RFB. Do not broaden the proven gameplay profile or
+            # inherit its shader experiments/native presentation settings.
+            tunings=('turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers')
+            if (self.engine not in ('box64','fex') or self.req['renderer']!='turnip26'
+                    or self.req.get('dxvk_version','2.5.3')!='2.5.3' or self.state.get('dxvk_selected')!='2.5.3'
+                    or self.req.get('performance_trial','none')!='none'
+                    or any(self.req.get(key,False) or baseline.get(key,False) for key in tunings)
+                    or self.req.get('native_surface',False) or self.req.get('shm_upload',False)):
+                report.update(launch_blocked=True,note='Active host filtering requires the qualified PlayOnline engine, Turnip 26, DXVK 2.5.3 and no graphics trial or tunings')
+                self.status(**{status_key:report})
+                raise RuntimeError('Syscall-filter updater profile changed; disable '+setting+' and relaunch')
+            report.update(profile='playonline',engine=self.engine,
+                          check='Host preflight and actual launch activation confirmed; updater graphics settings retained')
+            self.status(**{status_key:report});return
         if (self.req.get('action')!='launch' or self.engine!='fex'
                 or self.req.get('performance_trial','none') not in ('none','syscall_filter')
                 or self.req['renderer']=='software' or self.state.get('dxvk_selected')!='2.7.1'
@@ -552,10 +614,7 @@ class Supervisor:
         try:ready=json.loads(marker.read_text())==signature
         except (OSError,ValueError):pass
         if self.req.get('action','probe')=='probe':marker.unlink(missing_ok=True)
-        if self.engine=='fex' and not ready:
-            from fex_runtime import refresh_host_builtins
-            self.state['fex_migrated_host_files']=refresh_host_builtins(Path('/opt/wine'),PREFIX)
-        self.wine(['wineboot','-i' if ready else '-u'],240,'Fresh Windows prefix initialization')
+        self.prepare_prefix(ready)
         for name in ('ntdll.dll','kernel32.dll','kernelbase.dll'):
             if not pe32(PREFIX/'drive_c/windows/syswow64'/name):raise RuntimeError('Missing 32-bit Windows system file: '+name)
         devices=PREFIX/'dosdevices';devices.mkdir(exist_ok=True)

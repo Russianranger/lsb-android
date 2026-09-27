@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 
 sys.path.insert(0, '/opt/lsb')
@@ -23,6 +24,43 @@ LOGS = Path('/logs')
 STAGED = CLIENT / 'Updater fixture'
 PRIVATE = (b'PRIVATE-POL-STDOUT-SENTINEL', b'PRIVATE-POL-STDERR-SENTINEL',
            b'PRIVATE-ACCOUNT-TITLE-MUST-NOT-BE-RECORDED')
+
+
+def configure_filter(request):
+    """CI receipt from host-observed PRoot markers, never an assumed fast mode."""
+    filtered = os.environ.get('LSB_TEST_FILTERED') == '1'
+    request['proot_acceleration'] = filtered
+    if not filtered:
+        return
+    deadline = time.monotonic() + 10
+    marker = Path('/ci-filter/active')
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(.02)
+    assert marker.read_text() == 'TRASC PRoot: seccomp acceleration observed\n', 'Actual parent filter marker absent'
+    preflight = Path('/ci-filter/preflight')
+    assert preflight.read_text() == 'LSB_PROOT_PREFLIGHT_V1 PASS\n', 'Filtered production preflight absent'
+    # The observer owns this separate binding as host root. The traced tree
+    # runs as the ordinary CI user, even though PRoot reports guest uid 0.
+    for proof in (marker, preflight):
+        try:
+            with proof.open('ab'):
+                pass
+        except PermissionError:
+            continue
+        raise AssertionError('Guest can rewrite host filter activation proof')
+    receipt = {'format': 1, 'session_id': request['session_id'], 'requested': 'syscall_filter',
+               'preflight_passed': True, 'launch_observed': True, 'mode': 'syscall_filter',
+               'reason': 'ci_host_marker_observed', 'preflight_ms': 0}
+    (LOGS / 'proot-acceleration.json').write_text(json.dumps(receipt))
+
+
+def assert_filter(state):
+    acceleration = state.get('runtime_acceleration', {})
+    if os.environ.get('LSB_TEST_FILTERED') == '1':
+        assert acceleration.get('active') == 'syscall_filter', acceleration
+        assert acceleration.get('host_preflight') == 'passed' and acceleration.get('host_launch_observed') is True, acceleration
+    else:
+        assert acceleration == {'requested': False, 'active': 'none'}, acceleration
 
 
 def inventory(root, excluded=None):
@@ -104,6 +142,7 @@ def main():
             request = {'format': 1, 'engine': os.environ.get('LSB_TEST_ENGINE', 'box64'), 'session_id': str(uuid.uuid4()),
                        'renderer': os.environ.get('LSB_TEST_RENDERER', 'software'), 'audio': False, 'action': 'update-client',
                        'dxvk_version': '2.5.3', 'proot_acceleration': False}
+            configure_filter(request)
             (SESSION / 'client-update-manifest.json').write_text(json.dumps(manifest))
             (SESSION / 'request.json').write_text(json.dumps(request))
             expected_imports = imports(executable)
@@ -111,6 +150,7 @@ def main():
             staged_before = inventory(STAGED)
             process = subprocess.run(['python3', '/opt/lsb/supervisor.py'], timeout=480)
             state = json.loads((SESSION / 'status.json').read_text())
+            assert_filter(state)
             report = json.loads((LOGS / 'client-update.json').read_text())
             assert report['generation'] == manifest['generation'] and report['session_id'] == request['session_id'], report
             assert report['activation_performed'] is False and report['official_repair_confirmed'] is False, report

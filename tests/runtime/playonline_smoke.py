@@ -24,6 +24,7 @@ import zlib
 
 sys.path.insert(0, '/opt/lsb')
 from integration import recv
+from updating import configure_filter, assert_filter
 
 SESSION = Path('/session')
 LOGS = Path('/logs')
@@ -202,6 +203,7 @@ def main():
         request = {'format': 1, 'engine': engine, 'session_id': str(uuid.uuid4()),
                    'renderer': renderer, 'audio': False, 'action': 'update-client',
                    'dxvk_version': '2.5.3', 'proot_acceleration': False}
+        configure_filter(request)
         if os.environ.get('LSB_TEST_REPAIR_DIAGNOSTICS') == '1': request['repair_diagnostics'] = True
         (SESSION / 'client-update-manifest.json').write_text(json.dumps(manifest))
         (SESSION / 'request.json').write_text(json.dumps(request))
@@ -209,13 +211,16 @@ def main():
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         started = time.monotonic()
         visible_at = None
+        # Cold FEX migration has its own 600 s bound and must complete exactly
+        # one registration pass; matrix assertions inspect that receipt.
+        limit = 720 if engine == 'fex' else 240
         captured_at = 0
         metrics = {'distinct_colors': 0, 'nonbackground_pixels': 0}
         observed = {}
         capture_failures = []
         negotiated_dimensions = None
         try:
-            while process.poll() is None and time.monotonic() - started < 240:
+            while process.poll() is None and time.monotonic() - started < limit:
                 receipt = read_json(SESSION / 'playonline-process.json')
                 if receipt.get('visible_window_seen'):
                     observed = receipt
@@ -255,10 +260,11 @@ def main():
                           'component_registration': report.get('component_registration', []),
                           'dependency_attempts': report.get('dependency_attempts', []),
                           'repair_io': report.get('repair_io'),
-                          'runtime': {key: state.get(key) for key in ('runtime_engine', 'graphics', 'dxvk_selected', 'fex_execution_verified', 'runtime_acceleration')},
+                          'runtime': {key: state.get(key) for key in ('runtime_engine', 'graphics', 'dxvk_selected', 'fex_execution_verified', 'runtime_acceleration', 'prefix_initialization')},
                           'startup_diagnostics': report.get('startup_diagnostics', {})}
         (LOGS / 'official-playonline-smoke.json').write_text(json.dumps(results, indent=2))
         assert state.get('session_id') == request['session_id'], 'Missing current supervisor receipt'
+        assert_filter(state)
         assert preparation.get('session_id') == request['session_id'] and \
             preparation.get('generation') == manifest['generation'], 'Missing current preparation comparison'
         assert (report.get('session_id') == request['session_id'] and

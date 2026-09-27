@@ -187,6 +187,20 @@ public class ClientUpdatePageTest {
         View backup=card("clientPage","Backup and recovery");button(backup,"Manage backups and storage").performClick();
         Intent launch=Shadows.shadowOf(activity).getNextStartedActivity();assertNotNull(launch);assertEquals(BackupBrowserActivity.class.getName(),launch.getComponent().getClassName());assertUnchanged();
     }
+    @Test public void updaterAccelerationIsSeparateFromGameplayAndPreservesChoice()throws Exception {
+        View update=card("clientUpdateCard","Client update · PlayOnline");
+        CheckBox acceleration=(CheckBox)text(update,"Updater runtime acceleration");
+        assertNotNull(acceleration);assertTrue(acceleration.isChecked());assertUnchanged();
+        acceleration.performClick();
+        assertFalse(context.getSharedPreferences("runtime",0).getBoolean("updater_syscall_filter",true));
+        assertTrue(context.getSharedPreferences("runtime",0).getBoolean("proot_acceleration",false));
+        Map<String,Object> expected=new HashMap<>(runtimeSettings);expected.put("updater_syscall_filter",false);
+        assertEquals(expected,context.getSharedPreferences("runtime",0).getAll());
+        update=card("clientUpdateCard","Client update · PlayOnline");
+        assertFalse(((CheckBox)text(update,"Updater runtime acceleration")).isChecked());
+        runtime.starting=true;update=card("clientUpdateCard","Client update · PlayOnline");
+        assertFalse(text(update,"Updater runtime acceleration").isEnabled());runtime.starting=false;
+    }
     @Test public void startRequiresExplicitCopyConfirmationAndDispatchesUpdaterWithoutChangingSettings()throws Exception {
         activeClient();View update=card("clientUpdateCard","Client update · PlayOnline");
         assertTrue(button(update,"Prepare update and open PlayOnline").isEnabled());assertFalse(button(update,"Activate verified update").isEnabled());

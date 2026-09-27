@@ -17,7 +17,7 @@ final class ProotAcceleration {
     private final File run,logs;
     private final Starter starter;
     private final long timeoutMs;
-    private boolean requested,preflight,observed;
+    private boolean requested,preflight,observed,updater;
     private long elapsed;
     private String reason="not_requested";
     private MarkerStream launch;
@@ -27,6 +27,14 @@ final class ProotAcceleration {
         this.session=session;this.run=run;this.logs=logs;this.starter=starter;this.timeoutMs=timeoutMs;
     }
     static boolean eligible(JSONObject r){
+        if("update-client".equals(r.optString("action"))){
+            String engine=r.optString("engine");
+            return ("box64".equals(engine)||"fex".equals(engine))
+                &&"turnip26".equals(r.optString("renderer"))&&"2.5.3".equals(r.optString("dxvk_version","2.5.3"))
+                &&"none".equals(r.optString("performance_trial","none"))
+                &&!r.optBoolean("turnip_sysmem")&&!r.optBoolean("dxvk_two_compilers")&&!r.optBoolean("dxvk_staged_buffers")
+                &&!r.optBoolean("native_surface")&&!r.optBoolean("shm_upload");
+        }
         String trial=r.optString("performance_trial","none");
         return ("none".equals(trial)||"syscall_filter".equals(trial))
             &&"launch".equals(r.optString("action"))&&"fex".equals(r.optString("engine"))
@@ -46,9 +54,10 @@ final class ProotAcceleration {
         else{builder.environment().put("PROOT_NO_SECCOMP","1");builder.environment().remove("TRASC_PROOT_REPORT");}
     }
     boolean prepare(ProcessBuilder main,JSONObject request,Check stop,Cleanup cleanup)throws Exception{
+        updater="update-client".equals(request.optString("action"));
         configure(main,false);requested=request.optBoolean("proot_acceleration","syscall_filter".equals(request.optString("performance_trial")));
         if(!requested)return false;
-        if(!eligible(request)){reason="requires_tested_fex_turnip26_two_worker_profile";save();return false;}
+        if(!eligible(request)){reason=updater?"requires_tested_playonline_profile":"requires_tested_fex_turnip26_two_worker_profile";save();return false;}
         reason="checking";save();stop.check();
         List<String> command=new ArrayList<>(main.command());int script=command.indexOf("/opt/lsb/supervisor.py");
         if(script<0||script!=command.size()-1)throw new IOException("Cannot isolate the syscall-filter check");
@@ -100,7 +109,7 @@ final class ProotAcceleration {
         try{
             while(!launch.marker){
                 stop.check();
-                if(!child.isAlive()||launch.failed||System.nanoTime()>=deadline){reason="launch_filter_not_observed";save();throw new IOException("Syscall filtering was not confirmed; turn off Runtime syscall filtering in Proven fixes and export support");}
+                if(!child.isAlive()||launch.failed||System.nanoTime()>=deadline){reason="launch_filter_not_observed";save();throw new IOException("Syscall filtering was not confirmed; turn off "+(updater?"Updater runtime acceleration in Client update":"Runtime syscall filtering in Proven fixes")+" and export support");}
                 Thread.sleep(10);
             }
             stop.check();

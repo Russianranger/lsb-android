@@ -181,6 +181,66 @@ class Contracts(unittest.TestCase):
    self.assertEqual(s.env,previous);s.spawn.assert_not_called()
    s.configure_performance_trial()
    self.assertEqual(s.status.call_args.kwargs['performance_trial'],{'requested':'none','active':'none'})
+ def updater_acceleration_fixture(self,folder,engine):
+  s,receipt=self.syscall_trial_fixture(folder);s.engine=engine
+  s.req={'action':'update-client','engine':engine,'renderer':'turnip26','session_id':s.req['session_id'],
+         'dxvk_version':'2.5.3','proot_acceleration':True}
+  s.state={'dxvk_selected':'2.5.3','graphics_tuning':{'active':{}}};s.env={'DXVK_CONFIG':'unchanged'}
+  return s,receipt
+ def test_updater_acceleration_keeps_host_evidence_and_graphics_independent_for_both_engines(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for engine in ('box64','fex'):
+    for accepted in (False,True):
+     s,receipt=self.updater_acceleration_fixture(folder,engine);previous=dict(s.env)
+     if not accepted:receipt.update(preflight_passed=False,launch_observed=False,mode='compatibility')
+     (folder/'proot-acceleration.json').write_text(json.dumps(receipt))
+     s.configure_runtime_acceleration();report=s.status.call_args.kwargs['runtime_acceleration']
+     self.assertEqual(report['active'],'syscall_filter' if accepted else 'none')
+     self.assertTrue(report['requested']);self.assertEqual(s.env,previous);s.spawn.assert_not_called()
+     self.assertNotIn('compiler_threads',report);self.assertNotIn('launch_blocked',report)
+     if accepted:
+      self.assertEqual(report['profile'],'playonline');self.assertEqual(report['engine'],engine)
+      self.assertTrue(report['host_launch_observed'])
+     else:self.assertIn('compatibility',report['note'])
+     s.configure_performance_trial()
+     self.assertEqual(s.status.call_args.kwargs['performance_trial'],{'requested':'none','active':'none'})
+ def test_updater_active_filter_rejects_unqualified_effective_profiles(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for engine in ('box64','fex'):
+    for mismatch in ('engine','renderer','requested_dxvk','active_dxvk','trial','native_surface','shm_upload',
+                     'turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','active_tuning'):
+     s,_=self.updater_acceleration_fixture(folder,engine);previous=dict(s.env)
+     if mismatch=='engine':s.engine='unsupported'
+     elif mismatch=='renderer':s.req['renderer']='turnip24'
+     elif mismatch=='requested_dxvk':s.req['dxvk_version']='2.7.1'
+     elif mismatch=='active_dxvk':s.state['dxvk_selected']='2.7.1'
+     elif mismatch=='trial':s.req['performance_trial']='syscall_filter'
+     elif mismatch=='active_tuning':s.state['graphics_tuning']['active']['dxvk_two_compilers']=True
+     else:s.req[mismatch]=True
+     with self.assertRaisesRegex(RuntimeError,'disable Updater runtime acceleration in Client update'):
+      s.configure_runtime_acceleration()
+     report=s.status.call_args.kwargs['runtime_acceleration']
+     self.assertTrue(report['launch_blocked']);self.assertEqual(report['active'],'syscall_filter')
+     self.assertEqual(s.env,previous);s.spawn.assert_not_called()
+ def test_updater_unconfirmed_host_evidence_blocks_with_correct_recovery_setting(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for engine in ('box64','fex'):
+    for mode in ('wrong_session','missing','malformed','pending','inconsistent'):
+     s,receipt=self.updater_acceleration_fixture(folder,engine);path=folder/'proot-acceleration.json'
+     if mode=='wrong_session':receipt['session_id']=str(uuid.uuid4())
+     elif mode=='pending':receipt['launch_observed']=False
+     elif mode=='inconsistent':receipt['mode']='compatibility'
+     path.write_text(json.dumps(receipt))
+     if mode=='missing':path.unlink()
+     elif mode=='malformed':path.write_text('{')
+     with patch.object(module.time,'monotonic',side_effect=(1,4)),patch.object(module.time,'sleep'):
+      with self.assertRaisesRegex(RuntimeError,'disable Updater runtime acceleration in Client update'):
+       s.configure_runtime_acceleration()
+     report=s.status.call_args.kwargs['runtime_acceleration']
+     self.assertEqual(report['active'],'unconfirmed');self.assertTrue(report['launch_blocked']);s.spawn.assert_not_called()
  def test_runtime_acceleration_off_and_older_baseline_do_not_read_receipts(self):
   with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
    folder=pathlib.Path(t)

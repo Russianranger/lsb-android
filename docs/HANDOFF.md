@@ -1,3 +1,152 @@
+# 0.5.43: avoid duplicate FEX initialization and investigate updater CPU overhead
+
+The 0.5.42 phone tests separate two problems: FEX stops during prefix
+initialization, while Box64 reaches PlayOnline but remains slow during repair.
+The FEX attempt does not measure File Repair performance because the viewer
+never starts. Preserve the staged client and the accepted working installation;
+do not repeat an hour-long Box64 repair test.
+
+## Latest phone evidence
+
+Both support archives were read from the attached local files. Their hashes
+were computed locally, and each archive's runtime state was matched to its
+corresponding extracted report.
+
+- FEX report: `lsb-support (1)(7).zip`, 246,994 bytes. SHA-256:
+  `9722586242369b41710b89d93e91d765a69c52d0579214a5455be2703745c5dc`.
+  Session: `e7085b80-0db8-4e18-96f9-536e5be2a36f`.
+  Library: `libfile_7424d504b0208191a4c67b730ea76c30` /
+  `file_00000000a9ac81f5890c148ca4212028`.
+- Box64 report: `lsb-support (2)(9).zip`, 226,942 bytes. SHA-256:
+  `15c2c4cc9e352307c5eecea08b414933e1693e553577d405d8836e3294641019`.
+  Session: `53e52ae7-0b02-4698-ad9e-9665addcabe4`.
+  Library: `libfile_9bf63710b2708191beca039aea6fae35` /
+  `file_00000000235c81f5893f6f802ac9d711`.
+
+The staged generation remains `05d8856e-7a99-46c1-a9da-07cc4e8b3ec6`.
+The Box64 receipt records `official_repair_confirmed: false` and
+`activation_performed: false`; the updated copy has not been activated.
+
+### FEX: duplicate prefix update consumes the startup budget
+
+The FEX session lasts 254.082 seconds and ends with
+`Fresh Windows prefix initialization timed out; export Diagnostics`.
+The retained implementation invokes `wineboot -u` for a prefix without its
+ready marker. During cold migration, Wine first performs its automatic
+`wineboot --init`; the explicit `-u` then forces another update pass.
+
+The phone log records the first `wineboot.exe` load at 54564.097 seconds and a
+second at 54745.498 seconds, 181.401 seconds later. The second pass therefore
+starts after most of the 240-second initialization budget has already elapsed.
+This explains a concrete startup-budget problem; it does not establish a FEX
+incompatibility with PlayOnline or poor FEX file-check throughput. Correct the
+duplicate cold initialization and qualify it with actual patched PRoot before
+asking the owner to retry.
+
+### Box64: normal synthetic checks, substantial viewer and tracer CPU usage
+
+The Box64 session lasts 417.487 seconds. Preparation takes 37.743 seconds, and
+the viewer runs for 357.095 seconds before the owner stops it. The sampler
+records 71 samples with no failed samples or write failures.
+
+For the steady-state subset, use the 48 retained intervals whose sample
+endpoints fall between 100 and 340 seconds. Those intervals cover 242.878
+seconds and exclude warmup and incomplete discovery coverage:
+
+- Viewer: 315.17 CPU seconds, equivalent to 1.297600 busy CPU cores on average
+  (approximately 1.298).
+- PRoot tracer: 182.96 CPU seconds, equivalent to 0.753300 busy CPU cores on
+  average (approximately 0.753).
+
+These figures come from Linux process counters. They describe CPU time across
+the observed processes and threads, not affinity to particular physical cores.
+The Windows viewer heartbeat reports only 1.5 CPU seconds, so it must not be
+used alone to classify this Box64 run as idle. The Linux counters establish
+substantial execution and tracing overhead, but they do not identify the exact
+hot Windows API or prove that a syscall-filter change will improve repair.
+
+The paired synthetic file benchmark completes successfully with no phase
+errors or timeouts. The Windows workload takes 1.807 seconds; helper wall time
+is 2.948 seconds, and the whole benchmark takes 3.486 seconds. Selected Windows
+phase measurements are:
+
+- Case lookup: 256 operations in 322.690 ms.
+- Small reads: 128 operations, totaling 512 KiB, in 862.932 ms.
+- Sequential reads: 4 MiB in 65.319 ms.
+- Sleep: eight waits in 81.984 ms.
+- Event waits: 1,024 operations in 296.974 ms.
+- CRC workload: 4 MiB in 15.419 ms.
+
+The native reference takes 394 ms. Its exact-case lookup and CPU algorithm
+differ from the Windows workload, so the totals are not an engine speed ratio.
+These short synthetic results do not reproduce the multi-second pauses seen
+during real PlayOnline repair. Keep the CPU evidence and actual repair
+throughput separate from benchmark success.
+
+## Implementation
+
+Version 0.5.43, code 59.
+
+- Cold FEX updater initialization removes only the isolated clone's fixed Wine
+  update timestamp and invokes `wineboot -i`. This allows the automatic update
+  to run once and prevents a second forced `-u` registration pass. It shows
+  elapsed progress every five seconds, honors Stop, and has a hard 600-second
+  limit. Wine's internal bootstrap timeout is rejected even with exit code zero.
+  PE32 system-file checks and actual FEX execution proof remain mandatory before
+  the ready marker is written. Ready prefixes, gameplay and Box64 retain their
+  previous initialization policy.
+- **Updater runtime acceleration** is a separate preference,
+  `updater_syscall_filter`, enabled by default subject to actual CI qualification.
+  It requests only the tested updater profile: Box64 or FEX, Turnip 26, DXVK
+  2.5.3, no shader experiments, no native surface and no shared-memory upload.
+  Existing gameplay preferences and eligibility are unchanged.
+- The host runs its existing syscall-filter preflight, checks the exact PRoot
+  activation marker, and publishes a session-matched receipt. Unsupported or
+  failed preflight retains compatibility mode. Missing actual launch evidence
+  or a changed active profile stops the attempt with updater-specific recovery
+  guidance. The guest independently validates the receipt and effective profile.
+- The actual PRoot matrix pairs an unfiltered synthetic benchmark with filtered
+  production viewer/component/lifecycle checks under each engine. Both use
+  independent copies of the stopped seed prefix and the same renderer. The cold
+  FEX check now verifies a single host/WoW64 registration pass, not just that
+  initialization finishes within its deadline. Matrix completion is pending.
+
+Primary source for Wine's automatic initialization and forced-update behavior:
+`wine-mirror/wine` revision `b073859675060c9211fcbccfd90e4e87520dc2c2`,
+`dlls/ntdll/unix/env.c` (`run_wineboot`) and
+`programs/wineboot/wineboot.c` (`update_wineprefix`).
+
+## Validation — pending
+
+All 164 runtime unit tests pass locally, including the new cold-initialization
+and updater-filter guards. Independent source review found no blockers. Android
+execution, actual filtered PRoot qualification and final CI identifiers remain
+pending. Do not claim a proven phone speed improvement from synthetic results.
+
+## Signed builds and delivery — pending
+
+Release tooling is prepared in `verification-0543/sign_apks.py`, with its
+configuration in `verification-0543/release-tooling.json`. Signing requires the
+final full CI source SHA and both artifact paths and SHA-256 digests. No 0.5.43
+APKs have been signed or saved at this checkpoint.
+
+[Record the final regular and Restore Test APK hashes, sizes, package IDs,
+original-certificate verification, source and CI payload checks, and saved
+file identities here. Deliver both packages for in-place updates.]
+
+## Phone acceptance — pending
+
+[Provide the final qualified runtime/filter selection and a short timed repair
+test. Reuse the staged copy. Confirm FEX initialization separately from actual
+File Repair progress, and request a fresh support report if either remains
+blocked. Do not activate the staged client until official repair and staged
+verification complete.]
+
+Work on the newest server source and database remains deferred until the
+client update is accepted.
+
+---
+
 # 0.5.42: isolate slow PlayOnline file repair and qualify the FEX updater
 
 The owner can reach official File Repair but reports that only 250 of 61,280

@@ -328,7 +328,8 @@ final class ClientRuntime {
                 sessionId=UUID.randomUUID().toString();performance.reset(sessionId);nativePerformance.reset(sessionId);
             }}
             JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action).put("engine",useFex?"fex":"box64");
-            if(action.equals("update-client"))request.put("network_preflight",true).put("repair_diagnostics",true);
+            if(action.equals("update-client"))request.put("network_preflight",true).put("repair_diagnostics",true)
+                .put("dxvk_version","2.5.3").put("proot_acceleration",runtimePreferences.getBoolean("updater_syscall_filter",true));
             if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
                 request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
                 try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}

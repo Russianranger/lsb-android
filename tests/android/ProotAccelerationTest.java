@@ -30,6 +30,8 @@ public class ProotAccelerationTest {
     }
     private JSONObject request()throws Exception{return new JSONObject().put("performance_trial","none").put("proot_acceleration",true).put("action","launch")
         .put("engine","fex").put("renderer","turnip26").put("dxvk_version","2.7.1").put("dxvk_two_compilers",true);}
+    private JSONObject updater(String engine)throws Exception{return new JSONObject().put("action","update-client").put("engine",engine)
+        .put("renderer","turnip26").put("dxvk_version","2.5.3").put("proot_acceleration",true);}
     private ProcessBuilder command(){return new ProcessBuilder("proot","--sysvipc","--kill-on-exit","/usr/bin/python3","/opt/lsb/supervisor.py");}
     private ProotAcceleration helper(Child child,File dir,java.util.List<ProcessBuilder> launched)throws Exception{
         return new ProotAcceleration(ID,dir,new File(dir,"logs"),builder->{launched.add(builder);return child;},5);
@@ -93,6 +95,53 @@ public class ProotAccelerationTest {
         ProotAcceleration helper=helper(child,Files.createTempDirectory("proot-past-experiment").toFile(),launched);
         assertFalse(helper.prepare(command(),request().put("turnip_sysmem",true),()->{},()->{fail("No probe exists");}));
         assertTrue(launched.isEmpty());
+    }
+    @Test public void updaterProfilesKeepPreflightObservationAndFallbackForBothEngines()throws Exception{
+        for(String engine:new String[]{"box64","fex"})for(boolean enabled:new boolean[]{false,true}){
+            Child probe=new Child((enabled?ProotAcceleration.MARKER+"\n":"")+ProotAcceleration.CHECK+"\n",false);
+            List<ProcessBuilder> launched=new ArrayList<>();
+            ProotAcceleration helper=helper(probe,Files.createTempDirectory("proot-updater").toFile(),launched);
+            ProcessBuilder main=command();int[] cleaned={0};
+            assertEquals(enabled,helper.prepare(main,updater(engine),()->{},()->{cleaned[0]++;}));
+            assertEquals(1,launched.size());assertEquals(1,cleaned[0]);
+            assertEquals(!enabled,main.environment().containsKey("PROOT_NO_SECCOMP"));
+            assertFalse(helper.receipt().getBoolean("launch_observed"));
+            if(enabled){
+                Child runtime=new Child(ProotAcceleration.MARKER+"\n",true);
+                try{helper.observeLaunch(runtime,()->{});assertTrue(helper.receipt().getBoolean("launch_observed"));}
+                finally{runtime.destroy();helper.close();}
+            }else assertEquals("compatibility",helper.receipt().getString("mode"));
+        }
+    }
+    @Test public void updaterEligibilityDoesNotBroadenGameplayOrAcceptUnqualifiedCombinations()throws Exception{
+        for(String engine:new String[]{"box64","fex"}){
+            JSONObject request=updater(engine);request.remove("dxvk_version");assertTrue(ProotAcceleration.eligible(request));
+            for(String key:new String[]{"turnip_sysmem","dxvk_two_compilers","dxvk_staged_buffers","native_surface","shm_upload"})
+                assertFalse(key,ProotAcceleration.eligible(updater(engine).put(key,true)));
+            for(String action:new String[]{"launch","initialize","verify-client-update","probe"})
+                assertFalse(action,ProotAcceleration.eligible(updater(engine).put("action",action)));
+            for(String trial:new String[]{"syscall_filter","one_compiler","cached_dynamic","gpl_fast"})
+                assertFalse(trial,ProotAcceleration.eligible(updater(engine).put("performance_trial",trial)));
+            assertFalse(ProotAcceleration.eligible(updater(engine).put("dxvk_version","2.7.1")));
+            assertFalse(ProotAcceleration.eligible(updater(engine).put("renderer","software")));
+            assertFalse(ProotAcceleration.eligible(updater(engine).put("renderer","turnip24")));
+        }
+        assertFalse(ProotAcceleration.eligible(updater("unsupported")));
+        assertFalse(ProotAcceleration.eligible(request().put("engine","box64")));
+        assertTrue(ProotAcceleration.eligible(request()));
+        List<ProcessBuilder> launched=new ArrayList<>();
+        ProotAcceleration helper=helper(new Child("",false),Files.createTempDirectory("proot-updater-declined").toFile(),launched);
+        assertFalse(helper.prepare(command(),updater("box64").put("native_surface",true),()->{},()->{fail("No probe exists");}));
+        assertTrue(launched.isEmpty());assertEquals("requires_tested_playonline_profile",helper.receipt().getString("reason"));
+    }
+    @Test public void updaterMissingLaunchMarkerNamesItsIndependentRecoverySetting()throws Exception{
+        ProotAcceleration helper=helper(new Child(ProotAcceleration.MARKER+"\n"+ProotAcceleration.CHECK+"\n",false),
+            Files.createTempDirectory("proot-updater-marker").toFile(),new ArrayList<>());
+        assertTrue(helper.prepare(command(),updater("box64"),()->{},()->{}));
+        try{helper.observeLaunch(new Child("",false),()->{});fail("Missing actual launch marker must block");}
+        catch(IOException expected){assertTrue(expected.getMessage().contains("Updater runtime acceleration in Client update"));}
+        finally{helper.close();}
+        assertFalse(helper.receipt().getBoolean("launch_observed"));
     }
     @Test public void descendantsAreReapedBeforeClosingBlockedOutput()throws Exception{
         java.util.concurrent.atomic.AtomicBoolean reaped=new java.util.concurrent.atomic.AtomicBoolean(),earlyClose=new java.util.concurrent.atomic.AtomicBoolean();
