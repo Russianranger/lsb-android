@@ -8,7 +8,7 @@ matrix="$PWD/out/playonline-test/engine-matrix"
 mkdir -p "$matrix"/{root,wine,baseline-prefix,seed-session,seed-tmp,seed-logs}
 tar -xzf out/fex-runtime/runtime-fex-arm64.tar.gz -C "$matrix/wine"
 cp out/fex-runtime/fex-bundle.json out/playonline-test/backend/
-container=$(docker create lsb-playonline:test)
+container=$(docker create lsb-playonline:test /bin/true)
 docker export "$container" | tar -xf - -C "$matrix/root"
 docker rm "$container" >/dev/null
 sudo apt-get install -y --no-install-recommends build-essential libtalloc-dev gawk
