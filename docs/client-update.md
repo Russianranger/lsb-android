@@ -1,7 +1,7 @@
 # Staged client updates and storage management
 
 The owner confirmed that 0.5.35 full-session restore works. Keep the regular app
-and LSB Restore Test installed separately. Version 0.5.41 updates each in place;
+and LSB Restore Test installed separately. Version 0.5.42 updates each in place;
 never uninstall the regular app to install an update.
 
 ## Manage copies stored in the app
@@ -21,7 +21,7 @@ arbitrary device folders.
 
 ## First PlayOnline update test
 
-1. Install both 0.5.41 APK updates and use **LSB Restore Test** for this test.
+1. Install both 0.5.42 APK updates and use **LSB Restore Test** for this test.
    Keep the original app's server stopped. Stop the test app's client/server too.
 2. Open **Client → Client update · PlayOnline → Prepare update and open
    PlayOnline**. Confirm creation of a separate full client and Windows copy.
@@ -172,3 +172,36 @@ If the center stays blank, tap **☰ → Refresh display** once and allow up to
 window responsiveness, bounded update-file metadata and the refresh result.
 The blank panel's cause is not yet confirmed; these checks distinguish the
 remaining possibilities. See [evidence and limits](playonline-panel-0541.md).
+
+
+## Slow file checking (0.5.42)
+
+The updater now has a separate **Updater runtime** selector. **Follow game
+runtime** uses FEX when it is installed and selected for gameplay; otherwise
+it uses Box64. Explicit FEX selection requires the installed FEX runtime.
+**Box64 compatibility** retains the previous updater path for comparison.
+Changing this selector does not change the gameplay setting. FEX copies the
+stopped staged Windows environment into its own per-generation prefix and
+resumes that prefix on later launches. It never converts the working game's
+prefix or copies native ARM64 Windows files back into a Box64 prefix.
+
+This first comparison changes the Wine/CPU engine only. The updater keeps its
+existing DXVK 2.5.3 and display transport; syscall filtering remains disabled.
+Do not apply unrelated gameplay graphics trials to this comparison.
+
+Before the viewer opens, a bounded synthetic test measures native and Windows
+file operations, case-insensitive path lookup, timers and a CPU workload. It
+uses disposable session files only, never scans or changes client content.
+The runtime also records bounded numeric process counters through the viewer's
+restart, so the hour-long repair is no longer represented by its exited original
+process's CPU time. Both results are included in Diagnostics.
+
+Install the matching APK in place. In Restore Test, choose **FEX runtime**, then
+**Open or resume PlayOnline update**. Reuse the staged copy and reach FFXI Check
+Files. Record the checked-file count at the start and after five minutes. Stop
+and export support if it remains extremely slow; another hour-long run is not
+needed. Activate only after the official repair finishes and staged verification
+passes. A synthetic benchmark or visible menu is not proof of a completed repair.
+
+See [repair performance evidence](playonline-repair-0542.md) for the measured
+boundary, qualification and remaining phone-test limits.

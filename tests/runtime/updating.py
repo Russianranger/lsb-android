@@ -83,25 +83,27 @@ def main():
 
     # The high DWORD deliberately has a zero low byte. Direct Wine process
     # exits can truncate this to success; the Windows runner must preserve it.
-    cases = [('visible-clean-exit', 0, True),
-             ('no-window-high-exit', 0x80004000, False),
-             ('missing-dependency', None, False)]
+    cases = [('visible-clean-exit', 0, True, False),
+             ('no-window-high-exit', 0x80004000, False, False),
+             ('missing-dependency', None, False, False),
+             ('restarted-visible-clean-exit', 0, True, True)]
     try:
-        for label, exit_code, window in cases:
-            for name in ('stop', 'status.json', 'playonline-process.json', 'loader-check.json'):
+        for label, exit_code, window, restart in cases:
+            for name in ('stop', 'status.json', 'playonline-process.json', 'loader-check.json', 'playonline-restarted.json'):
                 (SESSION / name).unlink(missing_ok=True)
             source = 'login-missing.exe' if exit_code is None else 'playonline-stub.exe'
             shutil.copyfile('/fixtures/' + source, executable)
             # Fixture-only control files live beside the stub. Production
             # requests never accept an arbitrary command or environment.
-            (viewer / 'playonline-fixture.txt').write_text('%d\n%d\n%d\n' %
-                                                         (exit_code or 0, int(window), 1600 if window else 0))
+            (viewer / 'playonline-fixture.txt').write_text(('%d\n%d\n%d\n' %
+                (exit_code or 0, int(window), 5000 if restart else 1600 if window else 0)) + ('1\n' if restart else ''))
             manifest = {'format': 1, 'generation': str(uuid.uuid4()), 'region': 'US',
                         'pol': str(viewer.relative_to(CLIENT)), 'game': str(game.relative_to(CLIENT)),
                         'executable': str(executable.relative_to(CLIENT)),
                         'sha256': hashlib.sha256(executable.read_bytes()).hexdigest()}
-            request = {'format': 1, 'engine': 'box64', 'session_id': str(uuid.uuid4()),
-                       'renderer': 'software', 'audio': False, 'action': 'update-client'}
+            request = {'format': 1, 'engine': os.environ.get('LSB_TEST_ENGINE', 'box64'), 'session_id': str(uuid.uuid4()),
+                       'renderer': os.environ.get('LSB_TEST_RENDERER', 'software'), 'audio': False, 'action': 'update-client',
+                       'dxvk_version': '2.5.3', 'proot_acceleration': False}
             (SESSION / 'client-update-manifest.json').write_text(json.dumps(manifest))
             (SESSION / 'request.json').write_text(json.dumps(request))
             expected_imports = imports(executable)
@@ -144,7 +146,12 @@ def main():
                 assert native['format'] == 2 and native['bits'] == 32 and native['phase'] == 'exited', native
                 assert native['child_exit'] == exit_code and native['child_pid'] > 0, native
                 assert native['win32_error'] == 0 and native['window_error'] == 0, native
-                assert native['visible_window_seen'] is window and native['elapsed_ms'] >= 0, native
+                assert native['visible_window_seen'] is (window and not restart) and native['elapsed_ms'] >= 0, native
+                if restart:
+                    replacement = json.loads((SESSION / 'playonline-restarted.json').read_text())
+                    assert replacement['format'] == 1 and replacement['phase'] == 'exited' and replacement['child_exit'] == 0, replacement
+                    assert replacement['canonical_image'] is True and replacement['working_directory'] is True, replacement
+                    assert replacement['elapsed_ms'] >= 5000 and replacement['child_pid'] != native['child_pid'], replacement
                 assert report['prefix_wait_exit_code'] == 0, report
                 assert report['startup_diagnostics']['policy'] == 'fixed_metadata_only', report
                 if exit_code == 0:

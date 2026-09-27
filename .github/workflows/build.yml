@@ -75,13 +75,13 @@ jobs:
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks" \
             --with-restore-test
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.41.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-Restore-Test-0.5.41.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.42.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-Restore-Test-0.5.42.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.41.apk
+            out/LSB-Android-0.5.42.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/
@@ -107,8 +107,8 @@ jobs:
         with:
           name: restore-test-device-build
           path: |
-            out/LSB-Android-Restore-Test-0.5.41.apk
-            out/LSB-Android-Restore-Test-0.5.41.apk.sha256
+            out/LSB-Android-Restore-Test-0.5.42.apk
+            out/LSB-Android-Restore-Test-0.5.42.apk.sha256
       - name: Preserve APK verification tools
         run: |
           mkdir -p out/apk-tools/lib out/apk-tools/lib64
@@ -137,13 +137,24 @@ jobs:
   playonline-startup:
     needs: verify
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: runtime-device-build
           path: out
+      - uses: actions/download-artifact@v4
+        with:
+          name: fex-runtime
+          path: out/fex-runtime
+          run-id: 35932750549
+          github-token: ${{ github.token }}
+      - name: Verify pinned FEX comparison artifact
+        run: python3 scripts/verify-fex-artifact.py
       - uses: actions/cache@v4
         with:
           path: .tools/runtime
@@ -165,8 +176,8 @@ jobs:
         with:
           name: playonline-startup-evidence
           path: |
-            out/playonline-test/logs/*.json
-            out/playonline-test/logs/*.png
+            out/playonline-test/logs/**/*.json
+            out/playonline-test/logs/**/*.png
       - name: Show official viewer fixed diagnostic summary
         if: always()
         run: |

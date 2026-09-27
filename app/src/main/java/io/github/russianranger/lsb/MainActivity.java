@@ -267,6 +267,26 @@ public final class MainActivity extends Activity {
             update.addView(label(verified?"Updated copy verified and ready for activation.":"An update copy is staged. Resume PlayOnline to continue downloading or checking files.",15,ACCENT));
             String version=candidate.optString("client_version","");if(!version.isEmpty())update.addView(label("Staged client: "+version,14,MUTED));
         }else if(candidate!=null)update.addView(label("Finish or discard the existing staged preparation before starting a client update.",14,ACCENT));
+        update.addView(label("Updater runtime",14,MUTED));
+        String[] updaterEngines={"","fex","box64"};
+        String chosenEngine=getSharedPreferences("runtime",0).getString("updater_engine","");
+        Spinner updaterEngine=new Spinner(this);
+        updaterEngine.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Follow game runtime","FEX runtime","Box64 compatibility"}));
+        update.addView(updaterEngine);
+        updaterEngine.setSelection("fex".equals(chosenEngine)?1:"box64".equals(chosenEngine)?2:0);
+        updaterEngine.setEnabled(idle);
+        updaterEngine.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+            public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
+                String value=updaterEngines[position];
+                if(value.equals(getSharedPreferences("runtime",0).getString("updater_engine","")))return;
+                android.content.SharedPreferences.Editor edit=getSharedPreferences("runtime",0).edit();
+                if(value.isEmpty())edit.remove("updater_engine");else edit.putString("updater_engine",value);
+                edit.apply();
+            }
+            public void onNothingSelected(AdapterView<?> parent){}
+        });
+        update.addView(label("Follow game runtime uses your installed game engine. You can select a runtime here to compare repair speed. Each launch briefly measures file access before opening PlayOnline; Diagnostics includes the results.",13,MUTED));
+        if(!rt.fexInstalled())update.addView(label("Install FEX from the Runtime tab before selecting it here.",13,MUTED));
         button(update,staged?"Open or resume PlayOnline update":"Prepare update and open PlayOnline",()->confirm(staged?"Resume client update":"Prepare a client update",staged?"Open PlayOnline in the staged copy? Reopening it requires verification again before activation.":"Create a full update copy, then move ROM/0/0.dat aside in that copy to trigger PlayOnline file repair? Your active client and its Windows environment are retained. This needs space for another complete client.",()->startInitialization("update-client"))).setEnabled(idle&&rt.installed()&&state.has("current")&&(candidate==null||staged));
         update.addView(label("First finish any PlayOnline Viewer update and let it restart. At its main menu: Check Files → FINAL FANTASY XI → Check Files → File Repair → Yes. Wait for repair to finish, then choose Exit Viewer. If the viewer closes, reopen it here. A blank update page does not mean repair is ready; try Refresh display from the display menu, then export support if it stays blank.",14,TEXT));
         update.addView(label("FINAL FANTASY XI must appear in PlayOnline’s Check Files list. If it is missing, the installation needs the official retail registration/login setup first. LSB does not bypass that step. The update copy stays separate until you verify and activate it.",13,MUTED));

@@ -8,6 +8,8 @@ import time
 from client_setup import client_path, imports, windows_path
 from client_launch import retry_network_initialization, valid_check_rows
 from viewer_inventory import snapshot as viewer_snapshot
+from repair_io import run as repair_io_check
+from repair_performance import Monitor as RepairPerformance
 
 SESSION = Path('/session')
 LOGS = Path('/logs')
@@ -290,7 +292,8 @@ def run(supervisor):
     pol, executable = validate_manifest(manifest)
     report = {'format': 1, 'generation': manifest['generation'], 'session_id': supervisor.req['session_id'],
               'status': 'opening', 'region': manifest['region'], 'official_repair_confirmed': False,
-              'activation_performed': False, 'credentials_forwarded': False}
+              'activation_performed': False, 'credentials_forwarded': False,
+              'runtime_engine': supervisor.req.get('engine', 'box64')}
 
     def record():
         # This covers updater preparation only; prefix/display initialization
@@ -303,6 +306,7 @@ def run(supervisor):
     record()
     writer = None
     viewer = None
+    performance = None
     try:
         # The existing 32-bit helper writes and reads back the regional install
         # paths; viewer-only registrations below stay in the staged prefix.
@@ -335,6 +339,18 @@ def run(supervisor):
         environment = private_environment(supervisor)
         prepare_playonline_components(supervisor, manifest, environment, report, record)
         check_dependencies(supervisor, manifest, executable, environment, report, record)
+        if supervisor.req.get('repair_diagnostics', False):
+            supervisor.status('measuring_repair_io', message='Measuring Windows file-access speed (up to 20 seconds)')
+            report['repair_io'] = repair_io_check(supervisor, environment)
+            record()
+            # Observe the whole owned guest tree, including a replacement viewer,
+            # without calling Windows APIs in the repair process or reading its files.
+            try:
+                performance = RepairPerformance(session_id=supervisor.req['session_id'],
+                                                output_path=LOGS / 'repair-performance.json')
+                performance.start()
+            except Exception:
+                report['repair_performance'] = {'format': 1, 'state': 'unavailable', 'reason': 'monitor_error'}
         report['status'] = 'viewer_open'; record()
         supervisor.status('playonline_update', message='Finish the PlayOnline Viewer update and restart it if prompted. At its main menu: Check Files → FINAL FANTASY XI → Check Files → File Repair. Exit after repair completes.')
         (SESSION / 'playonline-process.json').unlink(missing_ok=True)
@@ -380,6 +396,18 @@ def run(supervisor):
         report['status'] = 'interrupted'; report['error'] = str(error) or type(error).__name__; record()
         raise
     finally:
+        if performance is not None:
+            try:
+                performance.stop()
+                measured = performance.snapshot()
+                # Android's status reader is bounded to 128 KiB. Keep the
+                # rolling process samples in their own compact support receipt.
+                report['repair_performance'] = {key: measured[key] for key in (
+                    'format', 'policy', 'state', 'sample_interval_ms', 'discovery_interval_ms',
+                    'clock_ticks_per_second', 'samples_recorded', 'failed_samples',
+                    'write_failures', 'last_write_ms') if key in measured}
+            except Exception:
+                report['repair_performance'] = {'format': 1, 'state': 'unavailable', 'reason': 'monitor_error'}
         # This is an end-of-attempt observation. On Stop, children may still
         # be closing; stable file hashes do not certify a completed update.
         report['viewer_files_after'] = viewer_snapshot(pol, manifest['region'])

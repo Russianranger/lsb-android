@@ -260,7 +260,7 @@ final class ClientRuntime {
     private void assets()throws Exception {
         backend.mkdirs();probes.mkdirs();
         for(String name:context.getAssets().list("runtime")){
-            File dest=new File(name.equals("fex-check.exe")||name.equals("graphics-check.exe")||name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")||name.equals("playonline-run.exe")||name.equals("startup-trace.dll")?probes:backend,name);
+            File dest=new File(name.equals("fex-check.exe")||name.equals("graphics-check.exe")||name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")||name.equals("playonline-run.exe")||name.equals("repair-io.exe")||name.equals("startup-trace.dll")?probes:backend,name);
             try(InputStream in=context.getAssets().open("runtime/"+name);OutputStream out=new FileOutputStream(dest)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
             if(name.equals("x11-upload-check")||name.equals("vulkan-probe")||name.equals("wineserver")||name.equals("x11-frame-bridge"))Os.chmod(dest.getPath(),0700);
         }
@@ -287,13 +287,22 @@ final class ClientRuntime {
         request.put("dxvk_hud",context.getSharedPreferences("runtime",0).getBoolean("dxvk_hud",true));
         request.put("dxvk_diagnostics",context.getSharedPreferences("runtime",0).getBoolean("dxvk_diagnostics",false));
     }
+    static String updaterEngine(String preference,boolean gameplayFex,boolean installed)throws IOException {
+        if(preference==null)return gameplayFex&&installed?"fex":"box64";
+        if(!preference.equals("box64")&&!preference.equals("fex"))throw new IOException("Choose a supported PlayOnline runtime");
+        if(preference.equals("fex")&&!installed)throw new IOException("Install FEX on the Runtime tab before selecting it for PlayOnline");
+        return preference;
+    }
     void run(String renderer,boolean sound,String action,LoginRequest login,String displayProfile,boolean startupTrace)throws Exception {
         boolean initialize=Arrays.asList("initialize","installer","repair-launcher").contains(action),clientOperation=!"probe".equals(action);
         boolean updating=Arrays.asList("update-client","verify-client-update").contains(action);
         File candidate=null;File selectedPrefix=prefix;
-        // Match the established preparation engine. FEX gameplay gets its own new
-        // generation prefix after activation; no active FEX hive is converted.
-        boolean useFex=!initialize&&!updating&&context.getSharedPreferences("runtime",0).getBoolean("fex",false);
+        // The updater may use the installed gameplay engine with a separate
+        // per-candidate prefix. Verification retains the Box64 preparation hive.
+        android.content.SharedPreferences runtimePreferences=context.getSharedPreferences("runtime",0);
+        boolean useFex=action.equals("update-client")
+            ?updaterEngine(runtimePreferences.getString("updater_engine",null),runtimePreferences.getBoolean("fex",false),fexInstalled()).equals("fex")
+            :!initialize&&!updating&&runtimePreferences.getBoolean("fex",false);
         FexRuntime selectedFex=null;
         ProotAcceleration acceleration=null;
         synchronized(WorkService.class){synchronized(this){if(alive()||WorkService.busy)throw new IOException("Wait for the current operation");active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();}}
@@ -319,13 +328,13 @@ final class ClientRuntime {
                 sessionId=UUID.randomUUID().toString();performance.reset(sessionId);nativePerformance.reset(sessionId);
             }}
             JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action).put("engine",useFex?"fex":"box64");
-            if(action.equals("update-client"))request.put("network_preflight",true);
+            if(action.equals("update-client"))request.put("network_preflight",true).put("repair_diagnostics",true);
             if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
                 request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
                 try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}
             }
             if(action.equals("launch")||action.equals("probe"))applyGraphicsSettings(request);
-            if(useFex)request.put("fex_x87",context.getSharedPreferences("runtime",0).getBoolean("fex_x87",false));
+            if(useFex)request.put("fex_x87",!updating&&runtimePreferences.getBoolean("fex_x87",false));
             if(action.equals("gamepad-config")){request.put("gamepad",true);try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}}
             write(new File(run,"request.json"),request.toString());
             write(new File(run,"status.json"),new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",initialize?"copying_client":"preparing_runtime").put("game_files_mounted",false).toString());

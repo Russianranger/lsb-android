@@ -2,6 +2,7 @@
 import ctypes
 from ctypes import wintypes
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -64,11 +65,12 @@ def test_playonline(source, check):
                   'receipt contains no window title, stdout, stderr or executable path')
             return value
 
-        def fixture(code=0, visible=0, delay=0):
-            (viewer/'playonline-fixture.txt').write_bytes(f'{code}\n{visible}\n{delay}\n'.encode('ascii'))
+        def fixture(code=0, visible=0, delay=0, restart=0):
+            values = f'{code}\n{visible}\n{delay}\n' + (f'{restart}\n' if restart else '')
+            (viewer/'playonline-fixture.txt').write_bytes(values.encode('ascii'))
 
-        def invoke(*arguments):
-            return subprocess.run([runner, *arguments], cwd=receipts, capture_output=True, timeout=15)
+        def invoke(*arguments, environment=None):
+            return subprocess.run([runner, *arguments], cwd=receipts, capture_output=True, timeout=15, env=environment)
 
         for code in (0, 37, 259, 0xC0000005, 0xFFFFFFFF):
             clear(); fixture(code)
@@ -140,6 +142,63 @@ def test_playonline(source, check):
                   'child CPU times are monotonic across samples and collected at exit')
             check(value['elapsed_ms'] < delay + 2000 and value['heartbeat_elapsed_ms'] <= value['elapsed_ms'],
                   'hung UI message probe never blocks process exit tracking')
+
+        # The Windows bridge owns only the original viewer process. A self-
+        # updater's replacement must survive that original's clean exit; the
+        # production Linux supervisor then waits for the whole Wine prefix.
+        clear(); fixture(37, 1, 5000, restart=1)
+        environment = dict(os.environ, LSB_PLAYONLINE_FIXTURE_RECEIPT_LOCAL='1')
+        result = invoke(str(executable), environment=environment)
+        original = read()
+        check(result.returncode == 0 and original['phase'] == 'exited' and original['child_exit'] == 0,
+              'original viewer exits cleanly after launching its independent replacement')
+        restarted_path = viewer/'playonline-restarted.json'
+        replacement = None
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                replacement = json.loads(read_shared(restarted_path))
+                break
+            except (PermissionError, FileNotFoundError):
+                time.sleep(.02)
+        check(replacement is not None and replacement['phase'] == 'running'
+              and replacement['child_pid'] != original['child_pid'],
+              'replacement has a different PID and remains running after the bridge exits')
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD,
+                                                    wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD))
+        kernel.TerminateProcess.argtypes = (wintypes.HANDLE, wintypes.UINT)
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel.OpenProcess(0x100000 | 0x1000 | 1, False, replacement['child_pid'])
+        check(bool(handle), 'replacement can be independently observed after original exit')
+        try:
+            check(kernel.WaitForSingleObject(handle, 0) == 258,
+                  'original runner does not terminate or wait for the replacement')
+            image = ctypes.create_unicode_buffer(1024); size = wintypes.DWORD(len(image))
+            check(kernel.QueryFullProcessImageNameW(handle, 0, image, ctypes.byref(size))
+                  and os.path.normcase(image.value) == os.path.normcase(str(executable)),
+                  'replacement uses the same canonical staged viewer image')
+            check(kernel.WaitForSingleObject(handle, 7000) == 0, 'replacement completes its own bounded lifetime')
+            code = wintypes.DWORD()
+            check(kernel.GetExitCodeProcess(handle, ctypes.byref(code)) and code.value == 37,
+                  'replacement preserves its own exit code independently of original clean exit')
+        finally:
+            if kernel.WaitForSingleObject(handle, 0) == 258:
+                kernel.TerminateProcess(handle, 90); kernel.WaitForSingleObject(handle, 5000)
+            kernel.CloseHandle(handle)
+        data = read_shared(restarted_path); replacement = json.loads(data)
+        check(len(data) < 256 and set(replacement) == {'format', 'phase', 'child_pid', 'elapsed_ms',
+              'child_exit', 'canonical_image', 'working_directory'} and replacement['format'] == 1
+              and replacement['phase'] == 'exited' and replacement['child_exit'] == 37
+              and replacement['elapsed_ms'] >= 5000 and replacement['canonical_image'] is True
+              and replacement['working_directory'] is True,
+              'fixed replacement receipt proves normal completion with validated image and working directory')
+        check(read() == original, 'replacement does not overwrite the original process receipt')
 
         clear()
         missing = viewer/'missing viewer'/'pol.exe'

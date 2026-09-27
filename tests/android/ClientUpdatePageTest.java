@@ -25,6 +25,18 @@ import static org.junit.Assert.*;
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class ClientUpdatePageTest {
+    @Test public void updaterEngineFollowsInstalledGameplayOrExplicitComparisonChoice()throws Exception {
+        assertEquals("fex",ClientRuntime.updaterEngine(null,true,true));
+        assertEquals("box64",ClientRuntime.updaterEngine(null,true,false));
+        assertEquals("box64",ClientRuntime.updaterEngine(null,false,true));
+        assertEquals("box64",ClientRuntime.updaterEngine(null,false,false));
+        assertEquals("box64",ClientRuntime.updaterEngine("box64",true,true));
+        assertEquals("fex",ClientRuntime.updaterEngine("fex",false,true));
+        for(String invalid:new String[]{"", "auto", "latest", "FEX"}){
+            try{ClientRuntime.updaterEngine(invalid,true,true);fail("Invalid engine accepted");}catch(IOException expected){}
+        }
+        try{ClientRuntime.updaterEngine("fex",true,false);fail("Missing FEX silently substituted");}catch(IOException expected){}
+    }
     private static final SafeZip.Progress QUIET=message->{};
     private android.app.Application context;
     private MainActivity activity;

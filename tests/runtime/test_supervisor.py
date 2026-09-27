@@ -375,6 +375,15 @@ class Contracts(unittest.TestCase):
    with self.assertRaises(ValueError):module.validate_request(dict(req,**{key:'anything'}))
   for renderer in ['','vulkan','turnip26;echo bad']:
    with self.assertRaises(ValueError):module.validate_request(dict(req,renderer=renderer))
+ def test_repair_diagnostics_are_typed_and_updater_only(self):
+  req={'format':1,'renderer':'turnip26','audio':True,'session_id':str(uuid.uuid4()),'action':'update-client'}
+  for enabled in (True,False):
+   value=dict(req,repair_diagnostics=enabled)
+   self.assertEqual(module.validate_request(value),value)
+  for invalid in ('true',1,None,{}):
+   with self.assertRaises(ValueError):module.validate_request(dict(req,repair_diagnostics=invalid))
+  for action in ('launch','probe','verify-client-update','initialize'):
+   with self.assertRaises(ValueError):module.validate_request(dict(req,action=action,repair_diagnostics=True))
  def test_log_bounded_without_stalling_child(self):
   with tempfile.TemporaryDirectory() as t:
    path=pathlib.Path(t)/'wine.log';writer=module.BoundedLog(path);writer.start(io.BufferedReader(io.BytesIO(b'a'*(6*1024*1024))))

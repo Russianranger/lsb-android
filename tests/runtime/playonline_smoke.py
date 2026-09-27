@@ -11,6 +11,7 @@ from collections import Counter
 from contextlib import contextmanager
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import socket
@@ -165,26 +166,43 @@ def worker(label):
 def main():
     for directory in (SESSION, LOGS, CLIENT):
         directory.mkdir(exist_ok=True)
+    engine = os.environ.get('LSB_TEST_ENGINE', 'box64')
+    renderer = os.environ.get('LSB_TEST_RENDERER', 'software')
+    assert engine in ('box64', 'fex') and renderer in ('software', 'turnip26')
+    variants = ('production',) if os.environ.get('LSB_PLAYONLINE_PRODUCTION_ONLY') == '1' else VARIANTS
     results = {'format': 2, 'network': 'disabled', 'official_viewer_sha256': POL_SHA,
+               'engine': engine, 'renderer': renderer,
                'viewer_usable': None, 'online_repair_verified': False,
                'interpretation': 'Screenshots require review; a window or colored pixels may be a splash or error dialog.'}
-    for label in VARIANTS:
+    for label in variants:
         for name in ('stop', 'status.json', 'playonline-process.json', 'loader-check.json', 'client-step.json'):
             (SESSION / name).unlink(missing_ok=True)
         for name in ('client-update.json', 'runtime-state.json', label + '-preparation.json', label + '.png'):
             (LOGS / name).unlink(missing_ok=True)
-        for path in (Path('/prefix'), CLIENT / 'Viewer'):
-            if path.exists():
-                shutil.rmtree(path)
-        Path('/prefix').mkdir()
+        # /prefix is an actual PRoot bind in the engine matrix. Clear its
+        # children rather than attempting to remove the mount itself.
+        prefix = Path('/prefix')
+        prefix.mkdir(exist_ok=True)
+        for child in prefix.iterdir():
+            if child.is_dir() and not child.is_symlink(): shutil.rmtree(child)
+            else: child.unlink()
+        if (CLIENT / 'Viewer').exists(): shutil.rmtree(CLIENT / 'Viewer')
+        if os.environ.get('LSB_TEST_COPIED_PREFIX') == '1':
+            shutil.copytree('/baseline-prefix', prefix, symlinks=True, dirs_exist_ok=True)
+        if engine == 'fex':
+            bundle = read_json(Path('/opt/lsb/fex-bundle.json'))
+            (prefix / 'lsb-runtime-engine.json').write_text(json.dumps({'engine': 'fex', 'runtime': bundle['sha256']}))
+            (prefix / 'lsb-prefix-ready.json').unlink(missing_ok=True)
         viewer = CLIENT / 'Viewer'
         shutil.copytree('/official', viewer)
         (CLIENT / 'Game').mkdir(exist_ok=True)
         assert hashlib.sha256((viewer / 'pol.exe').read_bytes()).hexdigest() == POL_SHA
         manifest = {'format': 1, 'generation': str(uuid.uuid4()), 'region': 'US', 'pol': 'Viewer',
                     'game': 'Game', 'executable': 'Viewer/pol.exe', 'sha256': POL_SHA}
-        request = {'format': 1, 'engine': 'box64', 'session_id': str(uuid.uuid4()),
-                   'renderer': 'software', 'audio': False, 'action': 'update-client'}
+        request = {'format': 1, 'engine': engine, 'session_id': str(uuid.uuid4()),
+                   'renderer': renderer, 'audio': False, 'action': 'update-client',
+                   'dxvk_version': '2.5.3', 'proot_acceleration': False}
+        if os.environ.get('LSB_TEST_REPAIR_DIAGNOSTICS') == '1': request['repair_diagnostics'] = True
         (SESSION / 'client-update-manifest.json').write_text(json.dumps(manifest))
         (SESSION / 'request.json').write_text(json.dumps(request))
         process = subprocess.Popen([sys.executable, __file__, '--worker', label],
@@ -236,6 +254,8 @@ def main():
                           'preparation': preparation,
                           'component_registration': report.get('component_registration', []),
                           'dependency_attempts': report.get('dependency_attempts', []),
+                          'repair_io': report.get('repair_io'),
+                          'runtime': {key: state.get(key) for key in ('runtime_engine', 'graphics', 'dxvk_selected', 'fex_execution_verified', 'runtime_acceleration')},
                           'startup_diagnostics': report.get('startup_diagnostics', {})}
         (LOGS / 'official-playonline-smoke.json').write_text(json.dumps(results, indent=2))
         assert state.get('session_id') == request['session_id'], 'Missing current supervisor receipt'

@@ -46,6 +46,7 @@ docker run --rm --network none \
  -v "$PWD/.tools/playonline-smoke/viewer:/official:ro" \
  -v "$PWD/out/playonline-test/logs:/logs" \
  lsb-playonline:test python3 /tests/playonline_smoke.py
+bash scripts/check-playonline-engines.sh
 # Separately opt in after the deterministic/offline gates. This uses a new
 # container, empty prefix and public installer copy only. The private trace and
 # internal runtime reports are not under the uploaded logs artifact directory.

@@ -135,6 +135,53 @@ class TimedSupervisor(FakeSupervisor):
 
 
 class UpdateContracts(unittest.TestCase):
+    def test_repair_diagnostics_cover_restarted_viewer_wait_and_stop(self):
+        for cancel in (False, True):
+            with self.subTest(cancel=cancel), tempfile.TemporaryDirectory() as tmp:
+                client, session, logs, manifest = self.fixture(Path(tmp))
+                lifecycle = []
+
+                class Monitor:
+                    def start(self): lifecycle.append('start')
+                    def stop(self): lifecycle.append('stop')
+                    def snapshot(self): return {'format': 1, 'state': 'stopped', 'samples': ['x' * 131072]}
+
+                class CheckedSupervisor(FakeSupervisor):
+                    def wait(self, proc, timeout, label, accepted=(0,)):
+                        if proc.name in ('playonline.log', 'playonline-wait.log'):
+                            self.assert_monitor_running()
+                            lifecycle.append(proc.name)
+                        return super().wait(proc, timeout, label, accepted)
+
+                    def assert_monitor_running(self):
+                        if 'start' not in lifecycle or 'stop' in lifecycle:
+                            raise AssertionError('Repair process observation must span viewer and replacement wait')
+
+                def benchmark(supervisor, environment):
+                    self.assertTrue(supervisor.private_output)
+                    self.assertNotIn('start', lifecycle)
+                    lifecycle.append('benchmark')
+                    return {'format': 1, 'status': 'completed'}
+
+                with patch.object(client_setup, 'CLIENT', client), patch.object(client_update, 'SESSION', session), \
+                        patch.object(client_update, 'LOGS', logs), \
+                        patch.object(client_update, 'repair_io_check', side_effect=benchmark), \
+                        patch.object(client_update, 'RepairPerformance', return_value=Monitor()) as factory:
+                    s = CheckedSupervisor(session, cancel_wait=cancel)
+                    s.req.update(engine='fex', repair_diagnostics=True)
+                    if cancel:
+                        with self.assertRaises(supervisor.Stopped): client_update.run(s)
+                    else:
+                        client_update.run(s)
+                    factory.assert_called_once_with(session_id=s.req['session_id'], output_path=logs / 'repair-performance.json')
+                self.assertEqual(lifecycle, ['benchmark', 'start', 'playonline.log', 'playonline-wait.log', 'stop'])
+                result = json.loads((logs / 'client-update.json').read_text())
+                self.assertEqual(result['runtime_engine'], 'fex')
+                self.assertEqual(result['repair_io']['status'], 'completed')
+                self.assertEqual(result['repair_performance']['state'], 'stopped')
+                self.assertNotIn('samples', result['repair_performance'])
+                self.assertLess(len(json.dumps(s.states[-1], indent=2)), 131072)
+
     def test_viewer_version_repair_is_recorded_in_staged_registry_worker(self):
         for state, candidate, version in [('restored_missing', 'official_installer', '20260925_1'),
                                            ('restored_missing', 'zero', '20260925_1'),
