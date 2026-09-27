@@ -9,7 +9,7 @@ User reports .43 Box64 improved but stopped at 27%; FEX now reaches repair at si
 - Display delivery averaged 2.469 updates/sec over the retained 943 seconds, with decode 0.205 ms and draw 0.062 ms. Physical viewer reads were approximately 0.56 MB/sec. These observations point upstream of Android display submission, not to an expensive Android drawing loop.
 - Wine builtin DirectDraw goes directly to WineD3D. Its automatic renderer defaults to OpenGL, while our environment forces llvmpipe. Native DXVK D3D9 qualification therefore does not qualify this separate path. Actual phone WineD3D backend/thread evidence is still needed to establish how much of the remaining cost it explains.
 
-## Changes under qualification
+## Implementation
 
 Version 0.5.44, code 60. Preserve the accepted working client/server/database and existing staged update. Gameplay settings remain separate.
 
@@ -23,13 +23,39 @@ Primary implementation sources: pinned FEX Wine `b073859675060c9211fcbccfd90e4e8
 
 ## Validation and delivery status
 
-Local runtime suite: 192 tests passed. Independent reviews found no blocking source issues. Initial Android checks passed (95 tests), as did packaging both app variants, Windows launcher checks, and real MariaDB deployment. Zink actual ARM64 Box64/FEX qualification and rebuilt APKs remain pending. Do not claim a phone speedup or completed repair from synthetic checks.
+Local runtime suite: 192 tests passed. Independent reviews found no blocking source issues. Android checks passed (95 tests), as did packaging both app variants, Windows launcher checks, and real MariaDB deployment. Actual ARM64 Box64/FEX PlayOnline Zink qualification passed for source `dc38a118a6b1e90e90fa468ac752213f5eb5ef51`, tree `99f8df6b736a82f009072fdd00523ef4ba86fb20`, in push run `36329656013`. Both software-GL comparison arms and both Zink arms passed the 24-frame draw/upload/blit/present check, 192 render and 192 presented pixel samples, and updater lifecycle checks. The real viewer independently reported the OpenGL backend and rendered its version-update page under both engines. CI uses software Vulkan and does not establish phone repair speed or completed online repair.
+
+Full Box64 validation passed in PR run `36329659419`, job `108649603635`. Full FEX validation passed in push run `36329656013`, attempt 2, job `108652895028` (completed 2026-09-27 16:08:41 UTC). Both validate the same source above; the PR base is an ancestor of that source. Earlier attempts had a Box64 dependency-check SIGSEGV and FEX rendering/performance-trial timeouts. The successful reruns retain all checks without weakening them. At delivery, the duplicate Box64 push job is still running; do not describe the entire push workflow as completed until GitHub reports that result. The focused updater checks and full engine checks required for these APKs have passed. Follow [TESTING-0.5.44.md](TESTING-0.5.44.md) for the short phone measurement; phone repair speed remains unverified.
 
 The initial direct WineD3D Vulkan candidate did **not** qualify. Run `36326513500` / source `f959cf043aef43663f3a351899b06c78cd96c415` failed the first D3D7 triangle pixel on Box64. Diagnostic run `36327441996` / source `cad799acf4606aac3fbe6ee5a35f7f01c513d8fc` reproduced the same failure under **both engines**: expected `0x40e080`, actual unchanged background `0x182838`, first four uploaded-image samples correct, HLSL/SPIR-V compiler error counts zero. Both compatibility OpenGL arms passed. Actual Vulkan viewer activation was correctly rejected. Diagnostic artifact `10934323803`, SHA-256 `42517e19adb2560f79985f8e8b244dc7d1e42f168dc4ffb51a0cdd00800cf2d5`. Do not weaken pixel validation or ship direct Wine Vulkan on this evidence.
 
 Zink preserves the established Wine OpenGL backend. The pinned rootfs recipe installs ARM64 Mesa DRI/GLX and mesa-utils; the pinned Mesa 22.3.6 GLX override selects drisw/Kopper for Zink. `LIBGL_KOPPER_DISABLE` must not be set. Both native FEX Wine and Box64's wrapped libGL use the host ARM64 Mesa. Exact installed Zink inventory and actual Windows operation remain CI gates. Separate fallback research found D7VK v1.9 fixes POL issue 209 and embeds DXVK 2.7.1, but no D7VK code or dependency has been adopted.
 
-The original signing checkpoint `LSB-Android-preview-signing.zip` could not yet be downloaded (HTTP 502); no .44 signed APK has been produced. Original certificate must remain `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`. Do not substitute disposable CI signing.
+The original signing checkpoint was recovered after the earlier HTTP 502. Both APKs are signed with the retained certificate `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`. Signatures, 16 KiB native-library alignment, exact nonsignature CI payloads, packaged runtime/server source assets and separate package identities were verified again during recovery. Both signed APKs are saved and ready for the phone test after the successful engine checks above. Do not substitute disposable CI signing.
+
+### Recovered APK pair
+
+Both APKs are **0.5.44 / code 60**, built from the qualified source above.
+Their 65 shared code/resource/runtime entries are identical. All 67
+nonsignature entries in each signed APK match its CI APK. Verification covers
+16 runtime source files, 7 server files and 28 generated runtime assets.
+
+- `LSB-Android-0.5.44.apk`: package `io.github.russianranger.lsb`,
+  18,506,936 bytes, SHA-256
+  `74a27345233394a22af861d5204d0e478eb76b2a2838c36ca826e67697db1190`.
+  CI artifact `10935855087`, archive SHA-256
+  `c3f8511b9a2196254ce77acab82f4471eedc2d34a80d2660f1024f7587843d6a`.
+- `LSB-Android-Restore-Test-0.5.44.apk`: package
+  `io.github.russianranger.lsb.restoretest`, 18,506,936 bytes, SHA-256
+  `f754358e082231f34e849fbfdac5b58c7f6e9d2e3049b5339acb098e1f2096eb`.
+  CI artifact `10935616199`, archive SHA-256
+  `2b427e2b0b15c5eb5e3631f16d05a4571a508cef5692e997cee230deaedd1159`.
+
+Both files were saved successfully after signature and payload verification.
+The regular build updates the working app; Restore Test updates the separate
+test installation. Install over the matching app and resume its existing staged
+copy. The short first phone test is documented in
+[TESTING-0.5.44.md](TESTING-0.5.44.md).
 
 ---
 
