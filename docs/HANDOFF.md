@@ -29,6 +29,20 @@ other targets and compiler versions retain the original policy. Evidence:
 artifact `10940040533`, SHA-256
 `dec1fad7e6287dcbf91d918d1635bbbdd3d95bd059c237cfec84836b660e76aa`.
 
+The second native build (`36342941169`, app source `3541f46a`) passed those
+diagnostics but found `-Werror=stringop-truncation` in both decoded-name copies
+in `src/common/utils.cpp`. Decoded strings have their own 21-byte contract;
+the old copies used encoded-size limits and could omit the terminator. The
+staged-source patch preserves all 20 linkshell characters and all decoded
+signature characters, writes the terminator and zero padding, and changes the
+one undersized linkshell-item caller to `DecodeStringLength`. The three exact
+contexts are preflighted together; a partial or ambiguous match fails before
+editing. The imported source remains untouched. Patch receipts include file
+hashes and are included in the build report. Evidence artifact `10939807028`,
+SHA-256 `a0686ab115ef0dbf3b41241b22a1f4c1c27c2af7b7658bcc52c0a9538ead03ae`.
+All 50 local server tests pass; a C++ fixture extracts the actual patched
+decoder bodies and passes 10 full-width, terminator, padding and bounds cases.
+
 The new native ARM64 CI gate uses the exact GitHub source archive without Git
 metadata or mesh submodules, runs the same backend build, and checks real
 malloc symbol bindings under `--help` without `LD_PRELOAD`. Full compilation

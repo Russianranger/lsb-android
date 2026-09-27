@@ -159,6 +159,8 @@ def build(root, jobs):
                 build_hook_sha256=hashlib.sha256(hook.read_bytes()).hexdigest())
     atomic(LOGS/'build-report.json',report)
     try:
+        report['patches']=apply_source_patches(root)
+        atomic(LOGS/'build-report.json',report)
         status('building','Preparing the selected source and Python build dependencies…')
         requirements=root/'tools/requirements.txt'
         command(['/usr/bin/python3','-m','venv',str(root/'.venv')],timeout=120)
@@ -187,6 +189,47 @@ def build(root, jobs):
                       error=str(error),finished_at=time.time(),elapsed_seconds=round(time.time()-started,2))
         atomic(LOGS/'build-report.json',report)
         raise
+
+def apply_source_patches(root):
+    """Small, recorded compatibility fixes in the disposable source copy only."""
+    patches=json.loads(Path(__file__).with_name('source-patches.json').read_text())
+    # The decoder fixes and its undersized caller form one patch set. Never
+    # increase decoded writes while leaving an unrecognized caller unchanged.
+    matches=[]
+    for patch in patches:
+        path=root/patch['path'];matched=False
+        if path.is_file():
+            raw=path.read_bytes();text=raw.decode('utf-8')
+            newline='\r\n' if b'\r\n' in raw else '\n'
+            before=text.count(patch['before'].replace('\n',newline))
+            after=text.count(patch['after'].replace('\n',newline))
+            if before+after>1:raise ValueError('Ambiguous source patch '+patch['id']+'; selected source needs review')
+            matched=before+after==1
+        matches.append(matched)
+    if any(matches) and not all(matches):
+        raise ValueError('The decoder compatibility patch set does not match this source; selected source needs review')
+    evidence=[]
+    for patch in patches:
+        cancelled();path=root/patch['path']
+        item=dict(id=patch['id'],path=patch['path'],state='not_applicable')
+        if path.is_file():
+            original=path.read_bytes();text=original.decode('utf-8')
+            # Retain the upstream line-ending convention in the staged file.
+            newline='\r\n' if b'\r\n' in original else '\n'
+            before=patch['before'].replace('\n',newline)
+            after=patch['after'].replace('\n',newline)
+            count=text.count(before);applied=text.count(after)
+            if count>1 or applied>1 or (count and applied):
+                raise ValueError('Ambiguous source patch '+patch['id']+'; selected source needs review')
+            if count:
+                updated=text.replace(before,after,1).encode('utf-8')
+                path.write_bytes(updated)
+                item.update(state='applied',before_sha256=hashlib.sha256(original).hexdigest(),
+                            after_sha256=hashlib.sha256(updated).hexdigest())
+            elif applied:
+                item.update(state='already_applied',after_sha256=hashlib.sha256(original).hexdigest())
+        evidence.append(item)
+    return evidence
 
 def validate_jemalloc(root):
     """Installing a package or mentioning it in CMake is not linkage proof."""

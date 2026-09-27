@@ -20,6 +20,8 @@ import time
 import traceback
 import urllib.request
 
+import source_patch_integration
+
 
 REVISION = '16281a81de58acfb315b639d9b79aaacd52a64f2'
 EXPECTED_CLIENT = '30260904_1'
@@ -163,6 +165,7 @@ def main():
         backend.build(STAGING, 2)
         backend.validate_binaries(STAGING)
         report['backend_build_report'] = json.loads((backend.LOGS / 'build-report.json').read_text())
+        report['source_patch_boundaries'] = source_patch_integration.check(STAGING, ARTIFACTS / 'logs')
         for name in backend.PROCESSES:
             print(f'Checking real {name} startup and dynamic allocator binding', flush=True)
             report['binaries'][name] = runtime_smoke(name)

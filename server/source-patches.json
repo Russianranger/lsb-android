@@ -1,0 +1,20 @@
+[
+  {
+    "id": "decoded-linkshell-terminated-copy",
+    "path": "src/common/utils.cpp",
+    "before": "    strncpy(target, decodedSignature, LinkshellStringLength);\n}\n\nstd::string EncodeStringSignature",
+    "after": "    // Decoded strings use DecodeStringLength, including the final terminator.\n    const auto decodedLength = std::strlen(decodedSignature);\n    std::memcpy(target, decodedSignature, decodedLength);\n    std::memset(target + decodedLength, 0, DecodeStringLength - decodedLength);\n}\n\nstd::string EncodeStringSignature"
+  },
+  {
+    "id": "decoded-signature-terminated-copy",
+    "path": "src/common/utils.cpp",
+    "before": "    strncpy(target, decodedSignature, SignatureStringLength);\n}\n\n// Take a regular string",
+    "after": "    // Preserve decoded characters and zero padding in the decoded-size buffer.\n    const auto decodedLength = std::strlen(decodedSignature);\n    std::memcpy(target, decodedSignature, decodedLength);\n    std::memset(target + decodedLength, 0, DecodeStringLength - decodedLength);\n}\n\n// Take a regular string"
+  },
+  {
+    "id": "linkshell-decoded-buffer-capacity",
+    "path": "src/map/items/item_linkshell.cpp",
+    "before": "    char  decoded[LinkshellStringLength] = {};\n    DecodeStringLinkshell",
+    "after": "    char  decoded[DecodeStringLength] = {};\n    DecodeStringLinkshell"
+  }
+]

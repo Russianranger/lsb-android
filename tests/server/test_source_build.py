@@ -144,6 +144,9 @@ class SourceBuildTests(unittest.TestCase):
         self.make_source(self.staging)
         failures = (RuntimeError('xi_map built without jemalloc'), InterruptedError('stopped'))
         for error in failures:
+            # A rebuilt/imported staging tree may contain an older successful
+            # report. Failure must remove it rather than leave stale proof.
+            (self.staging / 'android-build.json').write_text('{"state":"passed","binaries":{"old":{}}}')
             with self.subTest(error=type(error).__name__), \
                  mock.patch.object(m, 'command', side_effect=self.fake_compile), \
                  mock.patch.object(m, 'validate_binaries'), \
