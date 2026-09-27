@@ -64,7 +64,7 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(all(not (root/'rebuild'/name).exists() for name in m.PROCESSES))
     def test_requested_build_replaces_old_root_binaries(self):
         with tempfile.TemporaryDirectory() as d:
-            root=Path(d);m.RUN=root
+            root=Path(d);m.RUN=root;m.LOGS=root/'logs'
             for name in m.PROCESSES:(root/name).write_bytes(b'old')
             def compile(args,**kwargs):
                 if args[:2]==['cmake','--build']:
@@ -73,7 +73,7 @@ class ServerTests(unittest.TestCase):
                     for index,name in enumerate(m.PROCESSES):
                         # Cover both supported CMake output layouts.
                         (root/name if index==0 else root/'build/bin'/name).write_bytes(b'new')
-            with mock.patch.object(m,'status'),mock.patch.object(m,'command',side_effect=compile):m.build(root,2)
+            with mock.patch.object(m,'status'),mock.patch.object(m,'command',side_effect=compile),mock.patch.object(m,'validate_binaries'),mock.patch.object(m,'validate_jemalloc',return_value={}):m.build(root,2)
             self.assertTrue(all((root/name).read_bytes()==b'new' for name in m.PROCESSES))
     def test_initial_source_snapshot_preserves_nested_runtime_data(self):
         with tempfile.TemporaryDirectory() as d:

@@ -173,17 +173,51 @@ public class WorkServiceTest {
         ServerRuntime runtime=new ServerRuntime(context,builder->{throw new AssertionError("No process needed for support export");});
         try{
             FilesEx.text(new File(runtime.logs,"dependencies.log"),"xi_world\nlibjemalloc.so.2 => not found\n");
+            FilesEx.text(new File(runtime.logs,"build-report.json"),"{\"allocator\":\"jemalloc\",\"failure\":\"fixture-secret\"}");
+            FilesEx.text(new File(runtime.state,"generations/fixture/database-credentials.json"),"{\"password\":\"fixture-secret\"}");
             ByteArrayOutputStream bytes=new ByteArrayOutputStream();
             try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(bytes)){runtime.exportLogs(zip);}
-            boolean found=false;
+            boolean found=false,buildFound=false;
             try(java.util.zip.ZipInputStream zip=new java.util.zip.ZipInputStream(new ByteArrayInputStream(bytes.toByteArray()))){
                 java.util.zip.ZipEntry entry;while((entry=zip.getNextEntry())!=null){
                     ByteArrayOutputStream content=new ByteArrayOutputStream();byte[] buffer=new byte[1024];int n;
                     while((n=zip.read(buffer))!=-1)content.write(buffer,0,n);
-                    if(entry.getName().equals("server/operation.log")){assertTrue(content.toString("UTF-8").contains("libjemalloc.so.2 => not found"));found=true;}
+                    String value=content.toString("UTF-8");assertFalse(value.contains("fixture-secret"));
+                    if(entry.getName().equals("server/operation.log")){assertTrue(value.contains("libjemalloc.so.2 => not found"));assertTrue(value.contains("build-report.json"));found=true;}
+                    if(entry.getName().equals("server/build-report.json")){assertEquals("jemalloc",new org.json.JSONObject(value).getString("allocator"));assertTrue(value.contains("[redacted]"));buildFound=true;}
                 }
             }
-            assertTrue(found);
+            assertTrue(found);assertTrue(buildFound);
+        }finally{FilesEx.delete(runtime.home);}
+    }
+    @Test public void sourceBuildRoutesWithoutDatabaseOrClientCompatibilityAndRetainsEvidence()throws Exception {
+        File home=new File(context.getFilesDir(),"server-runtime");AtomicInteger calls=new AtomicInteger();
+        ServerRuntime runtime=new ServerRuntime(nativeContext(),builder->{
+            try{
+            assertTrue(builder.command().contains("/opt/lsb-server/manager.py"));
+            org.json.JSONObject request=new org.json.JSONObject(FilesEx.read(new File(home,"run/request.json"),4096));
+            String action=request.getString("action");
+            assertEquals(calls.get()==0?"build-source":"inspect",action);
+            assertFalse(request.has("client_pair"));
+            assertFalse(new File(home,"state/import.sql").exists());assertFalse(new File(home,"state/active.json").exists());
+            if(action.equals("build-source")){
+                assertTrue(request.getBoolean("build"));
+                FilesEx.text(new File(home,"logs/build-report.json"),"{\"allocator\":\"jemalloc\",\"status\":\"passed\"}");
+            }else assertTrue(new File(home,"logs/build-report.json").isFile());
+            FilesEx.text(new File(home,"run/status.json"),"{\"message\":\"Source build verified with jemalloc\"}");
+            calls.incrementAndGet();return new Child(false);
+            }catch(org.json.JSONException error){throw new IOException(error);}
+        });
+        try{
+            FilesEx.delete(runtime.home);FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");
+            try{runtime.perform("build-source",true,s->{});fail("Source builds require current compiler dependencies");}
+            catch(IOException expected){assertTrue(expected.getMessage().contains("Update server runtime"));}
+            assertEquals(0,calls.get());assertFalse(runtime.alive());
+            FilesEx.text(new File(runtime.root,"lsb-server-tools-v4"),"current dependencies");
+            assertEquals("Source build verified with jemalloc",runtime.perform("build-source",true,s->{}));
+            runtime.perform("inspect",false,s->{});
+            assertEquals(2,calls.get());assertFalse(runtime.alive());
+            assertEquals("jemalloc",new org.json.JSONObject(FilesEx.read(new File(runtime.logs,"build-report.json"),4096)).getString("allocator"));
         }finally{FilesEx.delete(runtime.home);}
     }
     @Test public void concurrentPreparationCannotOverwriteRequestOrReleaseImportReservation()throws Exception {

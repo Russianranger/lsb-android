@@ -1,0 +1,53 @@
+name: Server source compilation
+
+on:
+  push:
+    paths:
+      - 'server/**'
+      - 'tests/server/**'
+      - '.github/workflows/server-source.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'tests/server/**'
+      - '.github/workflows/server-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arm64-jemalloc:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the selected LandSandBoat source with the Android backend
+        run: |
+          mkdir -p out/server-source
+          docker run --rm --init \
+            -v "$PWD:/src:ro" \
+            -v "$PWD/out/server-source:/artifacts" \
+            ubuntu:26.04 bash /src/tests/server/source-build-check.sh
+      - name: Preserve readable build evidence
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" out/server-source
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-source-arm64-evidence
+          path: |
+            out/server-source/report.json
+            out/server-source/toolchain.log
+            out/server-source/logs/
+            out/server-source/run/
+            out/server-source/cmake/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: server-source-arm64-binaries
+          path: out/server-source/binaries/
+          if-no-files-found: error
+          retention-days: 30

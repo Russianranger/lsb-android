@@ -1,3 +1,31 @@
+# 0.5.45: selected server source compilation with jemalloc
+
+The owner reports approximately 30x better Box64 repair speed and requests the
+next step: compile the new server source with jemalloc and fix build blockers.
+The new support archive (20260927-184632), SHA-256
+`e967a54271b8515d92fe3d383d6c51345f358b9ef760ab4699fd819d2c3ce2be`,
+identifies `LandSandBoat/server @ 16281a81de58acfb315b639d9b79aaacd52a64f2`,
+expected client `30260904_1`. Its latest Box64 session confirms qualified Zink
+DirectDraw pixels and observed PRoot syscall filtering. Viewer exit is zero,
+but repair confirmation and activation remain false; do not claim the client
+update was activated. There is no new source compilation attempt in that ZIP.
+
+Version 0.5.45 / code 61 adds a compile-only action, explicitly selects the
+requirements virtual environment for upstream Python code generation, disables
+IPO to reduce phone link memory, and builds only the four required server
+targets. A deferred CMake include links shared jemalloc into each target with
+linker retention; ELF, loader dependencies and allocator dependency order are
+checked before success. Installed jemalloc alone was insufficient upstream.
+The include affects only the staged build; no upstream source rewrite or
+blanket warning suppression is applied. Build reports are exported separately.
+
+The new native ARM64 CI gate uses the exact GitHub source archive without Git
+metadata or mesh submodules, runs the same backend build, and checks real
+malloc symbol bindings under `--help` without `LD_PRELOAD`. Full compilation
+validation is pending the initial CI run. See [TESTING-0.5.45.md](TESTING-0.5.45.md).
+
+---
+
 # 0.5.44: remove the repair cutoff and qualify hardware DirectDraw
 
 ## Current phone evidence

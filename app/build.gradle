@@ -7,8 +7,8 @@ android {
         applicationId 'io.github.russianranger.lsb'
         minSdk 26
         targetSdk 35
-        versionCode 60
-        versionName '0.5.44'
+        versionCode 61
+        versionName '0.5.45'
     }
     flavorDimensions += 'installation'
     productFlavors {

@@ -147,20 +147,77 @@ def configure_tools(root):
     file.write_text(yaml.safe_dump([{k:v} for k,v in values.items()]))
 
 def build(root, jobs):
-    status('building','Building the imported server revision…')
-    requirements=root/'tools/requirements.txt'
-    command(['/usr/bin/python3','-m','venv',str(root/'.venv')],timeout=120)
-    if requirements.is_file():command([root/'.venv/bin/pip','install','-r',requirements],cwd=root,timeout=1800)
-    # This is an isolated staging tree. A requested build must never retain an
-    # older imported executable just because CMake emits the new one in build/.
-    for name in PROCESSES:(root/name).unlink(missing_ok=True)
-    command(['cmake','-S',root,'-B',root/'build','-DCMAKE_BUILD_TYPE=Release','-DCMAKE_C_COMPILER=gcc-15','-DCMAKE_CXX_COMPILER=g++-15','-DPCH_ENABLE=OFF'],cwd=root)
-    command(['cmake','--build',root/'build','--parallel',str(jobs)],cwd=root,timeout=7200)
+    if jobs not in (1,2,4):raise ValueError('Use 1, 2 or 4 build workers')
+    root=root.resolve();started=time.time()
+    (root/'android-build.json').unlink(missing_ok=True)
+    hook=Path(__file__).with_name('android-build.cmake').resolve()
+    options=['-DCMAKE_BUILD_TYPE=Release','-DCMAKE_C_COMPILER=gcc-15','-DCMAKE_CXX_COMPILER=g++-15',
+             '-DPCH_ENABLE=OFF','-DENABLE_IPO=OFF','-DPython_EXECUTABLE='+str(root/'.venv/bin/python'),
+             '-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES='+str(hook)]
+    report=dict(format=1,state='building',started_at=started,source=source_info(root),
+                allocator='jemalloc',jobs=jobs,cmake_options=options,
+                build_hook_sha256=hashlib.sha256(hook.read_bytes()).hexdigest())
+    atomic(LOGS/'build-report.json',report)
+    try:
+        status('building','Preparing the selected source and Python build dependencies…')
+        requirements=root/'tools/requirements.txt'
+        command(['/usr/bin/python3','-m','venv',str(root/'.venv')],timeout=120)
+        if requirements.is_file():command([root/'.venv/bin/pip','install','-r',requirements],cwd=root,timeout=1800)
+        # This is an isolated staging tree. A requested build must never retain
+        # an old executable just because CMake emits the new one in build/.
+        for name in PROCESSES:(root/name).unlink(missing_ok=True)
+        status('building','Configuring the server with jemalloc…')
+        command(['cmake','-S',root,'-B',root/'build',*options],cwd=root)
+        status('building','Compiling the four server programs with jemalloc…')
+        command(['cmake','--build',root/'build','--parallel',str(jobs),'--target',*PROCESSES],cwd=root,timeout=7200)
+        for name in PROCESSES:
+            if not (root/name).is_file():
+                found=[p for p in (root/'build').rglob(name) if p.is_file()]
+                if len(found)!=1:raise RuntimeError('Build did not produce '+name)
+                shutil.copy2(found[0],root/name)
+        status('building','Checking ARM64 binaries and jemalloc linkage…')
+        validate_binaries(root)
+        report['binaries']=validate_jemalloc(root)
+        report.update(state='passed',finished_at=time.time(),elapsed_seconds=round(time.time()-started,2))
+        atomic(root/'android-build.json',report)
+        atomic(LOGS/'build-report.json',report)
+        return report
+    except Exception as error:
+        report.update(state='stopped' if isinstance(error,InterruptedError) else 'failed',
+                      error=str(error),finished_at=time.time(),elapsed_seconds=round(time.time()-started,2))
+        atomic(LOGS/'build-report.json',report)
+        raise
+
+def validate_jemalloc(root):
+    """Installing a package or mentioning it in CMake is not linkage proof."""
+    binaries={}
     for name in PROCESSES:
-        if not (root/name).is_file():
-            found=[p for p in (root/'build').rglob(name) if p.is_file()]
-            if len(found)!=1:raise RuntimeError('Build did not produce '+name)
-            shutil.copy2(found[0],root/name)
+        cancelled();path=root/name
+        result=subprocess.run(['readelf','-d',str(path)],capture_output=True,text=True,timeout=30,
+                              env=dict(os.environ,LC_ALL='C'))
+        if result.returncode:raise RuntimeError('Cannot inspect allocator linkage for '+name)
+        needed=re.findall(r'\(NEEDED\).*?\[([^\]]+)\]',result.stdout)
+        if 'libjemalloc.so.2' not in needed:
+            raise RuntimeError(name+' was built without a shared jemalloc dependency; build rejected')
+        # Linux resolves malloc in dependency order. Reject libc taking priority.
+        if 'libc.so.6' in needed and needed.index('libc.so.6')<needed.index('libjemalloc.so.2'):
+            raise RuntimeError(name+' links libc before jemalloc; build rejected')
+        with path.open('rb') as stream:
+            digest=hashlib.file_digest(stream,'sha256').hexdigest()
+        binaries[name]=dict(sha256=digest,
+                            bytes=path.stat().st_size,needed=needed,allocator='libjemalloc.so.2')
+    return binaries
+
+def build_source(req):
+    # No SQL import, database process, active-pointer write or version pairing is
+    # needed to compile. Only replace this disposable compilation workspace.
+    source=source_root(INPUT);workspace=STATE/'source-build';root=workspace/'server'
+    status('copying','Copying the selected source for a separate build check…')
+    if workspace.exists():shutil.rmtree(workspace)
+    workspace.mkdir(parents=True)
+    snapshot_source(source,root,recover_build_binaries=False)
+    report=build(root,int(req.get('jobs',2)))
+    status('build_ready','All four ARM64 server programs built with jemalloc. The active server and database are unchanged.',build=report)
 
 def validate_binaries(root):
     # Retain the loader's evidence even when validation fails before any server
@@ -358,7 +415,7 @@ def deploy(req):
     status('copying','Staging an independent server copy…');snapshot_source(source,root,recover_build_binaries=not req.get('build',False))
     if updating:
         for f in (previous/'server/settings').glob('*.lua'):shutil.copy2(f,root/'settings'/f.name)
-    if req.get('build',False):build(root,int(req.get('jobs',2)))
+    build_report=build(root,int(req.get('jobs',2))) if req.get('build',False) else None
     validate_binaries(root)
     status('importing_database','Importing SQL into a separate database generation…')
     creds=import_database(generation,dump,name)
@@ -380,6 +437,7 @@ def deploy(req):
             after=account_counts(name,creds)
             if after!=before:raise RuntimeError('Account or character counts changed during the update; active deployment kept')
         info=source_info(root)
+        if build_report is not None:info['build']=build_report
         info.update(format=1,generation=generation.name,database=name,accounts=before['accounts'],characters=before['chars'],created_at=time.time(),updated=updating,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in PROCESSES})
         atomic(generation/'deployment.json',info)
     finally:stop_database(creds)
@@ -501,10 +559,11 @@ def serve():
 def main():
     for p in (STATE,RUN,LOGS):p.mkdir(parents=True,exist_ok=True)
     req=json.loads((RUN/'request.json').read_text());action=req.get('action')
-    if action not in ('deploy','update','start','backup','rollback','inspect','restore-db','create-account'):raise ValueError('Unknown server action')
+    if action not in ('deploy','update','start','backup','rollback','inspect','restore-db','create-account','build-source'):raise ValueError('Unknown server action')
     if req.get('jobs',2) not in (1,2,4):raise ValueError('Use 1, 2 or 4 build workers')
     if action=='inspect':
         info=source_info(source_root(INPUT));status('inspected','Selected source expects client '+info['expected_client']+'. Meshes: '+', '.join(k+(' present' if v else ' missing') for k,v in info['meshes'].items()),source=info)
+    elif action=='build-source':build_source(req)
     elif action in ('deploy','update'):deploy(req)
     elif action=='restore-db':restore_database(req)
     elif action=='create-account':

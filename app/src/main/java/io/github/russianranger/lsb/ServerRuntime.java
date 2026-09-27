@@ -163,11 +163,13 @@ final class ServerRuntime {
     }
     private String performReserved(String action,boolean build,SafeZip.Progress progress,ServerAccountRequest account)throws Exception {
         assets();if(!installed())throw new IOException("Install the server runtime first");
-        if((action.equals("deploy")||action.equals("update"))&&!toolsCurrent())throw new IOException("Update server runtime and build tools before deploying or rebuilding the server");
+        if((action.equals("deploy")||action.equals("update")||action.equals("build-source"))&&!toolsCurrent())throw new IOException("Update server runtime and build tools before deploying or rebuilding the server");
         JSONObject request=new JSONObject().put("action",action).put("build",build).put("jobs",context.getSharedPreferences("server",0).getInt("jobs",2)).put("database",context.getSharedPreferences("server",0).getString("database","xidb")).put("local_zones",context.getSharedPreferences("server",0).getBoolean("local_zones",true));
         if(action.equals("deploy")||action.equals("update"))try{request.put("client_pair",ClientRuntime.get(context).compatibilitySnapshot());}catch(Exception e){request.put("client_pair",new JSONObject().put("status","client_not_prepared"));}
         FilesEx.text(new File(run,"request.json"),request.toString());new File(run,"status.json").delete();
-        for(File file:Optional.ofNullable(logs.listFiles()).orElse(new File[0]))if(file.isFile()&&!file.getName().endsWith(".previous"))LogRetention.rotate(file);
+        // Keep the latest build evidence available after inspect/start/backup.
+        // The backend replaces this report when a new build begins.
+        for(File file:Optional.ofNullable(logs.listFiles()).orElse(new File[0]))if(file.isFile()&&!file.getName().endsWith(".previous")&&!file.getName().equals("build-report.json"))LogRetention.rotate(file);
         execute(Arrays.asList("/usr/bin/python3","/opt/lsb-server/manager.py"),progress,account);return status;
     }
     void stop()throws IOException{FilesEx.mkdir(run);FilesEx.text(new File(run,"stop"),"stop\n");status="Stopping managed server…";}
@@ -179,19 +181,23 @@ final class ServerRuntime {
         }
     }
     String operationLog()throws Exception {
-        StringBuilder text=new StringBuilder();for(String name:new String[]{"operation.log","dependencies.log","database.log","xi_connect.log","xi_map.log","xi_world.log","xi_search.log","supervisor.log"}){
+        StringBuilder text=new StringBuilder();for(String name:new String[]{"build-report.json","operation.log","dependencies.log","database.log","xi_connect.log","xi_map.log","xi_world.log","xi_search.log","supervisor.log"}){
             File file=new File(logs,name);if(!file.isFile())continue;
             try(RandomAccessFile f=new RandomAccessFile(file,"r")){int size=(int)Math.min(12000,f.length());f.seek(f.length()-size);byte[] b=new byte[size];f.readFully(b);text.append(name).append("\n").append(new String(b,java.nio.charset.StandardCharsets.UTF_8)).append("\n");}
         }
+        return redactCredentials(text.toString());
+    }
+    private String redactCredentials(String result)throws Exception {
         // Credentials may appear in upstream command failures. Redact every
         // generated credential, including a failed candidate's credentials.
-        File[] generations=new File(state,"generations").listFiles();String result=text.toString();
+        File[] generations=new File(state,"generations").listFiles();
         if(generations!=null)for(File dir:generations){File secrets=new File(dir,"database-credentials.json");if(secrets.isFile()){JSONObject values=new JSONObject(FilesEx.read(secrets,4096));Iterator<String> keys=values.keys();while(keys.hasNext())result=result.replace(values.getString(keys.next()),"[redacted]");}}
         return result;
     }
     void exportLogs(ZipOutputStream zip)throws Exception {
         SafeZip.entry(zip,"server/deployment.json",deployment().toString(2));
         File s=new File(run,"status.json");if(s.isFile())SafeZip.entry(zip,"server/status.json",FilesEx.read(s,65536));
+        File build=new File(logs,"build-report.json");if(build.isFile())SafeZip.entry(zip,"server/build-report.json",redactCredentials(FilesEx.read(build,1048576)));
         SafeZip.entry(zip,"server/operation.log",operationLog());
     }
 }

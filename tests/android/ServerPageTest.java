@@ -34,7 +34,7 @@ public class ServerPageTest {
         Bitmap b=Bitmap.createBitmap(width,v.getHeight(),Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);c.drawColor(0xff0c141f);v.draw(c);
         File target=new File("out/ui-previews",name);target.getParentFile().mkdirs();try(OutputStream out=new FileOutputStream(target)){assertTrue(b.compress(Bitmap.CompressFormat.PNG,100,out));}b.recycle();
     }
-    @Test public void serverControlsSeparateAccountsRestoreAndLaterUpdatesAndClearSecrets()throws Exception{
+    @Test public void serverControlsSeparateAccountsRestoreAndSourceUpdatesAndClearSecrets()throws Exception{
         Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
         ServerRuntime sr=ServerRuntime.get(ctx);String id="11111111-1111-1111-1111-111111111111";
         FilesEx.text(new File(sr.root,"lsb-server-ready"),"ready");FilesEx.text(new File(sr.root,"lsb-server-tools-v4"),"ready");
@@ -45,7 +45,7 @@ public class ServerPageTest {
         org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Server")).setup();
         try{
             Field tileField=MainActivity.class.getDeclaredField("tiles");tileField.setAccessible(true);FantasyTiles tiles=(FantasyTiles)tileField.get(controller.get());
-            assertNotNull(text(tiles,"◇  Import your working server"));assertNotNull(text(tiles,"◇  Create account"));assertNotNull(text(tiles,"◇  Database backup & restore"));assertNotNull(text(tiles,"◇  Source updates · later"));
+            assertNotNull(text(tiles,"◇  Import your working server"));assertNotNull(text(tiles,"◇  Create account"));assertNotNull(text(tiles,"◇  Database backup & restore"));assertNotNull(text(tiles,"◇  Source builds & updates"));
             capture(tiles,920,"server-tiles-wide.png");
             text(tiles,"◇  Create account").performClick();
             assertTrue(text(tiles,"Create player account").isEnabled());
@@ -76,6 +76,28 @@ public class ServerPageTest {
             assertFalse(text(tiles,"Build imported revision and deploy").isEnabled());
             assertNotNull(text(tiles,"Update the server runtime to add libraries required by your imported server."));
             capture(tiles,920,"server-runtime-update-wide.png");capture(tiles,400,"server-runtime-update-narrow.png");
+            text(tiles,"◇  Source builds & updates").performClick();
+            assertFalse(text(tiles,"Build selected source with jemalloc").isEnabled());
         }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);report.delete();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
+    }
+    @Test public void sourceBuildNeedsNoDatabaseOrDeploymentAndDisablesWhileBusy()throws Exception{
+        Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
+        ServerRuntime sr=ServerRuntime.get(ctx);FilesEx.delete(sr.home);
+        FilesEx.text(new File(sr.root,"lsb-server-ready"),"ready");FilesEx.text(new File(sr.root,"lsb-server-tools-v4"),"ready");
+        File report=new File(MainActivity.storage(ctx),"server/current/source-report.txt");FilesEx.text(report,"selected source fixture");
+        try{
+            assertFalse(sr.hasDatabaseImport());assertFalse(sr.deployment().has("generation"));
+            for(boolean busy:new boolean[]{false,true}){
+                WorkService.busy=busy;
+                org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Server")).setup();
+                try{
+                    Field tileField=MainActivity.class.getDeclaredField("tiles");tileField.setAccessible(true);FantasyTiles tiles=(FantasyTiles)tileField.get(controller.get());
+                    text(tiles,"◇  Source builds & updates").performClick();
+                    assertEquals(!busy,text(tiles,"Build selected source with jemalloc").isEnabled());
+                    assertFalse(text(tiles,"Build and apply source + database update").isEnabled());
+                    if(!busy){capture(tiles,920,"server-source-build-wide.png");capture(tiles,400,"server-source-build-narrow.png");}
+                }finally{controller.pause().stop().destroy();Shadows.shadowOf(Looper.getMainLooper()).idle();}
+            }
+        }finally{WorkService.busy=false;FilesEx.delete(sr.home);report.delete();singleton.set(null,null);}
     }
 }

@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.44 removes the two-hour PlayOnline repair cutoff and adds checked hardware rendering for the updater.** The updater keeps its own runtime and graphics settings and falls back to compatibility graphics if the GPU checks fail. The accepted gameplay profile, prepared client, server and database remain separate from the staged update. Phone repair speed still needs measurement. See the [0.5.44 test steps](docs/TESTING-0.5.44.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
+Current development: **0.5.45 adds an isolated server source build with verified jemalloc linkage.** It selects the Python environment required by current LandSandBoat code generation, limits phone build memory use, and records build evidence for all four ARM64 server programs. The accepted client, server and database stay in place during the build check. See the [0.5.45 test steps](docs/TESTING-0.5.45.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
 
 The Server tab imports an existing source/binary ZIP plus its logical SQL dump, deploys an independent server/database pair, creates normal player accounts, and exports or restores database backups. Imported binaries are checked for ARM64/dependency compatibility; an explicit fallback builds the same imported revision. Restores reuse the deployed server files and retain the previous pair for rollback. Source updates remain a separate later action. The user's matching server archive is still required for the first real deployment.
 
