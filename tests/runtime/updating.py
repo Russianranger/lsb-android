@@ -73,6 +73,47 @@ def configure_updater_runtime(request):
         request['updater_hardware_graphics'] = backend == '1'
 
 
+def retain_glxinfo_failure_evidence():
+    """Bounded existing glxinfo output from disposable CI fixtures only."""
+    if (os.environ.get('LSB_TEST_MATRIX_MODE') != 'filtered'
+            or os.environ.get('LSB_TEST_UPDATER_HARDWARE_GRAPHICS') != '1'):
+        return
+    import updater_gl
+    original_probe = updater_gl.run_probe
+
+    def probe(instance, environment):
+        original_wait = instance.wait
+        captured = {}
+        result = None
+
+        def wait(process, *args, **kwargs):
+            try:
+                return original_wait(process, *args, **kwargs)
+            finally:
+                if process.args == ['/usr/bin/glxinfo', '-B']:
+                    instance.logs[-1].thread.join(2)
+                    path = updater_gl.LOGS / 'updater-gl-check.log'
+                    if path.is_file():
+                        with path.open('rb') as stream:
+                            data = stream.read(16385)
+                        captured.update(output=data[:16384].decode('utf-8', errors='replace'),
+                                        truncated=len(data) > 16384, exit_code=process.poll())
+
+        instance.wait = wait
+        try:
+            result = original_probe(instance, environment)
+            return result
+        finally:
+            instance.wait = original_wait
+            if captured and (result is None or result.get('state') != 'completed'
+                             or result.get('renderer') != 'zink' or result.get('direct') is not True):
+                evidence = {'format': 1, 'scope': 'fixed glxinfo -B in a disposable CI fixture only',
+                            'engine': os.environ.get('LSB_TEST_ENGINE'), **captured}
+                (LOGS / 'ci-glxinfo-failure.json').write_text(json.dumps(evidence, indent=2))
+
+    updater_gl.run_probe = probe
+
+
 def assert_directdraw(report, implementation):
     """Require the fixed PE32 pixel workload and the observed Wine backend."""
     assert isinstance(report, dict), 'Production DirectDraw report is absent'

@@ -24,7 +24,7 @@ import zlib
 
 sys.path.insert(0, '/opt/lsb')
 from integration import recv
-from updating import configure_updater_runtime, assert_filter
+from updating import configure_updater_runtime, assert_filter, retain_glxinfo_failure_evidence
 
 SESSION = Path('/session')
 LOGS = Path('/logs')
@@ -118,6 +118,7 @@ def read_json(path):
 
 
 def worker(label):
+    retain_glxinfo_failure_evidence()
     import client_update
     import supervisor
     from client_setup import windows_path

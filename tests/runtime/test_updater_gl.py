@@ -86,6 +86,7 @@ class ZinkContracts(unittest.TestCase):
             self.assertEqual(report['state'], 'verified')
             self.assertFalse(report['directdraw_verified'])
             self.assertEqual(probe.call_args.args[1], candidate)
+            self.assertNotIn('LIBGL_ALWAYS_SOFTWARE', candidate)
             self.assertEqual(original, self.environment())
 
     def test_phone_rejects_software_ambiguous_backend_wrong_vendor_or_failed_probe(self):
@@ -114,9 +115,11 @@ class ZinkContracts(unittest.TestCase):
             with self.subTest(test_path=test_path, second_path=second_path), \
                     patch.dict(os.environ, {'LSB_TEST_VULKAN_ICD': test_path}, clear=True), \
                     patch.object(graphics, 'run_probe', return_value=self.receipt(
-                        accelerated=False, cpu_renderer=True, vendor_id=0x10005)):
+                        accelerated=False, cpu_renderer=True, vendor_id=0x10005)) as probe:
                 candidate, report = graphics.qualify(instance, original)
             self.assertEqual(report['state'], expected)
+            self.assertEqual(probe.call_args.args[1].get('LIBGL_ALWAYS_SOFTWARE'),
+                             '1' if expected == 'verified' else None)
 
     def test_unrelated_profiles_are_untouched(self):
         for field, value in (('action', 'launch'), ('renderer', 'software'),

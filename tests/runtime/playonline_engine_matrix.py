@@ -14,7 +14,7 @@ import subprocess
 import sys
 import uuid
 
-from updating import assert_directdraw, assert_filter, configure_updater_runtime, inventory
+from updating import assert_directdraw, assert_filter, configure_updater_runtime, inventory, retain_glxinfo_failure_evidence
 
 
 def seed():
@@ -37,6 +37,7 @@ def seed():
 
 
 def benchmark_worker():
+    retain_glxinfo_failure_evidence()
     import client_update
     import supervisor
     original = client_update.repair_io_check

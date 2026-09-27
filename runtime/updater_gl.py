@@ -104,14 +104,18 @@ def qualify(supervisor, environment):
             or supervisor.engine not in ('box64', 'fex')):
         return dict(environment), report
     candidate = candidate_environment(environment)
-    supervisor.status('checking_updater_graphics', message='Checking OpenGL rendering for PlayOnline')
-    report['probe'] = probe = run_probe(supervisor, candidate)
     # CI may explicitly bind its software ICD. It must be the exact injected
     # path used by both Vulkan loader variables. Android launches with env -i
     # and never exposes this test-only switch.
     test_icd = os.environ.get('LSB_TEST_VULKAN_ICD')
     ci = bool(test_icd and candidate.get('VK_ICD_FILENAMES') == test_icd
               and candidate.get('VK_DRIVER_FILES') == test_icd)
+    # Mesa 22 Zink rejects a CPU device unless CPU selection is explicit.
+    # This opt-in is confined to the exact disposable CI ICD binding.
+    if ci:
+        candidate['LIBGL_ALWAYS_SOFTWARE'] = '1'
+    supervisor.status('checking_updater_graphics', message='Checking OpenGL rendering for PlayOnline')
+    report['probe'] = probe = run_probe(supervisor, candidate)
     device_ok = ci or (supervisor.state.get('hardware_verified') is True
                        and probe.get('accelerated') is True
                        and probe.get('cpu_renderer') is False
