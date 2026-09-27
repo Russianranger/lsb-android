@@ -10,19 +10,70 @@ DirectDraw pixels and observed PRoot syscall filtering. Viewer exit is zero,
 but repair confirmation and activation remain false; do not claim the client
 update was activated. There is no new source compilation attempt in that ZIP.
 
-Current checkpoint (2026-09-27): baseline run `36347805191`, attempt 2,
-passed every Android, Box64, FEX, Windows, PlayOnline and server-deployment job
-for app source `2c2373ccf48ced3c1fb2c269da59ddea4c84a319`. Native source run
-`36347805212` built world, search and connect, and passed the general sol key
-compilation changes. Its only remaining fatal diagnostic was a real null
-entity dereference in `CLuaBaseEntity::getEVA()`'s error-reporting path. Evidence
-artifact `10942131672`, SHA-256
-`5ee797dadf72e4f75e92b88e4469e0ee3204cb0ae0231ed4f2e686799c47bd37`.
-The binary-upload step completed with no files; that does not establish that
-all four binaries compiled. The following candidate repairs the entity guard
-instead of suppressing the nonnull diagnostic. Full native qualification and
-signed APK delivery remain pending this rerun. The owner requested notification
-and the signed APK when it passes; an hourly conditional notification is active.
+Qualified and delivered (2026-09-27): app source
+`b490ef7cb03c2e71ce64309f64fa9aacce45d5e2` passed native ARM64
+[source run 36351388478](https://github.com/Russianranger/lsb-android/actions/runs/36351388478),
+job `108710610142`. All four executables compiled, linked shared jemalloc first
+in their ELF dependency lists, and exited successfully for `--help`. Actual
+loader bindings for direct C allocators, libstdc++ allocators and captured C++
+new/delete operators resolve to `libjemalloc.so.2`, without `LD_PRELOAD`.
+The exact selected source archive SHA-256 is
+`5b5435e71ef4386696a1a4b3a47cc0aa3726d8ecd12ed17cef34faf52d76bd77`;
+the original 21,331-file import remains unchanged. All nine staged patches
+applied. The 26 compiled semantic cases passed: decoder boundaries (10), ASIO
+socket lifetime (2), getEVA type/null guard with UBSan (4), real SOL/LuaJIT keys
+(10). Toolchain: GCC 15.2, CMake 4.2.3, jemalloc 5.3.0. Native gate elapsed
+681.9 seconds, with 607 compiler-cache hits and 101 misses.
+
+Passing evidence artifact `10942287571`, archive SHA-256
+`307a8901f252533145ebc5fd95f846d1c106dd6032a07aaa0905a67418f5486c`.
+Compiled-binary artifact `10942576999`, archive SHA-256
+`5627160e48ce3ee24193a7305f652262720eef88b5b2807d08cf2c9443333f27`.
+This qualifies compilation, dependency resolution and help startup; it does not
+claim an on-phone source build, new deployment, database migration or gameplay.
+
+The final APK rebuild, Android checks, Windows checks and real server deployment
+and recovery checks passed in baseline run `36351388496`. All 54 local server
+tests passed. The full Box64/FEX/PlayOnline baseline passed in run `36347805191`,
+at predecessor `2c2373cc`; the final commit changes only the server patch
+manifest, the focused server probe and documentation, with client/runtime code
+unchanged. The repeated FEX job `108711130101` failed because the compressed-texture/UP
+submission fixture timed out at 21:31 UTC. Its root cause is not established.
+Box64 and PlayOnline reruns were still running at delivery preparation. These
+client files are unchanged from the preceding fully passed baseline; do not
+label the final commit's entire baseline run green. The requested native source
+compilation gate is fully passed.
+
+The signed APK pair is saved and ready for the owner. Both are 0.5.45 / code 61,
+18,511,190 bytes, signed with the retained certificate SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+All 69 nonsignature entries in each APK match its CI APK; all 25 packaged source
+assets match the qualified repository. The variants share 67 identical entries;
+package identities and 16 KiB native-library alignment were verified.
+
+- `LSB-Android-0.5.45.apk`: package `io.github.russianranger.lsb`, SHA-256
+  `f7e2954334b7380920d66a5213a6471ba6d18c6df4a5151cb67d3bbd2b1ebaff`.
+  CI artifact `10941794849`, archive SHA-256
+  `d86803390ff33a0fe3b8909c2dedd63543981b20b7dcbdfce6044bb0ba4014c9`.
+- `LSB-Android-Restore-Test-0.5.45.apk`: package
+  `io.github.russianranger.lsb.restoretest`, SHA-256
+  `6e27008ee2d154a837e871f5b8cbf3030da45c8a74bdb0eab4afb34fca6d6ef9`.
+  CI artifact `10942631964`, archive SHA-256
+  `6e13f47df0e594518878267e5c7cc541626f6368d27df7ff1f946cb42570f1cb`.
+
+Install the matching APK over the existing app, then use **Server → Source
+builds & updates → Build selected source with jemalloc**. Follow
+[TESTING-0.5.45.md](TESTING-0.5.45.md). The compile-only action does not activate
+a new server or change the database. The requested pass notification is fulfilled
+by delivery; its conditional watcher is paused to avoid repeat notifications.
+
+The preceding native run `36347805212` built world, search and connect, but
+failed on a real null entity dereference in `CLuaBaseEntity::getEVA()`'s logging
+path. Its binary-upload step reported no files. Evidence artifact `10942131672`,
+SHA-256 `5ee797dadf72e4f75e92b88e4469e0ee3204cb0ae0231ed4f2e686799c47bd37`.
+The final patch uses a real dynamic type check, preserves battle evasion values,
+and safely logs/rejects NPC and null entities, without suppressing nonnull
+warnings. Earlier candidate APKs were superseded and must not be delivered.
 
 Version 0.5.45 / code 61 adds a compile-only action, explicitly selects the
 requirements virtual environment for upstream Python code generation, disables
@@ -97,8 +148,8 @@ in `0x09b_chocobo_race_req.cpp` and `0x0aa_guild_buy.cpp`. Evidence artifact
 `e69844bfc599862427895b2006f6ace64f7907bdc4847ccda7122e5f92c9f1c7`.
 The shared sol wrapper now converts non-raw narrow character-array keys to
 pointers in both direct-field overloads. Raw, binary, numeric and other key
-types retain their existing paths. The individual packet-key patch is removed. Full native compilation remains unqualified until the map target,
-all allocator bindings, and runtime patch probes pass.
+types retain their existing paths. The individual packet-key patch is removed. At that checkpoint native compilation was still unqualified; the final passing
+map target, allocator bindings and runtime probes are recorded above.
 
 CI now retains a bounded compiler cache even on build failures, while still
 checking compiler, flags, source and headers before reusing object files.
