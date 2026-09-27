@@ -63,6 +63,36 @@ def assert_filter(state):
         assert acceleration == {'requested': False, 'active': 'none'}, acceleration
 
 
+def configure_updater_runtime(request):
+    configure_filter(request)
+    # Only the paired renderer matrix opts in. The existing software COM and
+    # online-network cases keep their established requests and preparation.
+    backend = os.environ.get('LSB_TEST_UPDATER_VULKAN_DDRAW')
+    if backend is not None:
+        assert backend in ('0', '1'), 'Unknown updater DirectDraw matrix arm'
+        request['updater_vulkan_ddraw'] = backend == '1'
+
+
+def assert_directdraw(report, backend):
+    """Require the fixed PE32 pixel workload and the observed Wine backend."""
+    expected = 'vulkan' if backend == 'vulkan' else 'compatibility'
+    assert isinstance(report, dict), 'Production DirectDraw report is absent'
+    assert report.get('requested') == report.get('active') == expected, report
+    assert report.get('state') == 'verified', report
+    probe = report.get('probe', {})
+    assert probe.get('backend') == backend and probe.get('exit_code') == 0, probe
+    assert probe.get('format') == 1 and probe.get('bits') == 32 and probe.get('passed') is True, probe
+    assert probe.get('stage') == 'completed' and probe.get('hresult') == 0, probe
+    for key in ('frames', 'expected_frames', 'colorfills', 'uploads', 'blits', 'ffp_frames', 'presents'):
+        assert probe.get(key) == 24, (key, probe)
+    assert probe.get('readback_samples') == probe.get('presentation_samples') == 192, probe
+    assert type(probe.get('adapter_vendor_id')) is int and 0 < probe['adapter_vendor_id'] <= 0xffffffff, probe
+    assert type(probe.get('adapter_device_id')) is int and 0 <= probe['adapter_device_id'] <= 0xffffffff, probe
+    for key in ('elapsed_ms', 'render_ms', 'first_frame_ms', 'max_frame_ms', 'elapsed_wall_ms'):
+        assert type(probe.get(key)) is int and 0 <= probe[key] <= 180000, (key, probe)
+    assert probe['first_frame_ms'] <= probe['max_frame_ms'] <= probe['render_ms'] <= probe['elapsed_ms'], probe
+
+
 def inventory(root, excluded=None):
     """Include new/deleted files and links, not only a known sentinel's bytes."""
     result = {}
@@ -142,7 +172,7 @@ def main():
             request = {'format': 1, 'engine': os.environ.get('LSB_TEST_ENGINE', 'box64'), 'session_id': str(uuid.uuid4()),
                        'renderer': os.environ.get('LSB_TEST_RENDERER', 'software'), 'audio': False, 'action': 'update-client',
                        'dxvk_version': '2.5.3', 'proot_acceleration': False}
-            configure_filter(request)
+            configure_updater_runtime(request)
             (SESSION / 'client-update-manifest.json').write_text(json.dumps(manifest))
             (SESSION / 'request.json').write_text(json.dumps(request))
             expected_imports = imports(executable)
@@ -181,6 +211,8 @@ def main():
                 assert not (SESSION / 'playonline-process.json').exists(), 'viewer started despite a missing dependency'
                 assert 'process' not in report and 'viewer_exit_code' not in report, report
             else:
+                if os.environ.get('LSB_TEST_UPDATER_VULKAN_DDRAW') == '1':
+                    assert_directdraw(report.get('directdraw_graphics'), 'vulkan')
                 assert attempts[0]['exit_code'] == 0 and all(row['ok'] and row['win32_error'] == 0 for row in dependencies), attempts
                 native = report['process']
                 assert native['format'] == 2 and native['bits'] == 32 and native['phase'] == 'exited', native

@@ -1,8 +1,8 @@
 """Bounded, read-only process counters for a PlayOnline repair session.
 
 Membership is established by the supervisor's exact tracer identity or observed
-ancestry, never by an executable name. Names from /proc/stat are mapped to fixed
-labels and are not exported. No cmdline, environ, filenames or window text is
+ancestry, never by an executable name. Process and task names from stat/comm
+are mapped to fixed labels and are not exported. No cmdline, environ, filenames or window text is
 read. Samples describe only observed processes; discovery is deliberately
 bounded and a short-lived/unreadable process may be missed.
 """
@@ -17,7 +17,9 @@ import time
 
 INTERVAL_SECONDS = 5.0
 DISCOVERY_SECONDS = 15.0
+THREAD_SECONDS = 15.0
 MAX_PROCESSES = 64
+MAX_VIEWER_THREADS = 64
 MAX_SCAN_ENTRIES = 512
 MAX_SAMPLES = 120
 MAX_REPORT_BYTES = 128 * 1024
@@ -28,6 +30,22 @@ _NAMES = {'pol.exe': 'viewer', 'wineserver': 'wineserver',
           'fexinterpreter': 'translator', 'fexloader': 'translator',
           'xtigervnc': 'display', 'xvnc': 'display'}
 _IO = ('rchar', 'wchar', 'syscr', 'syscw', 'read_bytes', 'write_bytes')
+# Exact names emitted by Wine's wined3d command stream and DXVK 2.5.3.
+# Mesa llvmpipe emits "llvmpipe-%u". Other names are deliberately not guessed:
+# a role identifies a named worker, not its current stack or active renderer.
+_THREAD_NAMES = {'wined3d_cs': 'wined3d_command_stream',
+                 'dxvk-cs': 'dxvk_command_stream',
+                 'dxvk-submit': 'dxvk_submission', 'dxvk-queue': 'dxvk_submission',
+                 'dxvk-shader-h': 'dxvk_compiler', 'dxvk-shader-n': 'dxvk_compiler',
+                 'dxvk-shader-l': 'dxvk_compiler'}
+
+
+def _thread_role(pid, tid, name):
+    if pid == tid:
+        return 'main'
+    if re.fullmatch(r'llvmpipe-[0-9]{1,6}', name):
+        return 'software_rasterizer'
+    return _THREAD_NAMES.get(name, 'other')
 
 
 def _read(path, limit):
@@ -104,6 +122,8 @@ class Monitor:
         self._samples = deque(maxlen=MAX_SAMPLES)
         self._known = {}
         self._previous = {}
+        self._thread_previous = {}
+        self._threads_at = None
         self._anchor = None
         self._tracer = None
         self._uid = None
@@ -234,6 +254,83 @@ class Monitor:
             self._discovery = {'state': 'unavailable', 'entries': visited,
                                'unreadable': unreadable, 'same_uid': same_uid}
 
+    def _viewer_threads(self, viewers, started, deadline):
+        """Read only owned viewer tasks within the poll's remaining budget.
+
+        Per-thread identities include both process and thread start times.
+        Every attempted thread poll replaces the baseline, so a missed task
+        never contributes a delta covering an unreported longer interval.
+        Raw names, paths and identities never enter the exported report.
+        """
+        current, roles = {}, {}
+        entries = unreadable = observed = 0
+        bounded = False
+        for pid, expected in viewers:
+            if entries >= MAX_VIEWER_THREADS or self.clock() >= deadline:
+                bounded = True
+                break
+            rows = []
+            try:
+                owner = self._record(pid)
+                if owner['start'] != expected or owner['uid'] != self._uid:
+                    raise ValueError('viewer identity changed')
+                with os.scandir(self.proc / str(pid) / 'task') as tasks:
+                    for item in tasks:
+                        if entries >= MAX_VIEWER_THREADS or self.clock() >= deadline:
+                            bounded = True
+                            break
+                        entries += 1
+                        if not item.name.isascii() or not item.name.isdecimal():
+                            continue
+                        tid = int(item.name)
+                        folder = self.proc / str(pid) / 'task' / str(tid)
+                        try:
+                            row = _stat(folder / 'stat')
+                            status = _status(folder / 'status')
+                            name = _read(folder / 'comm', 64).rstrip('\n').lower()
+                            after = _stat(folder / 'stat')
+                            if (row['pid'] != tid or after['pid'] != tid
+                                    or row['start'] != after['start']
+                                    or status['Uid'] != self._uid
+                                    or name != row['name'] or name != after['name']):
+                                raise ValueError('thread identity changed')
+                            rows.append(((pid, expected, tid, row['start']),
+                                         row['ticks'], _thread_role(pid, tid, name)))
+                        except (OSError, ValueError):
+                            unreadable += 1
+                # Reject the whole viewer observation if the owning process
+                # was replaced or changed credentials while tasks were read.
+                owner = self._record(pid)
+                if owner['start'] != expected or owner['uid'] != self._uid:
+                    raise ValueError('viewer identity changed')
+            except (OSError, ValueError):
+                unreadable += 1
+                continue
+            for identity, ticks, role in rows:
+                observed += 1
+                counters = roles.setdefault(role, {'threads': 0, 'cpu_delta_ms': 0,
+                    'cpu_delta_threads': 0, 'cpu_baseline_threads': 0})
+                counters['threads'] += 1
+                previous = self._thread_previous.get(identity)
+                if previous is not None and previous['role'] == role and ticks >= previous['ticks']:
+                    counters['cpu_delta_ms'] += (ticks - previous['ticks']) * 1000 // self.tick_hz
+                    counters['cpu_delta_threads'] += 1
+                else:
+                    counters['cpu_baseline_threads'] += 1
+                current[identity] = {'ticks': ticks, 'role': role}
+        for counters in roles.values():
+            if not counters['cpu_delta_threads']:
+                counters['cpu_delta_ms'] = None
+        report = {'state': ('bounded' if bounded else 'observed' if observed else
+                            'unavailable' if viewers else 'no_viewer'),
+                  'interval_ms': None if self._threads_at is None else
+                      max(0, int((started - self._threads_at) * 1000)),
+                  'entries': entries, 'unreadable': unreadable,
+                  'threads_observed': observed, 'roles': roles}
+        self._thread_previous = current
+        self._threads_at = started
+        return report
+
     def sample(self):
         """One bounded poll; public for deterministic fixtures, not a hot loop."""
         started = self.clock()
@@ -249,6 +346,7 @@ class Monitor:
                 self._failed += 1
             return
         current = {}
+        viewers = []
         for pid, expected in list(self._known.items()):
             if self.clock() >= deadline:
                 budget_hit = True
@@ -296,6 +394,8 @@ class Monitor:
                         counters['io_delta'][key] += io[key] - previous['io'][key]
                     counters['io_delta_processes'] += 1
             current[identity] = {'ticks': row['ticks'], 'io': io}
+            if category == 'viewer':
+                viewers.append(identity)
         for counters in categories.values():
             if not counters['cpu_delta_processes']:
                 counters['cpu_delta_ms'] = None
@@ -306,6 +406,11 @@ class Monitor:
         if started - self._discovery_at >= DISCOVERY_SECONDS:
             self._discover(deadline, tracer_valid, current)
             self._discovery_at = started
+        # Hot-thread diagnostics run less often, after normal process discovery,
+        # and share its time budget. They cannot add an unbounded /proc walk.
+        thread_report = None
+        if self._threads_at is None or started - self._threads_at >= THREAD_SECONDS:
+            thread_report = self._viewer_threads(viewers, started, deadline)
         elapsed = max(0, int((self.clock() - started) * 1000))
         sample = {'elapsed_ms': max(0, int((started - self.started) * 1000)),
                   'interval_ms': None if not self._samples else max(0, int((started - self._last_sample) * 1000)),
@@ -313,6 +418,8 @@ class Monitor:
                   'scope': 'shared_tracer_and_ancestry' if tracer_valid else 'observed_ancestry_only',
                   'missing_processes': missing, 'known_processes': len(self._known),
                   'discovery': dict(self._discovery), 'categories': categories}
+        if thread_report is not None:
+            sample['viewer_threads'] = thread_report
         self._previous = current
         self._last_sample = started
         with self._lock:
@@ -349,6 +456,9 @@ class Monitor:
                 'policy': 'bounded_observed_process_counters',
                 'state': self._state, 'sample_interval_ms': int(INTERVAL_SECONDS * 1000),
                 'discovery_interval_ms': int(DISCOVERY_SECONDS * 1000),
+                'viewer_thread_interval_ms': int(THREAD_SECONDS * 1000),
+                'viewer_thread_limit': MAX_VIEWER_THREADS,
+                'viewer_thread_policy': 'fixed_worker_names_not_stack_attribution',
                 'clock_ticks_per_second': self.tick_hz,
                 'sample_limit': MAX_SAMPLES, 'process_limit': MAX_PROCESSES,
                 'serialized_limit_bytes': MAX_REPORT_BYTES,

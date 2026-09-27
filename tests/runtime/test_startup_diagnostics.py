@@ -9,6 +9,21 @@ import client_launch
 
 
 class StartupContracts(unittest.TestCase):
+    def test_exact_wined3d_backend_is_distinct_from_dxvk_initialization(self):
+        for message, backend in ((b'Using the Vulkan renderer.', 'vulkan'),
+                                 (b'Using the OpenGL renderer.', 'opengl'),
+                                 (b'Disabling 3D support.', 'gdi')):
+            _, report = self.parsed(b'1.234:0168:016c:err:winediag:wined3d_dll_init ' + message + b'\n')
+            self.assertEqual(report['records'], [dict(source='wine', event='wined3d_renderer',
+                              backend=backend, process_id=360, thread_id=364)])
+        for prefix, message in ((b'err:winediag:wined3d_dll_init', b'Using the Vulkan renderer. private_account'),
+                                (b'warn:winediag:wined3d_dll_init', b'Using the Vulkan renderer.'),
+                                (b'err:winediag:private_function', b'Using the Vulkan renderer.'),
+                                (b'err:private_channel:wined3d_dll_init', b'Using the Vulkan renderer.')):
+            _, report = self.parsed(b'0010:' + prefix + b' ' + message + b'\ninfo: DXVK: v2.5.3\n')
+            self.assertFalse(any(r['event'] == 'wined3d_renderer' for r in report['records']))
+            self.assertNotIn('private', json.dumps(report))
+
     def parsed(self, raw):
         events=PrivateEvents()
         for i in range(0,len(raw),3):events.feed(raw[i:i+3])

@@ -24,7 +24,7 @@ import zlib
 
 sys.path.insert(0, '/opt/lsb')
 from integration import recv
-from updating import configure_filter, assert_filter
+from updating import configure_updater_runtime, assert_filter
 
 SESSION = Path('/session')
 LOGS = Path('/logs')
@@ -203,7 +203,7 @@ def main():
         request = {'format': 1, 'engine': engine, 'session_id': str(uuid.uuid4()),
                    'renderer': renderer, 'audio': False, 'action': 'update-client',
                    'dxvk_version': '2.5.3', 'proot_acceleration': False}
-        configure_filter(request)
+        configure_updater_runtime(request)
         if os.environ.get('LSB_TEST_REPAIR_DIAGNOSTICS') == '1': request['repair_diagnostics'] = True
         (SESSION / 'client-update-manifest.json').write_text(json.dumps(manifest))
         (SESSION / 'request.json').write_text(json.dumps(request))
@@ -260,6 +260,7 @@ def main():
                           'component_registration': report.get('component_registration', []),
                           'dependency_attempts': report.get('dependency_attempts', []),
                           'repair_io': report.get('repair_io'),
+                          'directdraw_graphics': report.get('directdraw_graphics'),
                           'runtime': {key: state.get(key) for key in ('runtime_engine', 'graphics', 'dxvk_selected', 'fex_execution_verified', 'runtime_acceleration', 'prefix_initialization')},
                           'startup_diagnostics': report.get('startup_diagnostics', {})}
         (LOGS / 'official-playonline-smoke.json').write_text(json.dumps(results, indent=2))

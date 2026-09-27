@@ -1,3 +1,34 @@
+# 0.5.44: remove the repair cutoff and qualify hardware DirectDraw
+
+## Current phone evidence
+
+User reports .43 Box64 improved but stopped at 27%; FEX now reaches repair at similar speed. The attached `lsb-support(20260927-141310).zip` (305,616 bytes, SHA-256 `b9d6794971f9b2ebc1bda151a030be44f33bfe2319a46fdd258915d0ced1e980`) captures Box64 session `bf2e7820-9fdd-432d-860e-7bd43b1b9eab`. It does not contain a new FEX updater measurement.
+
+- The recorded error is our `PlayOnline viewer timed out`, at 7,202,081 ms. Last heartbeat at 7,199,188 ms still reports a visible responsive window. The implementation imposed a 7,200-second deadline; this is not evidence of a network timeout or frozen viewer.
+- Over the retained final 276.55 seconds, Linux counters show viewer 2.195 average CPU cores and PRoot tracer 0.0534. The previous .42 retained sample had tracer 0.7507. Filtering substantially reduced tracing overhead; differing repair stages prevent a controlled full-repair speed ratio.
+- Display delivery averaged 2.469 updates/sec over the retained 943 seconds, with decode 0.205 ms and draw 0.062 ms. Physical viewer reads were approximately 0.56 MB/sec. These observations point upstream of Android display submission, not to an expensive Android drawing loop.
+- Wine builtin DirectDraw goes directly to WineD3D. Its automatic renderer defaults to OpenGL, while our environment forces llvmpipe. Native DXVK D3D9 qualification therefore does not qualify this separate path. Actual phone WineD3D backend/thread evidence is still needed to establish how much of the remaining cost it explains.
+
+## Changes under qualification
+
+Version 0.5.44, code 60. Preserve the accepted working client/server/database and existing staged update. Gameplay settings remain separate.
+
+- Interactive viewer and restarted-viewer waits have no fixed deadline. Stop and failed-process detection remain active; finite preparation/probe deadlines remain bounded. Virtual-clock tests cover both waits beyond five hours and cancellation after two hours.
+- Updater-only **Hardware PlayOnline graphics** defaults on and runs a finite PE32 DirectDraw 7 / D3D7 HAL check through the selected engine. It validates 24 upload/blit/draw/present frames and 192 render plus 192 presentation pixels before selecting `WINE_D3D_CONFIG=csmt=1,renderer=vulkan`. The physical Vulkan preflight and exact Wine backend marker must also succeed. Failure retains compatibility settings. The user can disable the separate preference for comparison.
+- Raw synthetic probe logs are removed. Fixed numeric receipts and exact backend labels are exported. Actual viewer output independently records WineD3D renderer selection; DXVK startup alone is not treated as DirectDraw proof.
+- Every 15 seconds, bounded owned-viewer task sampling exports CPU deltas for fixed worker roles (main, software rasterizer, WineD3D command stream, DXVK command stream/submission/compiler, other). It does not expose raw thread names or imply stack-level attribution.
+- CI compares explicit OpenGL and Vulkan finite workloads with filtering enabled in both arms and independent seed-prefix copies. The Vulkan arm additionally requires the official viewer's observed Vulkan selection and all existing lifecycle, FEX initialization, and input-preservation checks. CI uses a software Vulkan device and cannot prove phone speed or a two-hour repair target.
+
+Primary implementation sources: pinned FEX Wine `b073859675060c9211fcbccfd90e4e87520dc2c2`, `dlls/ddraw/ddraw.c`, `dlls/wined3d/wined3d_main.c`, `directx.c`, `adapter_vk.c`; Wine 10 has the same relevant backend selection. Exact renderer marker function is `wined3d_dll_init`, channel `winediag`.
+
+## Validation and delivery status
+
+Local runtime suite: 181 tests passed. Independent reviews found no blocking source issues. Actual ARM64 Box64/FEX and Android CI qualification is pending. Do not claim a phone speedup or completed repair from synthetic checks.
+
+The original signing checkpoint `LSB-Android-preview-signing.zip` could not yet be downloaded (HTTP 502); no .44 signed APK has been produced. Original certificate must remain `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`. Do not substitute disposable CI signing.
+
+---
+
 # 0.5.43: avoid duplicate FEX initialization and investigate updater CPU overhead
 
 The 0.5.42 phone tests separate two problems: FEX stops during prefix

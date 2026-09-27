@@ -49,9 +49,10 @@ def verify_bundle(folder):
 
 def validate_request(req):
     if req.get('format')!=1 or req.get('renderer') not in ('turnip26','turnip24','software'):raise ValueError('Unsupported runtime request')
-    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87','performance_trial','proot_acceleration','network_preflight','repair_diagnostics'}:raise ValueError('Unexpected runtime request field')
+    if set(req)-{'format','renderer','audio','session_id','action','display_profile','startup_trace','gamepad','display_fps','dxvk_hud','dxvk_diagnostics','native_surface','dxvk_version','shm_upload','turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers','borderless','engine','fex_x87','performance_trial','proot_acceleration','network_preflight','repair_diagnostics','updater_vulkan_ddraw'}:raise ValueError('Unexpected runtime request field')
     if 'network_preflight' in req and (req.get('action')!='update-client' or type(req['network_preflight']) is not bool):raise ValueError('Unsupported network check request')
     if 'repair_diagnostics' in req and (req.get('action')!='update-client' or type(req['repair_diagnostics']) is not bool):raise ValueError('Unsupported repair diagnostics request')
+    if 'updater_vulkan_ddraw' in req and (req.get('action')!='update-client' or type(req['updater_vulkan_ddraw']) is not bool):raise ValueError('Unsupported updater graphics request')
     if req.get('performance_trial','none') not in ('none','one_compiler','cached_dynamic','gpl_fast','syscall_filter','retain_pipelines','lighter_scene'):raise ValueError('Unsupported performance trial')
     if req.get('engine','box64') not in ('box64','fex'):raise ValueError('Unsupported runtime engine')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
@@ -194,10 +195,10 @@ class Supervisor:
         proc=subprocess.Popen(args,env=env or self.env,cwd=PROBE if cwd is None else cwd,stdin=subprocess.PIPE if pipe_input else subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
         writer=BoundedLog(LOGS/name,lambda:self.private_output and not fixed_output);writer.start(proc.stdout);self.logs.append(writer);self.children.append(proc);return proc
     def wait(self,proc,timeout,label,accepted=(0,)):
-        deadline=time.monotonic()+timeout
+        deadline=None if timeout is None else time.monotonic()+timeout
         while proc.poll() is None:
             self.stopped()
-            if time.monotonic()>deadline:raise RuntimeError(label+' timed out; export Diagnostics')
+            if deadline is not None and time.monotonic()>deadline:raise RuntimeError(label+' timed out; export Diagnostics')
             time.sleep(.15)
         if proc.returncode not in accepted:raise RuntimeError(label+' exited with code '+str(proc.returncode)+'; export Diagnostics')
     def wine(self,args,timeout=180,label='Wine setup'):

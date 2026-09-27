@@ -42,6 +42,126 @@ class RepairPerformanceTests(unittest.TestCase):
         self.now += seconds
         return self.monitor.snapshot()['samples'][-1]
 
+    def task(self, tid, name, ticks=0, start=50, uid=1234, pid=200):
+        folder = self.proc / str(pid) / 'task' / str(tid)
+        folder.mkdir(parents=True, exist_ok=True)
+        fields = ['S'] + ['0'] * 30
+        for index, value in [(1, 100), (11, ticks), (17, 1), (19, start)]:
+            fields[index] = str(value)
+        (folder / 'stat').write_text(str(tid) + ' (' + name + ') ' + ' '.join(fields))
+        (folder / 'status').write_text('Uid:\t%d\t%d\t%d\t%d\nTracerPid:\t10\n' % (uid, uid, uid, uid))
+        (folder / 'comm').write_text(name + '\n')
+
+    def test_viewer_threads_fixed_roles_deltas_cadence_and_private_names(self):
+        self.process(200, ppid=100)
+        names = {200: 'pol.exe', 201: 'llvmpipe-0', 202: 'wined3d_cs',
+                 203: 'dxvk-submit', 204: 'dxvk-shader-h', 205: 'dxvk-cs',
+                 206: 'secret-character', 207: 'llvmpipe-secret'}
+        for tid, name in names.items():
+            self.task(tid, name)
+        self.sample(seconds=15)  # Discover viewer; no thread counters fabricated.
+        first = self.sample(seconds=5)['viewer_threads']
+        self.assertEqual(first['state'], 'observed')
+        self.assertTrue(all(v['cpu_delta_ms'] is None for v in first['roles'].values()))
+        self.assertNotIn('viewer_threads', self.sample(seconds=10))
+        for tid, name in names.items():
+            self.task(tid, name, ticks=15)
+        row = self.sample(seconds=15)['viewer_threads']
+        self.assertEqual(row['interval_ms'], 15000)
+        self.assertEqual(set(row['roles']), {'main', 'software_rasterizer',
+            'wined3d_command_stream', 'dxvk_submission', 'dxvk_compiler',
+            'dxvk_command_stream', 'other'})
+        self.assertEqual(row['roles']['software_rasterizer']['cpu_delta_ms'],
+                         15 * 1000 // self.monitor.tick_hz)
+        self.assertEqual(row['roles']['other']['threads'], 2)
+        output = json.dumps(self.monitor.snapshot())
+        for private in ('secret', 'llvmpipe-0', 'pol.exe', str(self.proc), 'wined3d_cs'):
+            self.assertNotIn(private, output)
+
+    def test_viewer_thread_reuse_and_unreadable_are_baselines_not_fake_cpu(self):
+        self.process(200, ppid=100)
+        self.task(201, 'llvmpipe-0', ticks=100)
+        self.task(202, 'dxvk-cs', ticks=100)
+        self.sample(seconds=15)
+        self.sample(seconds=15)
+        self.task(201, 'llvmpipe-0', ticks=99999, start=99)
+        (self.proc / '200/task/202/stat').unlink()
+        row = self.sample(seconds=15)['viewer_threads']
+        self.assertEqual(row['unreadable'], 1)
+        self.assertEqual(row['roles']['software_rasterizer']['cpu_baseline_threads'], 1)
+        self.assertIsNone(row['roles']['software_rasterizer']['cpu_delta_ms'])
+        self.assertNotIn('dxvk_command_stream', row['roles'])
+        # Returning after an unreadable observation establishes a fresh baseline.
+        self.task(202, 'dxvk-cs', ticks=99999)
+        row = self.sample(seconds=15)['viewer_threads']
+        self.assertIsNone(row['roles']['dxvk_command_stream']['cpu_delta_ms'])
+        # The same TID and thread start under a replaced process is also new.
+        self.process(200, ppid=100, start=99)
+        self.sample(seconds=15)
+        row = self.sample(seconds=15)['viewer_threads']
+        self.assertEqual(row['threads_observed'], 2)
+        self.assertTrue(all(v['cpu_delta_ms'] is None for v in row['roles'].values()))
+
+    def test_viewer_threads_reject_uid_and_mid_read_identity_changes(self):
+        self.process(200, ppid=100)
+        self.task(201, 'llvmpipe-0', uid=999)
+        self.task(202, 'wined3d_cs')
+        self.sample(seconds=15)
+        original = perf._stat
+        calls = [0]
+        def race(path):
+            row = original(path)
+            if path.parent.name == '202':
+                calls[0] += 1
+                if calls[0] % 2 == 0:
+                    row['start'] += 1
+            return row
+        with patch.object(perf, '_stat', side_effect=race):
+            row = self.sample(seconds=15)['viewer_threads']
+        self.assertEqual(row['state'], 'unavailable')
+        self.assertEqual(row['unreadable'], 2)
+        self.assertEqual(row['roles'], {})
+        # Process membership was previously established, but thread sampling
+        # must still independently verify the owner's current UID.
+        self.process(200, ppid=100, uid=999)
+        row = self.sample(seconds=15)['viewer_threads']
+        self.assertEqual(row['state'], 'unavailable')
+        self.assertEqual(row['roles'], {})
+        self.process(200, ppid=100)
+        original_read = perf._read
+        def replace_owner(path, limit):
+            value = original_read(path, limit)
+            if path.name == 'comm':
+                self.process(200, ppid=100, start=999)
+            return value
+        with patch.object(perf, '_read', side_effect=replace_owner):
+            row = self.sample(seconds=15)['viewer_threads']
+        self.assertEqual(row['state'], 'unavailable')
+        self.assertEqual(row['roles'], {})
+
+    def test_viewer_thread_entry_and_shared_time_budgets(self):
+        self.process(200, ppid=100)
+        for tid in range(201, 211):
+            self.task(tid, 'private-task')
+        self.sample(seconds=15)
+        with patch.object(perf, 'MAX_VIEWER_THREADS', 3):
+            row = self.sample(seconds=15)['viewer_threads']
+        self.assertEqual(row['state'], 'bounded')
+        self.assertEqual(row['entries'], 3)
+        self.assertEqual(row['threads_observed'], 3)
+        original = perf._read
+        def slow_comm(path, limit):
+            value = original(path, limit)
+            if path.name == 'comm':
+                self.now += perf.BUDGET_SECONDS + 0.01
+            return value
+        with patch.object(perf, '_read', side_effect=slow_comm):
+            row = self.sample(seconds=15)['viewer_threads']
+        self.assertEqual(row['state'], 'bounded')
+        self.assertEqual(row['entries'], 1)
+        self.assertEqual(row['threads_observed'], 1)
+        self.assertLessEqual(len(self.monitor._thread_previous), perf.MAX_VIEWER_THREADS)
+
     def test_restart_reparent_and_deltas_cover_replacement(self):
         self.process(200, ppid=100, ticks=1)
         self.sample()

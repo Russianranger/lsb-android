@@ -1,7 +1,8 @@
 """Actual PRoot updater qualification; fixed synthetic data and public viewer only.
 
-Each engine has an unfiltered preparation/benchmark and a filtered full viewer
-and lifecycle pass. This does not claim Android GPU or online repair throughput.
+Each engine has filtered compatibility preparation/benchmarks and a filtered
+Vulkan full viewer and lifecycle pass. This does not claim Android GPU or
+online repair throughput.
 """
 import hashlib
 import json
@@ -13,7 +14,7 @@ import subprocess
 import sys
 import uuid
 
-from updating import assert_filter, configure_filter, inventory
+from updating import assert_directdraw, assert_filter, configure_updater_runtime, inventory
 
 
 def seed():
@@ -64,7 +65,7 @@ def baseline(engine):
     request = {'format': 1, 'engine': engine, 'session_id': str(uuid.uuid4()),
                'renderer': 'turnip26', 'audio': False, 'action': 'update-client',
                'dxvk_version': '2.5.3', 'repair_diagnostics': True}
-    configure_filter(request)
+    configure_updater_runtime(request)
     manifest = {'format': 1, 'generation': str(uuid.uuid4()), 'region': 'US', 'pol': 'Viewer',
                 'game': 'Game', 'executable': 'Viewer/pol.exe', 'sha256': POL_SHA}
     Path('/session/request.json').write_text(json.dumps(request))
@@ -80,7 +81,7 @@ def baseline(engine):
     attempts = report['dependency_attempts']
     assert len(attempts) == 1 and attempts[0]['receipt_valid'] and attempts[0]['exit_code'] == 0, attempts
     assert not Path('/session/playonline-process.json').exists(), 'Short baseline launched the viewer'
-    return state, json.loads(Path('/logs/benchmark-only.json').read_text())
+    return state, json.loads(Path('/logs/benchmark-only.json').read_text()), report.get('directdraw_graphics')
 
 
 def fex_initialization(state):
@@ -109,19 +110,26 @@ def main():
     engine = os.environ['LSB_TEST_ENGINE']
     mode = os.environ['LSB_TEST_MATRIX_MODE']
     assert engine in ('box64', 'fex') and mode in ('baseline', 'filtered')
-    assert (os.environ.get('LSB_TEST_FILTERED') == '1') == (mode == 'filtered')
+    assert os.environ.get('LSB_TEST_FILTERED') == '1', 'Renderer comparisons must both use verified filtering'
+    assert (os.environ.get('LSB_TEST_UPDATER_VULKAN_DDRAW') == '1') == (mode == 'filtered')
     protected = inventory(Path('/baseline-prefix'))
     official = inventory(Path('/official'))
     source_hash = hashlib.sha256(json.dumps(protected, sort_keys=True).encode()).hexdigest()
+    viewer_backends = []
     if mode == 'baseline':
-        state, benchmark = baseline(engine)
+        state, benchmark, directdraw = baseline(engine)
     else:
         import playonline_smoke
         playonline_smoke.main()
         production = json.loads(Path('/logs/official-playonline-smoke.json').read_text())['production']
         state, benchmark = production['runtime'], production.get('repair_io')
+        directdraw = production.get('directdraw_graphics')
+        viewer_backends = sorted({row.get('backend') for row in production['startup_diagnostics'].get('records', [])
+                                  if row.get('source') == 'wine' and row.get('event') == 'wined3d_renderer'})
+        assert viewer_backends == ['vulkan'], ('Actual official viewer did not select only Vulkan', viewer_backends)
     assert state['runtime_engine'] == engine and state['dxvk_selected'] == '2.5.3', state
     assert_filter(state)
+    assert_directdraw(directdraw, 'opengl' if mode == 'baseline' else 'vulkan')
     if engine == 'fex':
         assert state['fex_execution_verified'] is True, state
     initialization = fex_initialization(state)
@@ -140,14 +148,20 @@ def main():
         lifecycle = ['visible-clean-exit', 'no-window-high-exit', 'missing-dependency', 'restarted-visible-clean-exit']
     assert inventory(Path('/baseline-prefix')) == protected, 'Engine changed the protected Box64 seed'
     assert inventory(Path('/official')) == official, 'Engine changed the pinned official viewer input'
-    result = {'format': 2, 'engine': engine, 'mode': mode, 'transport': 'patched_proot', 'network': 'disabled',
-              'renderer': 'DXVK 2.5.3 / CI lavapipe', 'filtering': mode == 'filtered',
+    result = {'format': 3, 'engine': engine, 'mode': 'compatibility' if mode == 'baseline' else 'vulkan',
+              'artifact_directory': mode, 'transport': 'patched_proot', 'network': 'disabled',
+              'renderer': 'DXVK 2.5.3 / CI lavapipe', 'filtering': True,
               'runtime_acceleration': state['runtime_acceleration'],
               'baseline_prefix_sha256': source_hash, 'baseline_prefix_preserved': True,
               'official_input_preserved': True, 'fex_execution_verified': state.get('fex_execution_verified'),
               'prefix_initialization': initialization, 'component_registration_verified': True,
-              'lifecycle_cases': lifecycle, 'repair_io': benchmark, 'online_repair_verified': False,
-              'interpretation': 'One paired synthetic sample, independent copied prefixes, identical production preparation. No phone repair throughput or speedup threshold is claimed.'}
+              'lifecycle_cases': lifecycle, 'repair_io': benchmark, 'directdraw_graphics': directdraw,
+              'directdraw_workload': {'helper_sha256': hashlib.sha256(Path('/probe/ddraw-check.exe').read_bytes()).hexdigest(),
+                                     'width': 320, 'height': 240, 'pattern_width': 128, 'pattern_height': 128,
+                                     'frames': 24, 'render_pixel_samples': 192, 'presented_pixel_samples': 192},
+              'official_viewer_directdraw_backends': viewer_backends,
+              'online_repair_verified': False,
+              'interpretation': 'One paired DirectDraw sample, independent copied prefixes, filtering active in both arms. CI software GPU timing is not phone hardware or repair throughput. No speedup threshold is claimed.'}
     Path('/logs/playonline-engine-matrix.json').write_text(json.dumps(result, indent=2))
     print('PASS:', engine, mode, 'actual PRoot, copied prefix and bounded Windows workload; source inputs unchanged', flush=True)
 

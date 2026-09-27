@@ -103,6 +103,15 @@ class StartupDiagnostics:
             ids=ids.rstrip(b':').split(b':')
             owner={'thread_id':int(ids[-1],16)}
             if len(ids)==2:owner['process_id']=int(ids[0],16)
+            # Wine 10 / pinned FEX Wine: exact renderer selection only. DXVK
+            # initialization alone says nothing about builtin DirectDraw.
+            if level == b'err' and channel == b'winediag' and function == b'wined3d_dll_init':
+                backend = {b'using the vulkan renderer.': 'vulkan',
+                           b'using the opengl renderer.': 'opengl',
+                           b'disabling 3d support.': 'gdi'}.get(message)
+                if backend:
+                    self.add('wine', 'wined3d_renderer', backend=backend, **owner)
+                    return
             if channel == b'loaddll' and function == b'build_module':
                 match = re.fullmatch(rb'loaded l"([^"\r\n]+)" at [0-9a-f]+: (native|builtin)', message)
                 if match:

@@ -10,6 +10,7 @@ from client_launch import retry_network_initialization, valid_check_rows
 from viewer_inventory import snapshot as viewer_snapshot
 from repair_io import run as repair_io_check
 from repair_performance import Monitor as RepairPerformance
+from updater_graphics import configure as configure_updater_graphics
 
 SESSION = Path('/session')
 LOGS = Path('/logs')
@@ -337,6 +338,8 @@ def run(supervisor):
         # POL output, which could include a retail account entered in its UI.
         supervisor.private_output = True
         environment = private_environment(supervisor)
+        environment, report['directdraw_graphics'] = configure_updater_graphics(supervisor, environment)
+        record()
         prepare_playonline_components(supervisor, manifest, environment, report, record)
         check_dependencies(supervisor, manifest, executable, environment, report, record)
         if supervisor.req.get('repair_diagnostics', False):
@@ -364,7 +367,10 @@ def run(supervisor):
         # A self-updater may exit its first process with a nonzero result while
         # a detached replacement is still running. Preserve the result, but do
         # not let supervisor cleanup terminate that replacement prematurely.
-        supervisor.wait(viewer, 7200, 'PlayOnline viewer', accepted=range(-255, 256))
+        # File checking/downloading is interactive and can take hours. Only
+        # Exit Viewer, process exit, or Stop should end it; preparation above
+        # retains its bounded waits. The poll loop still observes Stop.
+        supervisor.wait(viewer, None, 'PlayOnline viewer', accepted=range(-255, 256))
         report['viewer_exit_code'] = viewer.returncode
         report['viewer_elapsed_ms'] = max(0, int((time.monotonic() - viewer_started) * 1000))
         report['process'] = process_receipt()
@@ -376,7 +382,7 @@ def run(supervisor):
         waiter = supervisor.spawn(supervisor.server_command('-w'), 'playonline-wait.log', env=environment)
         wait_writer = supervisor.logs[-1]
         try:
-            supervisor.wait(waiter, 7200, 'PlayOnline updater and restarted viewer')
+            supervisor.wait(waiter, None, 'PlayOnline updater and restarted viewer')
         finally:
             report['prefix_wait_exit_code'] = waiter.poll()
             report['prefix_wait_diagnostics'] = diagnostics(wait_writer, drain=True)

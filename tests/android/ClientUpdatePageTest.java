@@ -209,6 +209,28 @@ public class ClientUpdatePageTest {
         respond(dialog,AlertDialog.BUTTON_NEGATIVE);assertNull(Shadows.shadowOf(context).getNextStartedService());assertNull(prepared.selected("candidate"));
         dialog=confirmation(update,"Prepare update and open PlayOnline","ROM/0/0.dat");respond(dialog,AlertDialog.BUTTON_POSITIVE);assertRuntimeAction("update-client");
     }
+    @Test public void updaterHardwareGraphicsPreservesIndependentChoiceAndLocksWhileBusy()throws Exception {
+        View update=card("clientUpdateCard","Client update · PlayOnline");
+        CheckBox graphics=(CheckBox)text(update,"Hardware PlayOnline graphics");
+        assertNotNull(graphics);assertTrue(graphics.isChecked());assertTrue(graphics.isEnabled());assertUnchanged();
+        graphics.performClick();
+        Map<String,Object> expected=new HashMap<>(runtimeSettings);expected.put("updater_vulkan_ddraw",false);
+        assertEquals(expected,context.getSharedPreferences("runtime",0).getAll());
+        update=card("clientUpdateCard","Client update · PlayOnline");
+        assertFalse(((CheckBox)text(update,"Hardware PlayOnline graphics")).isChecked());
+        assertTrue(((CheckBox)text(update,"Updater runtime acceleration")).isChecked());
+        runtime.starting=true;update=card("clientUpdateCard","Client update · PlayOnline");
+        assertFalse(text(update,"Hardware PlayOnline graphics").isEnabled());runtime.starting=false;
+        WorkService.busy=true;update=card("clientUpdateCard","Client update · PlayOnline");
+        assertFalse(text(update,"Hardware PlayOnline graphics").isEnabled());WorkService.busy=false;
+        set(server,"active",true);update=card("clientUpdateCard","Client update · PlayOnline");
+        assertFalse(text(update,"Hardware PlayOnline graphics").isEnabled());set(server,"active",false);
+        update=card("clientUpdateCard","Client update · PlayOnline");
+        graphics=(CheckBox)text(update,"Hardware PlayOnline graphics");
+        assertFalse(graphics.isChecked());assertTrue(graphics.isEnabled());
+        assertEquals(expected,context.getSharedPreferences("runtime",0).getAll());
+        assertEquals(serverSettings,context.getSharedPreferences("server",0).getAll());
+    }
     @Test public void stagedUpdateCannotUseGenericPreparationOrPrerequisiteInstaller()throws Exception {
         File candidate=updateCandidate();FilesEx.text(new File(runtime.home,"prerequisite.exe"),"selected fixture installer");
         View initialization=preparationCard("initializationCard","Prepare PlayOnline and FFXI");

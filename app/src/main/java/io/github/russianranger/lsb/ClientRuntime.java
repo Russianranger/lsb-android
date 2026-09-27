@@ -260,7 +260,7 @@ final class ClientRuntime {
     private void assets()throws Exception {
         backend.mkdirs();probes.mkdirs();
         for(String name:context.getAssets().list("runtime")){
-            File dest=new File(name.equals("fex-check.exe")||name.equals("graphics-check.exe")||name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")||name.equals("playonline-run.exe")||name.equals("repair-io.exe")||name.equals("startup-trace.dll")?probes:backend,name);
+            File dest=new File(name.equals("fex-check.exe")||name.equals("graphics-check.exe")||name.equals("runtime-probe.exe")||name.equals("probe-com.dll")||name.equals("client-init.exe")||name.equals("client-launch.exe")||name.equals("playonline-run.exe")||name.equals("repair-io.exe")||name.equals("ddraw-check.exe")||name.equals("startup-trace.dll")?probes:backend,name);
             try(InputStream in=context.getAssets().open("runtime/"+name);OutputStream out=new FileOutputStream(dest)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
             if(name.equals("x11-upload-check")||name.equals("vulkan-probe")||name.equals("wineserver")||name.equals("x11-frame-bridge"))Os.chmod(dest.getPath(),0700);
         }
@@ -329,7 +329,8 @@ final class ClientRuntime {
             }}
             JSONObject request=new JSONObject().put("format",1).put("session_id",sessionId).put("renderer",renderer).put("audio",sound).put("action",action).put("engine",useFex?"fex":"box64");
             if(action.equals("update-client"))request.put("network_preflight",true).put("repair_diagnostics",true)
-                .put("dxvk_version","2.5.3").put("proot_acceleration",runtimePreferences.getBoolean("updater_syscall_filter",true));
+                .put("dxvk_version","2.5.3").put("proot_acceleration",runtimePreferences.getBoolean("updater_syscall_filter",true))
+                .put("updater_vulkan_ddraw",runtimePreferences.getBoolean("updater_vulkan_ddraw",true));
             if(action.equals("launch")){request.put("display_profile",displayProfile);request.put("startup_trace",startupTrace);
                 request.put("gamepad",context.getSharedPreferences("controller",0).getBoolean("enabled",true));
                 try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}
