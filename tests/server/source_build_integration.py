@@ -21,6 +21,8 @@ import traceback
 import urllib.request
 
 import source_patch_integration
+import sol_key_integration
+import accept_loop_integration
 
 
 REVISION = '16281a81de58acfb315b639d9b79aaacd52a64f2'
@@ -166,6 +168,8 @@ def main():
         backend.validate_binaries(STAGING)
         report['backend_build_report'] = json.loads((backend.LOGS / 'build-report.json').read_text())
         report['source_patch_boundaries'] = source_patch_integration.check(STAGING, ARTIFACTS / 'logs')
+        report['accept_loop_lifetimes'] = accept_loop_integration.check(STAGING, ARTIFACTS / 'logs')
+        report['sol_key_lookups'] = sol_key_integration.check(STAGING, ARTIFACTS / 'logs')
         for name in backend.PROCESSES:
             print(f'Checking real {name} startup and dynamic allocator binding', flush=True)
             report['binaries'][name] = runtime_smoke(name)

@@ -17,6 +17,12 @@ function(lsb_android_link_jemalloc)
                 target_compile_options(${header_library} INTERFACE -Wno-error=null-dereference)
             endif()
         endforeach()
+        if(TARGET asio)
+            # ASIO's coroutine new/delete call the matching frame recycler;
+            # aligned_new uses aligned_alloc and aligned_delete uses free.
+            # GCC 15 loses that pairing after inlining the allocation path.
+            target_compile_options(asio INTERFACE -Wno-error=mismatched-new-delete)
+        endif()
     endif()
     find_library(LSB_ANDROID_JEMALLOC NAMES jemalloc REQUIRED)
     if(NOT LSB_ANDROID_JEMALLOC MATCHES "[.]so([.][0-9]+)*$")

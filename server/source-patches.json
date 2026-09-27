@@ -3,18 +3,56 @@
     "id": "decoded-linkshell-terminated-copy",
     "path": "src/common/utils.cpp",
     "before": "    strncpy(target, decodedSignature, LinkshellStringLength);\n}\n\nstd::string EncodeStringSignature",
-    "after": "    // Decoded strings use DecodeStringLength, including the final terminator.\n    const auto decodedLength = std::strlen(decodedSignature);\n    std::memcpy(target, decodedSignature, decodedLength);\n    std::memset(target + decodedLength, 0, DecodeStringLength - decodedLength);\n}\n\nstd::string EncodeStringSignature"
+    "after": "    // Decoded strings use DecodeStringLength, including the final terminator.\n    const auto decodedLength = std::strlen(decodedSignature);\n    std::memcpy(target, decodedSignature, decodedLength);\n    std::memset(target + decodedLength, 0, DecodeStringLength - decodedLength);\n}\n\nstd::string EncodeStringSignature",
+    "group": "decoded-string-buffers"
   },
   {
     "id": "decoded-signature-terminated-copy",
     "path": "src/common/utils.cpp",
     "before": "    strncpy(target, decodedSignature, SignatureStringLength);\n}\n\n// Take a regular string",
-    "after": "    // Preserve decoded characters and zero padding in the decoded-size buffer.\n    const auto decodedLength = std::strlen(decodedSignature);\n    std::memcpy(target, decodedSignature, decodedLength);\n    std::memset(target + decodedLength, 0, DecodeStringLength - decodedLength);\n}\n\n// Take a regular string"
+    "after": "    // Preserve decoded characters and zero padding in the decoded-size buffer.\n    const auto decodedLength = std::strlen(decodedSignature);\n    std::memcpy(target, decodedSignature, decodedLength);\n    std::memset(target + decodedLength, 0, DecodeStringLength - decodedLength);\n}\n\n// Take a regular string",
+    "group": "decoded-string-buffers"
   },
   {
     "id": "linkshell-decoded-buffer-capacity",
     "path": "src/map/items/item_linkshell.cpp",
     "before": "    char  decoded[LinkshellStringLength] = {};\n    DecodeStringLinkshell",
-    "after": "    char  decoded[DecodeStringLength] = {};\n    DecodeStringLinkshell"
+    "after": "    char  decoded[DecodeStringLength] = {};\n    DecodeStringLinkshell",
+    "group": "decoded-string-buffers"
+  },
+  {
+    "id": "asio-search-accept-loop-tuple-header",
+    "group": "asio-search-accept-loop",
+    "path": "src/search/search_listener.h",
+    "before": "#pragma once\n\n#include <asio/ts/internet.hpp>",
+    "after": "#pragma once\n\n#include <tuple>\n\n#include <asio/ts/internet.hpp>"
+  },
+  {
+    "id": "asio-search-accept-loop-named-result",
+    "group": "asio-search-accept-loop",
+    "path": "src/search/search_listener.h",
+    "before": "            auto [ec, socket] = co_await acceptor_.async_accept(asio::as_tuple(asio::use_awaitable));",
+    "after": "            // Keep the accepted tuple named across the coroutine suspension.\n            auto acceptResult = co_await acceptor_.async_accept(asio::as_tuple(asio::use_awaitable));\n            const auto& ec = std::get<0>(acceptResult);\n            auto& socket = std::get<1>(acceptResult);"
+  },
+  {
+    "id": "asio-login-accept-loop-tuple-header",
+    "group": "asio-login-accept-loop",
+    "path": "src/login/handler.h",
+    "before": "#pragma once\n\n#include <asio/ssl.hpp>",
+    "after": "#pragma once\n\n#include <tuple>\n\n#include <asio/ssl.hpp>"
+  },
+  {
+    "id": "asio-login-accept-loop-named-result",
+    "group": "asio-login-accept-loop",
+    "path": "src/login/handler.h",
+    "before": "            auto [ec, socket] = co_await acceptor_.async_accept(asio::as_tuple(asio::use_awaitable));",
+    "after": "            // Keep the accepted tuple named across the coroutine suspension.\n            auto acceptResult = co_await acceptor_.async_accept(asio::as_tuple(asio::use_awaitable));\n            const auto& ec = std::get<0>(acceptResult);\n            auto& socket = std::get<1>(acceptResult);"
+  },
+  {
+    "id": "sol-chocobo-stat-pointer-keys",
+    "group": "sol-chocobo-stat-keys",
+    "path": "src/map/packets/s2c/0x069_chocobo_racing.cpp",
+    "before": "        param.STR.Rank = stats->get_or<uint8_t>(\"str\", 0);\n        param.END.Rank = stats->get_or<uint8_t>(\"end\", 0);\n        param.DSC.Rank = stats->get_or<uint8_t>(\"dsc\", 0);\n        param.RCP.Rank = stats->get_or<uint8_t>(\"rcp\", 0);",
+    "after": "        // Pointer keys avoid GCC 15 merging different array-bound instantiations in sol.\n        param.STR.Rank = stats->get_or<uint8_t>(static_cast<const char*>(\"str\"), 0);\n        param.END.Rank = stats->get_or<uint8_t>(static_cast<const char*>(\"end\"), 0);\n        param.DSC.Rank = stats->get_or<uint8_t>(static_cast<const char*>(\"dsc\"), 0);\n        param.RCP.Rank = stats->get_or<uint8_t>(static_cast<const char*>(\"rcp\"), 0);"
   }
 ]

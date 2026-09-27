@@ -193,9 +193,10 @@ def build(root, jobs):
 def apply_source_patches(root):
     """Small, recorded compatibility fixes in the disposable source copy only."""
     patches=json.loads(Path(__file__).with_name('source-patches.json').read_text())
-    # The decoder fixes and its undersized caller form one patch set. Never
-    # increase decoded writes while leaving an unrecognized caller unchanged.
-    matches=[]
+    # Preflight every group before writing. Related changes (such as a decoded
+    # write and its caller's capacity) must apply together; unrelated fixes can
+    # be absent from an older source revision without blocking other groups.
+    matches={}
     for patch in patches:
         path=root/patch['path'];matched=False
         if path.is_file():
@@ -205,13 +206,14 @@ def apply_source_patches(root):
             after=text.count(patch['after'].replace('\n',newline))
             if before+after>1:raise ValueError('Ambiguous source patch '+patch['id']+'; selected source needs review')
             matched=before+after==1
-        matches.append(matched)
-    if any(matches) and not all(matches):
-        raise ValueError('The decoder compatibility patch set does not match this source; selected source needs review')
+        matches.setdefault(patch['group'],[]).append(matched)
+    for group,found in matches.items():
+        if any(found) and not all(found):
+            raise ValueError('The '+group+' compatibility patch set does not match this source; selected source needs review')
     evidence=[]
     for patch in patches:
         cancelled();path=root/patch['path']
-        item=dict(id=patch['id'],path=patch['path'],state='not_applicable')
+        item=dict(id=patch['id'],group=patch['group'],path=patch['path'],state='not_applicable')
         if path.is_file():
             original=path.read_bytes();text=original.decode('utf-8')
             # Retain the upstream line-ending convention in the staged file.

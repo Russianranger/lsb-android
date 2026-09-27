@@ -16,16 +16,16 @@ IPO to reduce phone link memory, and builds only the four required server
 targets. A deferred CMake include links shared jemalloc into each target with
 linker retention; ELF, loader dependencies and allocator dependency order are
 checked before success. Installed jemalloc alone was insufficient upstream.
-The include affects only the staged build; no upstream source rewrite or
-blanket warning suppression is applied. Build reports are exported separately.
+Compatibility changes affect the staged build only; the imported snapshot is
+retained. Build reports record the applied patches and are exported separately.
 
 The initial native ARM64 build (`36342600092`, app source `dcda5b8e`) passed
 configuration and code generation but failed compiling `xi_common/application.cpp`.
 GCC 15.2 reports potential null dereferences in ASIO 1.38.0 `io_context.hpp:871`
 and `detail/impl/scheduler.ipp:338`, including when its headers use `-isystem`.
-The compatibility include now keeps this warning visible but removes its
-error promotion only for `xi_common` under GCC 15. Other warnings remain fatal;
-other targets and compiler versions retain the original policy. Evidence:
+The first compatibility attempt kept this warning visible but removed its
+error promotion only for `xi_common` under GCC 15. The later build below
+showed the same category in other consumers of these headers. Evidence:
 artifact `10940040533`, SHA-256
 `dec1fad7e6287dcbf91d918d1635bbbdd3d95bd059c237cfec84836b660e76aa`.
 
@@ -40,13 +40,50 @@ contexts are preflighted together; a partial or ambiguous match fails before
 editing. The imported source remains untouched. Patch receipts include file
 hashes and are included in the build report. Evidence artifact `10939807028`,
 SHA-256 `a0686ab115ef0dbf3b41241b22a1f4c1c27c2af7b7658bcc52c0a9538ead03ae`.
-All 50 local server tests pass; a C++ fixture extracts the actual patched
+All 51 local server tests pass; a C++ fixture extracts the actual patched
 decoder bodies and passes 10 full-width, terminator, padding and bounds cases.
+
+The third native build (`36343624203`, source `898fde9d`) built `xi_common`
+and `xi_data_core` successfully, then hit the same GCC 15 null-analysis category
+through function2's `std::align` path in `xi_world_lib/http_server.cpp`.
+Evidence artifact `10939717387`, SHA-256
+`e6b1aea6b2d954b28e69327ab54f08bfb7dbaf86295c183fdbbf939526f4b32f`.
+Current code scopes the nonfatal diagnostic to consumers of the actual ASIO
+and function2 header targets under GCC 15; other warning categories stay fatal.
+Both libraries establish nonnull invariants for the reported paths. This is
+an inference about the compiler diagnostic, not a claim of runtime coverage.
+CI now uses Make's keep-going mode to collect independent failures in one run;
+the phone build retains its normal failure behavior.
 
 The new native ARM64 CI gate uses the exact GitHub source archive without Git
 metadata or mesh submodules, runs the same backend build, and checks real
-malloc symbol bindings under `--help` without `LD_PRELOAD`. Full compilation
-validation is pending the initial CI run. See [TESTING-0.5.45.md](TESTING-0.5.45.md).
+malloc symbol bindings under `--help` without `LD_PRELOAD`.
+
+The fourth native run (`36344293616`, source `c551fa4a`) compiled and linked
+`xi_world`. Its keep-going build found three remaining diagnostic categories:
+ASIO coroutine structured-binding temporaries (`maybe-uninitialized`), ASIO's
+matched custom frame allocation/recycling (`mismatched-new-delete`), and sol's
+array-reference key template (`array-bounds`) in four chocobo statistics keys.
+Evidence artifact `10940406437`, SHA-256
+`5c580147b03eb8345750e0d7ec199ce01c769c8c81fd94518e98d43f30830de5`.
+The networking patch names the awaited tuple explicitly and accesses its
+members with `std::get`, retaining the socket's scope and existing move into the
+session. The sol patch passes the same static string keys as `const char*`,
+avoiding array-reference template instantiations without changing Lua lookups.
+ASIO's allocation path pairs `aligned_alloc` with `free` through its frame
+recycler; only its GCC 15 `mismatched-new-delete` error promotion is removed,
+with the warning retained. Other warning categories remain fatal. Unrelated
+source fixes have separate exact-context groups, all preflighted before writes.
+Full native compilation validation of these corrections remains in progress.
+
+The same baseline run (`36344293615`) passed Android/core/package verification,
+server database deployment/recovery, presentation and Windows launcher checks.
+Its Box64 observed-D3D8 readback and FEX GPL-fast teardown fixtures timed out
+on CI llvmpipe/Mesa 25.0.7. These client runtime files and harnesses are unchanged
+from the earlier passing run `36329656013` attempt 2. The logs identify the
+blocked calls but do not establish their underlying driver/synchronization
+cause. Do not describe the complete current runtime regression as green.
+See [TESTING-0.5.45.md](TESTING-0.5.45.md).
 
 ---
 
