@@ -31,7 +31,7 @@ The Box64 receipt records `official_repair_confirmed: false` and
 
 The FEX session lasts 254.082 seconds and ends with
 `Fresh Windows prefix initialization timed out; export Diagnostics`.
-The retained implementation invokes `wineboot -u` for a prefix without its
+The 0.5.42 implementation invokes `wineboot -u` for a prefix without its
 ready marker. During cold migration, Wine first performs its automatic
 `wineboot --init`; the explicit `-u` then forces another update pass.
 
@@ -39,9 +39,9 @@ The phone log records the first `wineboot.exe` load at 54564.097 seconds and a
 second at 54745.498 seconds, 181.401 seconds later. The second pass therefore
 starts after most of the 240-second initialization budget has already elapsed.
 This explains a concrete startup-budget problem; it does not establish a FEX
-incompatibility with PlayOnline or poor FEX file-check throughput. Correct the
-duplicate cold initialization and qualify it with actual patched PRoot before
-asking the owner to retry.
+incompatibility with PlayOnline or poor FEX file-check throughput. Version 0.5.43 corrects the
+duplicate cold initialization and passes actual patched PRoot qualification,
+as recorded below.
 
 ### Box64: normal synthetic checks, substantial viewer and tracer CPU usage
 
@@ -96,7 +96,7 @@ Version 0.5.43, code 59.
   the ready marker is written. Ready prefixes, gameplay and Box64 retain their
   previous initialization policy.
 - **Updater runtime acceleration** is a separate preference,
-  `updater_syscall_filter`, enabled by default subject to actual CI qualification.
+  `updater_syscall_filter`, enabled by default after actual CI qualification.
   It requests only the tested updater profile: Box64 or FEX, Turnip 26, DXVK
   2.5.3, no shader experiments, no native surface and no shared-memory upload.
   Existing gameplay preferences and eligibility are unchanged.
@@ -109,39 +109,99 @@ Version 0.5.43, code 59.
   production viewer/component/lifecycle checks under each engine. Both use
   independent copies of the stopped seed prefix and the same renderer. The cold
   FEX check now verifies a single host/WoW64 registration pass, not just that
-  initialization finishes within its deadline. Matrix completion is pending.
+  initialization finishes within its deadline. All four matrix cases passed.
 
 Primary source for Wine's automatic initialization and forced-update behavior:
 `wine-mirror/wine` revision `b073859675060c9211fcbccfd90e4e87520dc2c2`,
 `dlls/ntdll/unix/env.c` (`run_wineboot`) and
 `programs/wineboot/wineboot.c` (`update_wineprefix`).
 
-## Validation — pending
+## Validation — passed
 
-All 164 runtime unit tests pass locally, including the new cold-initialization
-and updater-filter guards. Independent source review found no blockers. Android
-execution, actual filtered PRoot qualification and final CI identifiers remain
-pending. Do not claim a proven phone speed improvement from synthetic results.
+Qualified source: `8d967831806b8b79f90d896bd8fde047b28f3d0b`;
+tree: `f2980462643c0eda62df20953ea27b480014c751`.
+Push CI run: `36293993529`.
 
-## Signed builds and delivery — pending
+- Android verify job `108549373190`: success; 164 runtime Python tests,
+  39 server Python tests, 94 Android tests, and APK pair isolation passed.
+- Actual ARM64 PlayOnline job `108549704392`: success. Both Box64 and FEX
+  passed host-observed filtered preflight and actual qualification, visible
+  production viewer/component/dependency checks, all four lifecycle cases,
+  and preservation of the stopped source prefix and official input files.
+- FEX cold setup performed exactly two host registrations and one WoW64
+  registration: one complete update pass. It took 41.199 seconds unfiltered
+  and 13.527 seconds filtered in CI. Warm lifecycle cases did not initialize
+  the prefix again. These are CI times, not a phone startup guarantee.
+- Both filtered production screenshots are 640×480 and show the complete
+  PlayOnline update page with readable text and controls. Their only pixel
+  differences are 22 pixels in the blinking next-page indicator. Both report
+  a responsive viewer window, with no capture failures.
+- Independent source review found no blockers. Renderer, DXVK version,
+  display, audio, and accepted game/server/database behavior are retained.
 
-Release tooling is prepared in `verification-0543/sign_apks.py`, with its
-configuration in `verification-0543/release-tooling.json`. Signing requires the
-final full CI source SHA and both artifact paths and SHA-256 digests. No 0.5.43
-APKs have been signed or saved at this checkpoint.
+Evidence artifact: `10923178461`, `playonline-startup-evidence`, SHA-256
+`7f814ad11f56b136887eb28a25d6bc3cf92355274e3a6b918c1893bb49462b33`.
+The artifact was matched to the qualified source, downloaded and hash-checked.
+Local extraction: `verification-0543/playonline-ci`; completed job log:
+`verification-0543/playonline-startup-job.log`.
 
-[Record the final regular and Restore Test APK hashes, sizes, package IDs,
-original-certificate verification, source and CI payload checks, and saved
-file identities here. Deliver both packages for in-place updates.]
+One paired synthetic Windows workload per engine, using independent copied
+prefixes and the same DXVK 2.5.3 / CI lavapipe configuration:
 
-## Phone acceptance — pending
+| Measurement | Box64 unfiltered | Box64 filtered | FEX unfiltered | FEX filtered |
+| --- | ---: | ---: | ---: | ---: |
+| Whole Windows workload | 1,178 ms | 498 ms | 1,046 ms | 464 ms |
+| 128 small reads | 502.537 ms | 145.458 ms | 478.129 ms | 134.195 ms |
+| 1,024 event waits | 248.484 ms | 18.965 ms | 182.246 ms | 18.042 ms |
+| Eight 10 ms sleeps | 82.488 ms | 80.653 ms | 80.552 ms | 80.623 ms |
 
-[Provide the final qualified runtime/filter selection and a short timed repair
-test. Reuse the staged copy. Confirm FEX initialization separately from actual
-File Repair progress, and request a fresh support report if either remains
-blocked. Do not activate the staged client until official repair and staged
-verification complete.]
+These samples support testing the filtering mechanism, particularly the
+small-read and event-wait paths. Cache/order effects may differ, and this is
+not the owner's actual file repair or phone GPU. No two-hour completion or
+phone frame-rate improvement is established yet.
 
+## Signed builds and delivery — complete
+
+Both APKs are version **0.5.43 / code 59**, signed with the retained certificate
+SHA-256 `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+V2/V3 signatures, ZIP alignment/integrity, exact nonsignature CI payloads,
+14 runtime and 7 server source assets, all 27 generated assets, and isolated
+package identities passed. The shared 62 code/resource/runtime entries match.
+Source/CI/validation metadata: `verification-0543/apk-validation.json` and
+`verification-0543/ci-apk-artifacts.json`.
+
+- **LSB-Android-0.5.43.apk**: `io.github.russianranger.lsb`, 18,461,650 bytes.
+  APK SHA-256: `dfea28668baf74251cf4d880af8c314a1f877f029525de072456db81d2b20102`.
+  CI artifact `10923132530`, SHA-256 `d9edda8ac26c89dae70d4fe44bc06e9e1472798f14aeadb6d8be1c47a0bd9ebd`.
+  Saved file `file_00000000aa6481f7b5b743314a8f6023` / `libfile_674ecca7dad08191be024c63ccde40c4`, version 0.
+- **LSB-Android-Restore-Test-0.5.43.apk**: `io.github.russianranger.lsb.restoretest`, 18,465,746 bytes.
+  APK SHA-256: `5fa6ebb0312ace65e7bf764e1df63069281a3337f7894e145745f4eab5b8aa3a`.
+  CI artifact `10922663404`, SHA-256 `6b829e1a7de4e078a18b3bf55c8183a23360a64db5eacc135aae773ba5c4e17b`.
+  Saved file `file_0000000099a481f7ac36ac58bc94924a` / `libfile_cf023425b0ec8191ae1b889fa59d9d37`, version 0.
+
+Both files were saved in one ordered batch after the focused runtime gate
+passed. Receipt: `verification-0543/library-delivery.json`. The regular APK
+updates the existing app; Restore Test updates the separate test installation.
+
+## Phone acceptance — next
+
+1. Install 0.5.43 in **Restore Test** first and reuse the existing staged copy.
+   Under **Client update**, select **Box64 compatibility**, leave **Updater
+   runtime acceleration** enabled, and choose **Open or resume PlayOnline
+   update**. Keep the other graphics settings unchanged.
+2. Run official File Repair for five minutes, note the checked-file count,
+   then stop the updater and export support. Compare with the previous .42
+   unfiltered report; inspect the actual `runtime_acceleration` receipt rather
+   than assuming the enabled checkbox means the device preflight succeeded.
+3. Select **FEX runtime**, keep updater acceleration enabled, and reopen the
+   staged update. First check whether preparation completes and the menu opens.
+   If it does, collect another five-minute repair count and separate support
+   ZIP. If startup fails, export that report without another hour-long attempt.
+4. If filtering causes a new problem, stop, turn off **Updater runtime
+   acceleration**, and reopen. The setting changes only the updater profile.
+
+Do not activate the staged client until official repair and staged verification
+complete. The accepted working client, server and database remain the baseline.
 Work on the newest server source and database remains deferred until the
 client update is accepted.
 
