@@ -4,16 +4,19 @@
 include_guard(GLOBAL)
 
 function(lsb_android_link_jemalloc)
-    # GCC 15 at -O3 reports potential null dereferences inside ASIO 1.38.0
-    # io_context.hpp:871 and detail/impl/scheduler.ipp:338 when inlined into
-    # application.cpp, even with ASIO's existing SYSTEM includes. Preserve the
-    # diagnostic, but do not promote this one warning to a compilation error in
-    # the shared server target. Other warnings and compiler versions are intact.
+    # GCC 15 at -O3 reports potential null dereferences in SYSTEM headers:
+    # ASIO 1.38.0 io_context.hpp:871 / scheduler.ipp:338, and function2 4.2.4
+    # retrieve/process_cmd through std::align. Both libraries establish nonnull
+    # invariants before these paths. Keep the diagnostic visible in consumers
+    # of those two header targets, without weakening other warning categories.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
        AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15
-       AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16
-       AND TARGET xi_common)
-        target_compile_options(xi_common PRIVATE -Wno-error=null-dereference)
+       AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
+        foreach(header_library IN ITEMS asio function2)
+            if(TARGET ${header_library})
+                target_compile_options(${header_library} INTERFACE -Wno-error=null-dereference)
+            endif()
+        endforeach()
     endif()
     find_library(LSB_ANDROID_JEMALLOC NAMES jemalloc REQUIRED)
     if(NOT LSB_ANDROID_JEMALLOC MATCHES "[.]so([.][0-9]+)*$")

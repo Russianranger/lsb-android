@@ -12,4 +12,7 @@ touch /artifacts/logs/operation.log
 tail -n +1 -F /artifacts/logs/operation.log &
 log_pid=$!
 trap 'kill "$log_pid" 2>/dev/null || true' EXIT
+# Collect independent compiler errors across targets in this diagnostic gate.
+# The Android backend itself retains its normal fail-fast build behavior.
+export MAKEFLAGS=-k
 python3 -u /src/tests/server/source_build_integration.py
