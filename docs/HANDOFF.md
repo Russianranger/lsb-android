@@ -10,6 +10,20 @@ DirectDraw pixels and observed PRoot syscall filtering. Viewer exit is zero,
 but repair confirmation and activation remain false; do not claim the client
 update was activated. There is no new source compilation attempt in that ZIP.
 
+Current checkpoint (2026-09-27): baseline run `36347805191`, attempt 2,
+passed every Android, Box64, FEX, Windows, PlayOnline and server-deployment job
+for app source `2c2373ccf48ced3c1fb2c269da59ddea4c84a319`. Native source run
+`36347805212` built world, search and connect, and passed the general sol key
+compilation changes. Its only remaining fatal diagnostic was a real null
+entity dereference in `CLuaBaseEntity::getEVA()`'s error-reporting path. Evidence
+artifact `10942131672`, SHA-256
+`5ee797dadf72e4f75e92b88e4469e0ee3204cb0ae0231ed4f2e686799c47bd37`.
+The binary-upload step completed with no files; that does not establish that
+all four binaries compiled. The following candidate repairs the entity guard
+instead of suppressing the nonnull diagnostic. Full native qualification and
+signed APK delivery remain pending this rerun. The owner requested notification
+and the signed APK when it passes; an hourly conditional notification is active.
+
 Version 0.5.45 / code 61 adds a compile-only action, explicitly selects the
 requirements virtual environment for upstream Python code generation, disables
 IPO to reduce phone link memory, and builds only the four required server

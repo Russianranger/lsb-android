@@ -23,6 +23,7 @@ import urllib.request
 import source_patch_integration
 import sol_key_integration
 import accept_loop_integration
+import entity_evasion_integration
 
 
 REVISION = '16281a81de58acfb315b639d9b79aaacd52a64f2'
@@ -218,6 +219,7 @@ def main():
                 report['binaries'][name]['smoke_error'] = str(error)
         for label, probe in (('source_patch_boundaries', source_patch_integration),
                              ('accept_loop_lifetimes', accept_loop_integration),
+                             ('entity_evasion', entity_evasion_integration),
                              ('sol_key_lookups', sol_key_integration)):
             try:
                 report[label] = probe.check(STAGING, ARTIFACTS / 'logs')
