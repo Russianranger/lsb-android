@@ -1,3 +1,218 @@
+# 0.5.42: isolate slow PlayOnline file repair and qualify the FEX updater
+
+The owner can reach official File Repair but reports that only 250 of 61,280
+files were checked after more than an hour, with UI updates every several
+seconds. Do not repeat an hour-long Box64 test. The target is useful file-check
+throughput and a responsive UI; a two-hour full update is not yet established.
+
+Latest support archive: `lsb-support(20260927-005241).zip`, SHA-256
+`9f6b120f3e06a1bb03dc295dfd00ba2d49f4bc2f5d35d97a4019b4064486602d`.
+Library ID: `libfile_d5901d4055708191850750e5bf9b0a4e`.
+File ID: `file_0000000078f081f58ca815da0d1d9058`.
+Session `5cde70b9-9f4a-4c8c-9efa-858100c369a4` on 0.5.41 lasts 6,179.84 seconds.
+The staged generation remains `05d8856e-7a99-46c1-a9da-07cc4e8b3ec6`; the
+accepted generation, `768f3a6d-8dfb-462f-8b9d-46cdd7101505`, remains untouched.
+
+Phone evidence:
+
+- Preparation: 0.5.41 batching reduces preparation from 85.997 to 32.227 seconds,
+  but does not improve ongoing repair speed. The updater uses Box64, Wine 10,
+  DXVK 2.5.3 and hardware Turnip rendering on Adreno 740, with host filtering off.
+  Gameplay uses FEX. Excluding FEX from the updater was a historical preparation
+  choice, not a known PlayOnline-specific incompatibility.
+- Presentation: the current 5,567.74-second display connection records 2,310
+  updates and exactly 2,310 Android draws. The retained active tail has 341
+  updates in 765.16 seconds (0.446 updates/second). Weighted times are 4.349 ms
+  for receive, 0.192 ms for decode and 0.076 ms for draw. Android rendering keeps
+  up; the upstream producer remains slow. Damage timing is not measured GPU FPS.
+- Process lifetime: original PID 516 exits after 151.358 seconds with 1.34 CPU
+  seconds; replacement PID 728 performs the long session. The 0.5.41 heartbeat
+  covers only the original process, so it cannot classify repair CPU usage. No
+  manual full refresh is recorded.
+- Storage and CPU context: native Python hashes several megabytes of fixed files
+  in 51 ms before and 18 ms after the session. Files are in app-private internal
+  storage rather than streamed through SAF or an SD card. This does not rule out
+  per-file Windows calls or case lookup as bottlenecks. Dynarec is enabled, and
+  no affinity is configured. Cortex-A510 startup detection does not prove that
+  execution is pinned to that core. The session's 977 SEH events do not establish
+  a sustained diagnostic log storm.
+
+Implementation source: `72c5fee78ad6b90f61a02daa052fe67a7017cf48`.
+Tree: `323f3f59d44b88cdb1dedbd4a6d5463e3194043b`.
+Version: 0.5.42, code 58. Record any subsequent CI corrections below, along with
+the final APK source SHA.
+
+- Runtime selection: an unset updater preference follows the saved gameplay FEX
+  selection only when FEX is installed. Explicit FEX selection requires the
+  installed runtime; Box64 retains the previous compatibility path. A separate
+  FEX prefix for each generation is copied from the stopped staged Box64 prefix.
+  Never copy native ARM64 files or registry hives back into Box64. Verification
+  remains on Box64. The FEX updater uses `full80` precision; gameplay preferences
+  remain unchanged.
+- Rendering: this comparison retains DXVK 2.5.3, the existing display transport
+  and disabled filtering. Do not broaden filtering or renderer changes without
+  new evidence and qualification.
+- File benchmark: a bounded PE32 file, timer and CPU benchmark uses synthetic
+  session files alongside a native reference. It covers case-insensitive lookup
+  in a 256-entry directory, 32 small files and one 1 MiB file. Differences in
+  native exact-case lookup and CRC algorithms are explicit; compare the same
+  Windows workload between engines. The benchmark has a 10-second inner budget,
+  a 20-second outer budget, partial receipts, cancellation and cleanup of its own
+  helper. It does not scan client files.
+- Process sampling: an owned-process CPU, I/O and state sampler spans the prefix
+  lifetime and restarted viewers. It uses fixed labels, validated tracer or
+  ancestry relationships, and PID/start-time identity. It does not record
+  command lines, environment contents or arbitrary names and paths. Known
+  processes are sampled every 5 seconds; discovery runs every 15 seconds. Limits
+  are 64 tasks, 512 scanned entries, a best-effort 100 ms budget, 120 samples and
+  a 128 KiB compact receipt. Missing coverage and counters are explicit. Full
+  samples appear only in `repair-performance.json`; `client-update` and
+  `runtime-status` retain scalar summaries to stay within Android's 128 KiB limit.
+- Engine qualification: tests use the actual patched PRoot, the same source,
+  prefix and renderer, the native Windows synthetic file test, the production
+  official viewer, COM and dependency checks, lifecycle and self-restart checks,
+  and hashes of protected inputs. CI uses lavapipe; synthetic and CI speeds do
+  not establish Thor file-repair throughput.
+
+Local validation passes 156 runtime unit tests and the core, archive, recovery
+and display checks, including 62 session-archive checks, 353 transaction-recovery
+checks and 92 ZRLE checks. Independent review found and resolved discovery
+starvation during slow scans and status-size overflow from the full sampler.
+No source blockers remain from that review. Native Windows and actual engine
+qualification results follow below. See `docs/playonline-repair-0542.md` and
+`docs/client-update.md`.
+
+Phone test:
+
+1. Install each matching regular or Restore Test APK in place.
+2. In Restore Test, select **Client → Client update · PlayOnline → Updater
+   runtime → FEX runtime → Open or resume**. Reuse the staged copy; no reimport,
+   restore or runtime download is needed if FEX is already installed.
+3. Record the Check Files count at the start and after five minutes. If it is
+   still slow, stop the session and export a fresh support archive.
+4. Activate only after official repair completes and staged verification passes.
+
+Work on the newest server source and database remains deferred until the client
+update is accepted.
+
+## Build and qualification progress
+
+Initial source `72c5fee` passes both Android verification jobs: push
+`108522774415` and PR `108522800284`. Checks include 156 runtime Python tests,
+39 server Python tests and 90 Android checks. Native Windows passes 312 checks
+in push job `108523193864` and PR job `108523168450`, including all new benchmark
+phases, partial failures, deadlines and the lifetime of a self-restarted child.
+
+CI-only correction: `f024797cf4a22c35b9d70413f2a5a52808dcf431`.
+Tree: `f709fdc2c8ad1a1114a8d3065ef49910d97ec18c`.
+This provides `/bin/true` as the export-only container command because the
+Docker-imported image has no default `CMD`. Application sources and payload are
+unchanged from `72c5fee`.
+
+Corrected source `f024797` passes push run `36284858942`'s Android verification
+job `108523610665`: 156 runtime Python tests, 39 server Python tests and 90
+Android checks. Native Windows job `108524001029` passes all 312 checks.
+The focused PRoot qualification job, `108524001034`, also passes. Its
+measurements and artifact review are recorded below.
+
+## Signed APK evidence
+
+Both APKs were signed and verified from
+`f024797cf4a22c35b9d70413f2a5a52808dcf431`, version 0.5.42, code 58. They retain
+the original signing certificate, SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+
+- Regular: `LSB-Android-0.5.42.apk`, package `io.github.russianranger.lsb`,
+  18,457,554 bytes. SHA-256:
+  `3d3f3c70df526809da769425af20d33e8a1ff52855c472d790e5ccc5075fa8df`.
+- Restore Test: `LSB-Android-Restore-Test-0.5.42.apk`, package
+  `io.github.russianranger.lsb.restoretest`, 18,461,650 bytes. SHA-256:
+  `22b418771cde220efda2f30fbfe6c7c09b25d069ee585a3cb3d1e308a16ebc81`.
+
+Both pass v2/v3 signature, ZIP integrity and alignment checks. All 64
+nonsignature payload entries in each APK match its CI build. The pair verifier
+confirms separate app IDs and labels, private non-launcher components and 62
+identical shared code, resource and runtime entries.
+
+All 14 runtime source assets and seven server source assets match the checked-out
+source, including the new `repair_io.py` and `repair_performance.py`. The 27
+generated runtime assets match the preserved CI files: 10 runtime probes,
+12 runtime assets and five presentation files. The new `repair-io.exe` is
+verified as a 32-bit x86 PE32 executable and matches the CI probe byte for byte.
+Its SHA-256 is
+`140a259400f2c7fbc725bfc82664115760c3741956c40d9e2d0eb2f79b2857e1`.
+
+CI archive digests were verified before signing:
+
+- Regular build artifact `10920252443`: SHA-256
+  `70ff1ec42581c99bd63f56c0215c03bdf5f79875191d1e130838c496abf45860`.
+- Restore Test build artifact `10920192796`: SHA-256
+  `fdd770bfbff8bdd97faceed85c87d9a2fab0b6926c0cc081ddeb7d0dd75decba`.
+
+The local validation report is `verification-0542/apk-validation.json`.
+Both signed APKs are saved and available from the workspace's `delivery/`
+directory. Saved file identities are recorded below.
+
+## Actual PRoot comparison and review
+
+Focused artifact `10919813688`, SHA-256
+`e8309d6c75942cc91c09cb306d6aa519c7cedc37cabdbf3d180e0053ab25243f`,
+was downloaded and its digest verified. Both engines pass production component
+and dependency checks, the complete native/Windows benchmark, and all four
+lifecycle scenarios, including a detached replacement viewer. The protected
+seed prefix and official viewer inputs remain unchanged. The seed inventory
+hash is `c7985e5e57e2192ff2e0d1a285a87c03fde4f0b1974a3045fbe951e889f94062`.
+
+| Synthetic measurement | Box64 | FEX |
+|---|---:|---:|
+| Complete Windows phases | 1,046 ms | 985 ms |
+| 128 small-file reads | 464.932 ms | 451.046 ms |
+| 256 mismatched-case lookups | 185.138 ms | 170.428 ms |
+| 4 MiB sequential reads | 36.900 ms | 23.337 ms |
+| Entire Windows helper, including startup | 1,714 ms | 1,311 ms |
+| Native reference | 223 ms | 221 ms |
+
+These modest differences do not establish a fix for the owner's extreme repair
+slowdown. CI uses ARM64 Linux and lavapipe, not the phone's Android/Turnip stack
+or proprietary client files. Do not promise a two-hour update or interpret
+native/Windows CRC differences as a pure translation cost.
+
+Root visually reviewed both engine production PNGs. They show the same fully
+populated Setup > Version Update panel with readable text and buttons. The
+online MSI case at 170 seconds shows the populated Update confirmation; it does
+not demonstrate completed downloads or actual File Repair.
+
+The production sampler exports seven samples over about 30 seconds for each
+engine, with no failed samples or write failures. Cursor-based discovery grows
+from two anchors to 11 owned processes; the validated shared-tracer scope covers
+supervisor, tracer, wineserver, display and seven processes categorized as
+`other`. No `viewer` label appears in this fixture. Treat `other` as an aggregate,
+not as viewer-specific CPU evidence; raw process names are intentionally absent.
+Discovery reaches its 100 ms budget; ordinary sampling is a few milliseconds and
+writes take 1 ms. The tracer consumes roughly 2.1–3.7 CPU-seconds per five-second
+interval in these offline CI sessions. That makes PRoot overhead a concrete
+measurement target, not an established cause of the phone's repair slowdown.
+The synthetic restart fixture does not enable this sampler; restart-lifetime
+behavior and sampler restart logic have separate fixture/unit coverage.
+
+The matrix's initial Box64 result has a misleading `fex_execution_verified:true`
+for the not-applicable case. A metadata-only follow-up changes this to the
+underlying nullable runtime field. The actual FEX assertion and results are true;
+no APK/runtime behavior changes in that follow-up.
+
+## Saved delivery
+
+- `LSB-Android-0.5.42.apk`: `libfile_b870803e53b08191aaecbf65d786bdf0` /
+  `file_00000000821081f9981c5ce987cc9e8d`, version 0.
+- `LSB-Android-Restore-Test-0.5.42.apk`: `libfile_ba863320a4488191a088769c3f9dfbf1` /
+  `file_00000000005881f9905f8aaca0d86901`, version 0.
+
+The regular and Restore Test APKs update their matching installations in place.
+The next required evidence is five minutes of phone File Repair progress and a
+fresh support archive from 0.5.42. No new client import or restore is required.
+
+---
+
 # 0.5.41: batched updater preparation and blank-panel diagnostics
 
 Owner reports PlayOnline updated, but the center of its Version Update page is

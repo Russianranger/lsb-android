@@ -64,7 +64,7 @@ def main():
     result = {'format': 1, 'engine': engine, 'transport': 'patched_proot', 'network': 'disabled',
               'renderer': 'DXVK 2.5.3 / CI lavapipe', 'filtering': False,
               'baseline_prefix_sha256': source_hash, 'baseline_prefix_preserved': True,
-              'official_input_preserved': True, 'fex_execution_verified': engine != 'fex' or state['fex_execution_verified'],
+              'official_input_preserved': True, 'fex_execution_verified': state.get('fex_execution_verified'),
               'component_registration_verified': production['component_registration_verified'],
               'lifecycle_cases': ['visible-clean-exit', 'no-window-high-exit', 'missing-dependency', 'restarted-visible-clean-exit'],
               'repair_io': benchmark, 'online_repair_verified': False,
