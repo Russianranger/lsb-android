@@ -1,4 +1,4 @@
-"""Exercise the patched real chocobo Lua decoder through the bundled sol API."""
+"""Exercise normalized literal keys and unchanged lookup paths in real sol."""
 
 from pathlib import Path
 import subprocess
@@ -9,6 +9,8 @@ PREAMBLE = r'''
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <string>
+#include <string_view>
 
 namespace GP_SERV_COMMAND_CHOCOBO_RACING
 {
@@ -63,7 +65,69 @@ int main()
     data["stats"] = sol::lua_nil;
     auto absent = ChocoboParam::fromLua(data);
     assert(absent.STR.Rank == 0 && absent.END.Rank == 0 && absent.DSC.Rank == 0 && absent.RCP.Rank == 0);
-    std::cout << "PASS: real sol/LuaJIT lookups preserve distinct short keys, missing defaults and existing fields\n";
+
+    // Different literal extents exercise the other packet sites that exposed
+    // GCC's array-specialization merging, including table-valued lookups.
+    sol::table odds = lua.create_table();
+    odds[1] = 120;
+    data["odds"] = odds;
+    data["grade"] = 2;
+    data["raceNumber"] = 987654;
+    data["itemNo"] = 65000;
+    data["count"] = 7;
+    data["tradeCode"] = -1;
+    auto odds_value = data.get<sol::optional<sol::table>>("odds");
+    assert(odds_value && odds_value->get_or<std::uint32_t>(1, 0) == 120);
+    assert(data.get_or<std::uint32_t>("grade", 0) == 2);
+    assert(data.get_or<std::uint32_t>("raceNumber", 0) == 987654);
+    assert(data.get_or("itemNo", std::uint16_t{0}) == 65000);
+    assert(data.get_or("count", std::uint8_t{0}) == 7);
+    assert(data.get_or("tradeCode", std::int32_t{0}) == -1);
+    assert(data.raw_get<std::uint16_t>("itemNo") == 65000);
+    assert(data.get_or<std::uint8_t>("str", 0) == 0);
+
+    // Both get_field overloads and global lookup preserve Lua stack behavior.
+    auto* state = lua.lua_state();
+    const int original_top = lua_gettop(state);
+    data.push();
+    sol::stack::get_field(state, "count");
+    assert(lua_tointeger(state, -1) == 7);
+    lua_pop(state, 1);
+    char mutable_key[] = "grade";
+    sol::stack::get_field(state, mutable_key, -1);
+    assert(lua_tointeger(state, -1) == 2);
+    lua_pop(state, 2);
+    assert(lua_gettop(state) == original_top);
+    lua["globalName"] = 42;
+    assert(lua.get<int>("globalName") == 42);
+    sol::stack::get_field<true>(state, "globalName");
+    assert(lua_tointeger(state, -1) == 42);
+    lua_pop(state, 1);
+
+    // Only non-raw narrow arrays change representation. String-view and raw
+    // binary keys retain their explicit length; C-string keys still stop at NUL.
+    const std::string binary_key("a\0b", 3);
+    data["a"] = 88;
+    data.raw_set(binary_key, 101);
+    assert(data.raw_get<int>(binary_key) == 101);
+    assert(data.get<int>(std::string_view(binary_key)) == 101);
+    assert(data.get<int>("a\0b") == 88);
+    assert(data.raw_get<int>("a\0b") == 88);
+    data[""] = 19;
+    assert(data.get<int>("") == 19);
+    const char* pointer_key = "count";
+    assert(data.get<int>(pointer_key) == 7);
+    assert(data.get<int>(std::string("count")) == 7);
+
+    sol::table fallback = lua.create_table();
+    fallback["fallback"] = 79;
+    sol::table metatable = lua.create_table();
+    metatable[sol::meta_function::index] = fallback;
+    data[sol::metatable_key] = metatable;
+    assert(data.get<int>("fallback") == 79);
+    assert(!data.raw_get<sol::optional<int>>("fallback"));
+    assert(lua_gettop(state) == original_top);
+    std::cout << "PASS: real sol/LuaJIT literal, pointer, numeric, raw/binary, global and metamethod lookups\n";
 }
 '''
 
@@ -87,8 +151,9 @@ def check(root, output, compiler='g++-15'):
     output.mkdir(parents=True, exist_ok=True)
     source = (root / 'src/map/packets/s2c/0x069_chocobo_racing.cpp').read_text()
     method = from_lua(source)
-    for key in ('str', 'end', 'dsc', 'rcp'):
-        assert 'static_cast<const char*>("' + key + '")' in method, 'Missing sol pointer-key patch: ' + key
+    header = (root / 'ext/sol/include/sol/sol.hpp').read_text()
+    assert header.count('field_getter<const char*, global, raw> {}.get(L, key_pointer') == 2, \
+        'Both direct-field overloads must normalize narrow array keys'
     fixture = output / 'sol-chocobo-keys.cpp'
     fixture.write_text(PREAMBLE + '\n' + method + '\n' + CHECKS)
     executable = output / 'sol-chocobo-keys'
@@ -104,9 +169,12 @@ def check(root, output, compiler='g++-15'):
             stream.write('$ ' + ' '.join(command) + '\n')
             stream.flush()
             subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, check=True, timeout=120)
-    return dict(state='passed', compiler=compiler, cases=4,
+    return dict(state='passed', compiler=compiler, cases=10,
                 coverage=['empty table defaults', 'distinct stat and scalar fields',
-                          'missing stat defaults and uint8 maximum', 'absent stat table'])
+                          'missing stat defaults and uint8 maximum', 'absent stat table',
+                          'different literal extents', 'global and stack overloads',
+                          'mutable/pointer/string/numeric keys', 'raw and binary keys',
+                          'empty and embedded-NUL literals', 'metamethod versus raw lookup'])
 
 
 if __name__ == '__main__':

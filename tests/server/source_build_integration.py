@@ -86,21 +86,52 @@ def runtime_smoke(name):
     (ARTIFACTS / 'logs' / f'{name}-bindings.log').write_text(result.stderr)
     if result.returncode != 0 or 'usage' not in result.stdout.lower():
         raise AssertionError(f'{name} --help did not exit successfully with usage text')
-    # glibc's LD_DEBUG output includes the originating ELF, destination ELF and
-    # symbol. Inspect bindings from this executable, not unrelated libraries.
+    symbols, symbol_text = capture(['readelf', '--wide', '--dyn-syms', str(STAGING / name)])
+    (ARTIFACTS / 'logs' / f'{name}-dynamic-symbols.log').write_text(symbol_text)
+    if symbols.returncode:
+        raise AssertionError(f'{name}: cannot inspect imported allocation symbols')
+    imported = {symbol.split('@')[0] for symbol in re.findall(r'\bUND\s+(\S+)', symbol_text)}
+    # C++ executables may import only operator new/delete. In that case their
+    # malloc call comes from libstdc++, whose actual loader binding is required.
     bindings = {}
-    allocator_symbols = ('malloc', 'calloc', 'realloc', 'free')
+    cxx_bindings = {}
+    operators = {}
+    allocator_symbols = ('malloc', 'calloc', 'realloc', 'free', 'aligned_alloc', 'posix_memalign')
     for line in result.stderr.splitlines():
         match = re.search(r'binding file (.+?) \[\d+\] to (.+?) \[\d+\]:.*symbol [`\']([^\']+)\'', line)
-        if match and Path(match.group(1)).name == name and match.group(3) in allocator_symbols:
-            bindings[match.group(3)] = match.group(2)
-    if 'malloc' not in bindings:
-        raise AssertionError(f'{name}: dynamic loader did not record a malloc binding')
-    incorrect = {symbol: provider for symbol, provider in bindings.items()
+        if not match:
+            continue
+        origin, provider, symbol = Path(match.group(1)).name, match.group(2), match.group(3)
+        if origin == name:
+            if symbol in allocator_symbols:
+                bindings[symbol] = provider
+            elif re.match(r'^_Z(?:nw|na|dl|da)', symbol):
+                operators[symbol] = provider
+        elif origin.startswith('libstdc++.so') and symbol in allocator_symbols:
+            cxx_bindings[symbol] = provider
+    required = imported.intersection(allocator_symbols)
+    if required.difference(bindings):
+        raise AssertionError(f'{name}: missing loader bindings for imported allocators {sorted(required.difference(bindings))}')
+    required_operators = {symbol for symbol in imported if re.match(r'^_Z(?:nw|na|dl|da)', symbol)}
+    if required_operators.difference(operators):
+        raise AssertionError(f'{name}: missing loader bindings for imported C++ allocation operators')
+    incorrect = {symbol: provider for symbol, provider in {**cxx_bindings, **bindings}.items()
                  if Path(provider).name != 'libjemalloc.so.2'}
+    # Check both sets independently: one correct binding must not hide another
+    # binding of the same symbol from a different originating ELF.
+    incorrect.update({'libstdc++:' + symbol: provider for symbol, provider in cxx_bindings.items()
+                      if Path(provider).name != 'libjemalloc.so.2'})
     if incorrect:
         raise AssertionError(f'{name}: allocator symbols bound outside jemalloc: {incorrect}')
-    return dict(help_exit=result.returncode, allocator_bindings=bindings,
+    wrong_operators = {symbol: provider for symbol, provider in operators.items()
+                       if Path(provider).name != 'libjemalloc.so.2' and not Path(provider).name.startswith('libstdc++.so')}
+    if wrong_operators:
+        raise AssertionError(f'{name}: unexpected C++ allocation providers: {wrong_operators}')
+    if 'malloc' not in bindings and 'malloc' not in cxx_bindings:
+        raise AssertionError(f'{name}: no direct or libstdc++ malloc binding was recorded')
+    return dict(help_exit=result.returncode, direct_allocator_imports=sorted(required),
+                allocator_bindings=bindings, cxx_allocator_bindings=cxx_bindings,
+                allocation_operator_bindings=operators,
                 sha256=sha256(STAGING / name), size=(STAGING / name).stat().st_size)
 
 
@@ -167,18 +198,34 @@ def main():
         backend.build(STAGING, 2)
         backend.validate_binaries(STAGING)
         report['backend_build_report'] = json.loads((backend.LOGS / 'build-report.json').read_text())
-        report['source_patch_boundaries'] = source_patch_integration.check(STAGING, ARTIFACTS / 'logs')
-        report['accept_loop_lifetimes'] = accept_loop_integration.check(STAGING, ARTIFACTS / 'logs')
-        report['sol_key_lookups'] = sol_key_integration.check(STAGING, ARTIFACTS / 'logs')
-        for name in backend.PROCESSES:
-            print(f'Checking real {name} startup and dynamic allocator binding', flush=True)
-            report['binaries'][name] = runtime_smoke(name)
         assert source_fingerprint(SOURCE) == before, 'Compilation modified the imported source'
         report['imported_source_unchanged'] = True
+        # Keep successfully compiled executables even if a later diagnostic
+        # probe fails, so that failure can be investigated without recompiling.
         binaries = ARTIFACTS / 'binaries'
         binaries.mkdir()
         for name in backend.PROCESSES:
             shutil.copy2(STAGING / name, binaries / name)
+            report['binaries'][name] = dict(sha256=sha256(STAGING / name), size=(STAGING / name).stat().st_size)
+        report['build_state'] = 'compiled_and_linked'
+        errors = {}
+        for name in backend.PROCESSES:
+            print(f'Checking real {name} startup and dynamic allocator binding', flush=True)
+            try:
+                report['binaries'][name].update(runtime_smoke(name))
+            except Exception as error:
+                errors[name] = str(error)
+                report['binaries'][name]['smoke_error'] = str(error)
+        for label, probe in (('source_patch_boundaries', source_patch_integration),
+                             ('accept_loop_lifetimes', accept_loop_integration),
+                             ('sol_key_lookups', sol_key_integration)):
+            try:
+                report[label] = probe.check(STAGING, ARTIFACTS / 'logs')
+            except Exception as error:
+                errors[label] = str(error)
+        if errors:
+            report['verification_errors'] = errors
+            raise AssertionError('Post-build verification failed: ' + json.dumps(errors))
         report['status'] = 'passed'
         print('PASS: all four selected-source ARM64 executables compile, start and bind malloc to jemalloc', flush=True)
     except BaseException as error:
@@ -192,7 +239,7 @@ def main():
         report['elapsed_seconds'] = round(time.monotonic() - started, 1)
         preserve_cmake_evidence()
         (ARTIFACTS / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
-        if report['status'] == 'passed':
+        if (ARTIFACTS / 'binaries').exists():
             shutil.copy2(ARTIFACTS / 'report.json', ARTIFACTS / 'binaries' / 'build-report.json')
 
 

@@ -22,16 +22,31 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        id: compiler-cache
+        continue-on-error: true
+        with:
+          path: out/server-ccache
+          key: ${{ runner.os }}-${{ runner.arch }}-server-gcc15-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-server-gcc15-v1-
       - name: Build the selected LandSandBoat source with the Android backend
         run: |
-          mkdir -p out/server-source
+          mkdir -p out/server-source out/server-ccache
           docker run --rm --init \
             -v "$PWD:/src:ro" \
             -v "$PWD/out/server-source:/artifacts" \
+            -v "$PWD/out/server-ccache:/ccache" \
             ubuntu:26.04 bash /src/tests/server/source-build-check.sh
       - name: Preserve readable build evidence
         if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" out/server-source
+        run: sudo chown -R "$(id -u):$(id -g)" out/server-source out/server-ccache
+      - uses: actions/cache/save@v4
+        if: always() && steps.compiler-cache.outputs.cache-primary-key != ''
+        continue-on-error: true
+        with:
+          path: out/server-ccache
+          key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -45,9 +60,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
-        if: success()
+        if: always()
         with:
           name: server-source-arm64-binaries
           path: out/server-source/binaries/
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 30

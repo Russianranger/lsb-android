@@ -40,7 +40,7 @@ contexts are preflighted together; a partial or ambiguous match fails before
 editing. The imported source remains untouched. Patch receipts include file
 hashes and are included in the build report. Evidence artifact `10939807028`,
 SHA-256 `a0686ab115ef0dbf3b41241b22a1f4c1c27c2af7b7658bcc52c0a9538ead03ae`.
-All 51 local server tests pass; a C++ fixture extracts the actual patched
+All 54 local server tests pass; a C++ fixture extracts the actual patched
 decoder bodies and passes 10 full-width, terminator, padding and bounds cases.
 
 The third native build (`36343624203`, source `898fde9d`) built `xi_common`
@@ -74,7 +74,26 @@ ASIO's allocation path pairs `aligned_alloc` with `free` through its frame
 recycler; only its GCC 15 `mismatched-new-delete` error promotion is removed,
 with the warning retained. Other warning categories remain fatal. Unrelated
 source fixes have separate exact-context groups, all preflighted before writes.
-Full native compilation validation of these corrections remains in progress.
+The fifth native run (`36345655822`, source `da0f47f2`) compiled and linked
+`xi_world`, `xi_search`, and `xi_connect`, and built all outgoing map packets.
+The named-tuple and allocator-pair changes passed GCC 15 compilation. Incoming
+map packets exposed the same sol array-reference warning at three more lookups
+in `0x09b_chocobo_race_req.cpp` and `0x0aa_guild_buy.cpp`. Evidence artifact
+`10941267043`, SHA-256
+`e69844bfc599862427895b2006f6ace64f7907bdc4847ccda7122e5f92c9f1c7`.
+The shared sol wrapper now converts non-raw narrow character-array keys to
+pointers in both direct-field overloads. Raw, binary, numeric and other key
+types retain their existing paths. The individual packet-key patch is removed. Full native compilation remains unqualified until the map target,
+all allocator bindings, and runtime patch probes pass.
+
+CI now retains a bounded compiler cache even on build failures, while still
+checking compiler, flags, source and headers before reusing object files.
+The phone build configuration is unaffected by this CI-only cache. The native
+allocator gate also inspects ELF imports: a C++-only executable need not import
+`malloc` directly, but its actual libstdc++ allocator bindings must use jemalloc.
+Direct imports still require direct binding evidence; wrong providers fail.
+Compiled binaries are preserved before post-build probes, and failures retain
+an explicitly failed report rather than discarding diagnostic executables.
 
 The same baseline run (`36344293615`) passed Android/core/package verification,
 server database deployment/recovery, presentation and Windows launcher checks.

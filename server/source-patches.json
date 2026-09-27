@@ -49,10 +49,10 @@
     "after": "            // Keep the accepted tuple named across the coroutine suspension.\n            auto acceptResult = co_await acceptor_.async_accept(asio::as_tuple(asio::use_awaitable));\n            const auto& ec = std::get<0>(acceptResult);\n            auto& socket = std::get<1>(acceptResult);"
   },
   {
-    "id": "sol-chocobo-stat-pointer-keys",
-    "group": "sol-chocobo-stat-keys",
-    "path": "src/map/packets/s2c/0x069_chocobo_racing.cpp",
-    "before": "        param.STR.Rank = stats->get_or<uint8_t>(\"str\", 0);\n        param.END.Rank = stats->get_or<uint8_t>(\"end\", 0);\n        param.DSC.Rank = stats->get_or<uint8_t>(\"dsc\", 0);\n        param.RCP.Rank = stats->get_or<uint8_t>(\"rcp\", 0);",
-    "after": "        // Pointer keys avoid GCC 15 merging different array-bound instantiations in sol.\n        param.STR.Rank = stats->get_or<uint8_t>(static_cast<const char*>(\"str\"), 0);\n        param.END.Rank = stats->get_or<uint8_t>(static_cast<const char*>(\"end\"), 0);\n        param.DSC.Rank = stats->get_or<uint8_t>(static_cast<const char*>(\"dsc\"), 0);\n        param.RCP.Rank = stats->get_or<uint8_t>(static_cast<const char*>(\"rcp\"), 0);"
+    "id": "sol-direct-char-array-pointer-keys",
+    "group": "sol-direct-char-array-keys",
+    "path": "ext/sol/include/sol/sol.hpp",
+    "before": "\t\ttemplate <bool global = false, bool raw = false, typename Key>\n\t\tvoid get_field(lua_State* L, Key&& key) {\n\t\t\tfield_getter<meta::unqualified_t<Key>, global, raw> {}.get(L, std::forward<Key>(key));\n\t\t}\n\n\t\ttemplate <bool global = false, bool raw = false, typename Key>\n\t\tvoid get_field(lua_State* L, Key&& key, int tableindex) {\n\t\t\tfield_getter<meta::unqualified_t<Key>, global, raw> {}.get(L, std::forward<Key>(key), tableindex);\n\t\t}\n\n",
+    "after": "\t\ttemplate <bool global = false, bool raw = false, typename Key>\n\t\tvoid get_field(lua_State* L, Key&& key) {\n\t\t\t// Narrow C-string arrays use pointer keys in the direct Lua field API.\n\t\t\t// Keep raw lookups and all other key types on their existing path.\n\t\t\tif constexpr (!raw && std::is_array_v<std::remove_reference_t<Key>>\n\t\t\t     && meta::is_c_str_v<meta::unqualified_t<Key>>) {\n\t\t\t\tconst char* key_pointer = key;\n\t\t\t\tfield_getter<const char*, global, raw> {}.get(L, key_pointer);\n\t\t\t}\n\t\t\telse {\n\t\t\t\tfield_getter<meta::unqualified_t<Key>, global, raw> {}.get(L, std::forward<Key>(key));\n\t\t\t}\n\t\t}\n\n\t\ttemplate <bool global = false, bool raw = false, typename Key>\n\t\tvoid get_field(lua_State* L, Key&& key, int tableindex) {\n\t\t\t// Narrow C-string arrays use pointer keys in the direct Lua field API.\n\t\t\t// Keep raw lookups and all other key types on their existing path.\n\t\t\tif constexpr (!raw && std::is_array_v<std::remove_reference_t<Key>>\n\t\t\t     && meta::is_c_str_v<meta::unqualified_t<Key>>) {\n\t\t\t\tconst char* key_pointer = key;\n\t\t\t\tfield_getter<const char*, global, raw> {}.get(L, key_pointer, tableindex);\n\t\t\t}\n\t\t\telse {\n\t\t\t\tfield_getter<meta::unqualified_t<Key>, global, raw> {}.get(L, std::forward<Key>(key), tableindex);\n\t\t\t}\n\t\t}\n\n"
   }
 ]
