@@ -99,6 +99,7 @@ timeout --kill-after=5s 240s "${host[@]}" PROOT_NO_SECCOMP=1 "${proot[@]}" \
 icd=$(find "$matrix/root/usr/share/vulkan/icd.d" -maxdepth 1 -name 'lvp_icd*.json' -print -quit)
 test -n "$icd"
 icd="${icd#"$matrix/root"}"
+failed_cases=()
 for engine in box64 fex; do
  wine_bind=(-b "$PWD/out/playonline-test/backend/wineserver:/opt/wine/bin/wineserver")
  if [[ "$engine" == fex ]]; then wine_bind=(-b "$matrix/wine:/opt/wine"); fi
@@ -121,17 +122,28 @@ for engine in box64 fex; do
   sudo mkdir -p "$proof"
   sudo chmod 755 "$proof"
   bindings+=(-b "$proof:/ci-filter")
-  observe_filter "$proof" preflight "$case_root/session/preflight-private.log" "$logs" \
+  if ! observe_filter "$proof" preflight "$case_root/session/preflight-private.log" "$logs" \
    timeout --kill-after=5s 30s "${host[@]}" TRASC_PROOT_REPORT=1 "${proot[@]}" "${bindings[@]}" \
    -w /probe /bin/sh -c 'exec "$@" > /session/preflight-private.log 2>&1' sh \
-   "${guest[@]}" /usr/bin/python3 /opt/lsb/proot_preflight.py
-  observe_filter "$proof" qualification "$case_root/session/qualification-private.log" "$logs" \
+   "${guest[@]}" /usr/bin/python3 /opt/lsb/proot_preflight.py; then
+   failed_cases+=("$engine/$mode: preflight")
+   continue
+  fi
+  if ! observe_filter "$proof" qualification "$case_root/session/qualification-private.log" "$logs" \
    timeout --kill-after=5s "$limit" "${host[@]}" TRASC_PROOT_REPORT=1 "${proot[@]}" "${bindings[@]}" \
    -w /probe /bin/sh -c 'exec "$@" > /session/qualification-private.log 2>&1' sh \
    "${guest[@]}" "${settings[@]}" LSB_TEST_FILTERED=1 LSB_TEST_UPDATER_VULKAN_DDRAW="$backend" \
-   /usr/bin/python3 /tests/playonline_engine_matrix.py
+   /usr/bin/python3 /tests/playonline_engine_matrix.py; then
+   failed_cases+=("$engine/$mode: qualification")
+  fi
  done
 done
+# Capture independent engine evidence after a failure, but never publish a
+# successful paired comparison or permit this gate to pass with any failed arm.
+if (( ${#failed_cases[@]} )); then
+ printf 'FAILED updater qualification: %s\n' "${failed_cases[@]}" >&2
+ exit 1
+fi
 python3 - <<'PYPAIR'
 import json
 from pathlib import Path

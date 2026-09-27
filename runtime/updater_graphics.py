@@ -6,6 +6,7 @@ Only fixed synthetic pixels and numeric adapter metadata are retained here.
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import time
@@ -16,10 +17,31 @@ LOGS = Path('/logs')
 FIELDS = {'format', 'bits', 'passed', 'stage', 'hresult', 'adapter_vendor_id',
           'adapter_device_id', 'frames', 'expected_frames', 'colorfills', 'uploads',
           'blits', 'ffp_frames', 'presents', 'readback_samples', 'presentation_samples',
+          'mismatch_sample', 'expected_rgb', 'actual_rgb',
           'elapsed_ms', 'render_ms', 'first_frame_ms', 'max_frame_ms'}
 STAGES = {'arguments', 'window', 'create', 'cooperative', 'identifier', 'primary',
           'clipper', 'offscreen', 'device', 'state', 'colorfill', 'upload', 'blit',
           'draw', 'readback', 'present', 'present_readback', 'budget', 'completed'}
+
+
+def shader_diagnostics(lines):
+    """Exact Wine 10 synthetic-probe compiler failures; no shader text."""
+    result = dict(hlsl_count=0, hlsl_code=0, spirv_count=0, spirv_code=0)
+    patterns = {b'compile_hlsl_shader': ('hlsl', rb'failed to compile hlsl, ret (-[0-9]{1,10})\.'),
+                b'shader_spirv_compile_shader': ('spirv', rb'failed to compile shader, ret (-[0-9]{1,10})\.')}
+    for line in lines:
+        wine = StartupDiagnostics.WINE.fullmatch(line.lower())
+        if not wine:
+            continue
+        _, level, channel, function, message = wine.groups()
+        if level != b'err' or channel != b'd3d_shader' or function not in patterns:
+            continue
+        label, pattern = patterns[function]
+        match = re.fullmatch(pattern, message)
+        if match and -0x80000000 <= int(match[1]) < 0:
+            result[label + '_count'] = min(1000000, result[label + '_count'] + 1)
+            result[label + '_code'] = int(match[1])
+    return result
 
 
 def validate(value):
@@ -33,6 +55,14 @@ def validate(value):
             or any(value[k] > 24 for k in ('frames', 'colorfills', 'uploads', 'blits', 'ffp_frames', 'presents'))
             or value['readback_samples'] > 192 or value['presentation_samples'] > 192):
         raise ValueError('Invalid DirectDraw check receipt')
+    mismatch = value['mismatch_sample']
+    if (mismatch not in (*range(8), 0xffffffff)
+            or value['expected_rgb'] > 0xffffff or value['actual_rgb'] > 0xffffff
+            or (mismatch == 0xffffffff and (value['expected_rgb'] or value['actual_rgb']))
+            or (mismatch != 0xffffffff and (value['passed'] or not value['hresult']
+                or value['stage'] not in ('readback', 'present_readback')
+                or value['expected_rgb'] == value['actual_rgb']))):
+        raise ValueError('Invalid DirectDraw mismatch metadata')
     if value['passed'] and (value['stage'] != 'completed' or value['hresult']
             or any(value[k] != 24 for k in ('frames', 'colorfills', 'uploads', 'blits', 'ffp_frames', 'presents'))
             or value['readback_samples'] != 192 or value['presentation_samples'] != 192):
@@ -48,9 +78,9 @@ def run_probe(supervisor, environment):
     started = time.monotonic()
     result = {'backend': 'unconfirmed', 'exit_code': None, 'elapsed_wall_ms': 0}
     try:
-        # This executable takes no file or account input. Limit Wine output to
-        # fixed renderer-selection diagnostics; discard its raw log afterward.
-        probe_env = dict(environment, WINEDEBUG='-all,+timestamp,+pid,err+winediag',
+        # This executable takes no file or account input. Retain only fixed
+        # backend/compiler metadata and discard the bounded raw log afterward.
+        probe_env = dict(environment, WINEDEBUG='-all,+timestamp,+pid,err+all',
                          DXVK_LOG_LEVEL='none', DXVK_LOG_PATH='none')
         probe_env['WINEDLLOVERRIDES'] = environment.get('WINEDLLOVERRIDES', '') + ';ddraw=b'
         proc = supervisor.spawn(supervisor.wine_command(r'P:\ddraw-check.exe'),
@@ -62,6 +92,7 @@ def run_probe(supervisor, environment):
             data = stream.read(65537)
         if len(data) > 65536:
             raise ValueError('Oversized DirectDraw check output')
+        result['shader_diagnostics'] = shader_diagnostics(data.splitlines())
         rows = []
         diagnostics = StartupDiagnostics()
         for line in data.splitlines():

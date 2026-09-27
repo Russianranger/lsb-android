@@ -126,10 +126,11 @@ def main():
         directdraw = production.get('directdraw_graphics')
         viewer_backends = sorted({row.get('backend') for row in production['startup_diagnostics'].get('records', [])
                                   if row.get('source') == 'wine' and row.get('event') == 'wined3d_renderer'})
-        assert viewer_backends == ['vulkan'], ('Actual official viewer did not select only Vulkan', viewer_backends)
     assert state['runtime_engine'] == engine and state['dxvk_selected'] == '2.5.3', state
     assert_filter(state)
     assert_directdraw(directdraw, 'opengl' if mode == 'baseline' else 'vulkan')
+    if mode == 'filtered':
+        assert viewer_backends == ['vulkan'], ('Actual official viewer did not select only Vulkan', viewer_backends)
     if engine == 'fex':
         assert state['fex_execution_verified'] is True, state
     initialization = fex_initialization(state)

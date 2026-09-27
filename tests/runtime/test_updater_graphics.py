@@ -18,6 +18,7 @@ def receipt():
                 adapter_vendor_id=0x10de, adapter_device_id=1, frames=24, expected_frames=24,
                 colorfills=24, uploads=24, blits=24, ffp_frames=24, presents=24,
                 readback_samples=192, presentation_samples=192, elapsed_ms=800,
+                mismatch_sample=0xffffffff, expected_rgb=0, actual_rgb=0,
                 render_ms=700, first_frame_ms=30, max_frame_ms=50)
 
 
@@ -34,6 +35,32 @@ class DirectDrawContracts(unittest.TestCase):
                        {'uploads': True}, {'adapter_vendor_id': -1}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 graphics.validate(dict(receipt(), **change))
+
+    def test_failed_pixel_receipt_keeps_only_bounded_mismatch_metadata(self):
+        failed = dict(receipt(), passed=False, stage='readback', hresult=0x80004005,
+                      frames=0, colorfills=1, uploads=1, blits=1, ffp_frames=1, presents=0,
+                      readback_samples=4, presentation_samples=0,
+                      mismatch_sample=4, expected_rgb=0x40e080, actual_rgb=0x182838)
+        self.assertEqual(graphics.validate(failed), failed)
+        for change in ({'mismatch_sample': 8}, {'mismatch_sample': True},
+                       {'expected_rgb': 0x1000000}, {'actual_rgb': -1},
+                       {'stage': 'create'}, {'hresult': 0}, {'passed': True},
+                       {'actual_rgb': 0x40e080}, {'mismatch_sample': 0xffffffff}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                graphics.validate(dict(failed, **change))
+
+    def test_shader_failures_require_exact_upstream_message_and_bounded_return(self):
+        lines = [b'31.2:0010:0020:err:d3d_shader:compile_hlsl_shader Failed to compile HLSL, ret -4.',
+                 b'0020:err:d3d_shader:shader_spirv_compile_shader Failed to compile shader, ret -5.',
+                 b'0020:err:d3d_shader:shader_spirv_compile_shader Failed to compile shader, ret -2.',
+                 b'0020:warn:d3d_shader:compile_hlsl_shader Failed to compile HLSL, ret -3.',
+                 b'0020:err:private:compile_hlsl_shader Failed to compile HLSL, ret -3.',
+                 b'0020:err:d3d_shader:compile_hlsl_shader Failed to compile HLSL, ret -2147483649.',
+                 b'0020:err:d3d_shader:compile_hlsl_shader Failed to compile HLSL, ret -0.',
+                 b'0020:err:d3d_shader:compile_hlsl_shader Failed to compile HLSL, ret -3. private',
+                 b'private_file_or_account']
+        self.assertEqual(graphics.shader_diagnostics(lines),
+                         dict(hlsl_count=1, hlsl_code=-4, spirv_count=2, spirv_code=-2))
 
     def test_verified_backend_changes_only_updater_copy(self):
         original = dict(WINE_D3D_CONFIG='csmt=1', WINEDLLOVERRIDES='d3d9=n', LIBGL_ALWAYS_SOFTWARE='1')

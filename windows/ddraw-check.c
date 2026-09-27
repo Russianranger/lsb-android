@@ -19,6 +19,7 @@ typedef struct {
     HRESULT hr;
     DWORD vendor, device, frames, colorfills, uploads, blits, ffp_frames, presents;
     DWORD readback_samples, presentation_samples;
+    DWORD mismatch_sample, expected_rgb, actual_rgb;
     ULONGLONG elapsed_ms, render_ms, first_frame_ms, max_frame_ms;
 } Receipt;
 
@@ -79,7 +80,7 @@ static HRESULT upload(IDirectDrawSurface7 *source, unsigned frame)
 }
 
 static HRESULT readback(IDirectDrawSurface7 *source, unsigned frame,
-        DWORD background, DWORD *samples)
+        DWORD background, DWORD *samples, Receipt *receipt)
 {
     static const unsigned points[][2] = {
         {8, 8}, {23, 31}, {73, 85}, {135, 135}, /* uploaded pattern */
@@ -99,7 +100,12 @@ static HRESULT readback(IDirectDrawSurface7 *source, unsigned frame,
             DWORD actual = *(DWORD *)((BYTE *)desc.lpSurface + y * desc.lPitch + x * 4);
             DWORD expected = i < 4 ? pattern(x - 8, y - 8, frame)
                 : i < 6 ? 0x40e080 : background;
-            if ((actual & 0xffffff) != expected) { hr = E_FAIL; break; }
+            if ((actual & 0xffffff) != expected) {
+                receipt->mismatch_sample = i;
+                receipt->expected_rgb = expected;
+                receipt->actual_rgb = actual & 0xffffff;
+                hr = E_FAIL; break;
+            }
             ++*samples;
         }
     }
@@ -114,12 +120,14 @@ static void report(const Receipt *r)
         "\"frames\":%lu,\"expected_frames\":24,\"colorfills\":%lu,\"uploads\":%lu,"
         "\"blits\":%lu,\"ffp_frames\":%lu,\"presents\":%lu,"
         "\"readback_samples\":%lu,\"presentation_samples\":%lu,"
+        "\"mismatch_sample\":%lu,\"expected_rgb\":%lu,\"actual_rgb\":%lu,"
         "\"elapsed_ms\":%llu,\"render_ms\":%llu,\"first_frame_ms\":%llu,\"max_frame_ms\":%llu}\n",
         SUCCEEDED(r->hr) && r->frames == FRAMES ? "true" : "false", r->stage,
         (unsigned long)(DWORD)r->hr, (unsigned long)r->vendor, (unsigned long)r->device,
         (unsigned long)r->frames, (unsigned long)r->colorfills, (unsigned long)r->uploads,
         (unsigned long)r->blits, (unsigned long)r->ffp_frames, (unsigned long)r->presents,
         (unsigned long)r->readback_samples, (unsigned long)r->presentation_samples,
+        (unsigned long)r->mismatch_sample, (unsigned long)r->expected_rgb, (unsigned long)r->actual_rgb,
         (unsigned long long)r->elapsed_ms, (unsigned long long)r->render_ms,
         (unsigned long long)r->first_frame_ms, (unsigned long long)r->max_frame_ms);
     fflush(stdout);
@@ -128,7 +136,7 @@ static void report(const Receipt *r)
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR args, int show)
 {
     (void)previous; (void)show;
-    Receipt r = { .stage = "arguments", .hr = E_INVALIDARG };
+    Receipt r = { .stage = "arguments", .hr = E_INVALIDARG, .mismatch_sample = 0xffffffff };
     ULONGLONG started = GetTickCount64(), render_started = 0;
     HWND window = NULL;
     IDirectDraw7 *ddraw = NULL;
@@ -204,7 +212,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR args, int sho
                 D3DFVF_XYZRHW | D3DFVF_DIFFUSE, vertices, 3, 0);
         HRESULT end = IDirect3DDevice7_EndScene(device);
         CHECK("draw", FAILED(draw) ? draw : end); ++r.ffp_frames;
-        CHECK("readback", readback(target, frame, background, &r.readback_samples));
+        CHECK("readback", readback(target, frame, background, &r.readback_samples, &r));
         POINT origin = {0, 0};
         if (!ClientToScreen(window, &origin)) {
             r.stage = "present"; r.hr = HRESULT_FROM_WIN32(GetLastError()); goto done;
@@ -214,7 +222,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR args, int sho
         ++r.presents;
         CHECK("present_readback", IDirectDrawSurface7_Blt(copy, NULL, primary,
                 &destination, DDBLT_WAIT, NULL));
-        CHECK("present_readback", readback(copy, frame, background, &r.presentation_samples));
+        CHECK("present_readback", readback(copy, frame, background, &r.presentation_samples, &r));
         ULONGLONG quantum = GetTickCount64() - frame_started;
         if (!frame) r.first_frame_ms = quantum;
         if (quantum > r.max_frame_ms) r.max_frame_ms = quantum;
