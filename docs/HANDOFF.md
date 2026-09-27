@@ -19,6 +19,16 @@ checked before success. Installed jemalloc alone was insufficient upstream.
 The include affects only the staged build; no upstream source rewrite or
 blanket warning suppression is applied. Build reports are exported separately.
 
+The initial native ARM64 build (`36342600092`, app source `dcda5b8e`) passed
+configuration and code generation but failed compiling `xi_common/application.cpp`.
+GCC 15.2 reports potential null dereferences in ASIO 1.38.0 `io_context.hpp:871`
+and `detail/impl/scheduler.ipp:338`, including when its headers use `-isystem`.
+The compatibility include now keeps this warning visible but removes its
+error promotion only for `xi_common` under GCC 15. Other warnings remain fatal;
+other targets and compiler versions retain the original policy. Evidence:
+artifact `10940040533`, SHA-256
+`dec1fad7e6287dcbf91d918d1635bbbdd3d95bd059c237cfec84836b660e76aa`.
+
 The new native ARM64 CI gate uses the exact GitHub source archive without Git
 metadata or mesh submodules, runs the same backend build, and checks real
 malloc symbol bindings under `--help` without `LD_PRELOAD`. Full compilation
