@@ -1,7 +1,7 @@
 """Actual PRoot updater qualification; fixed synthetic data and public viewer only.
 
-Each engine has filtered compatibility preparation/benchmarks and a filtered
-Vulkan full viewer and lifecycle pass. This does not claim Android GPU or
+Each engine has filtered software OpenGL preparation/benchmarks and a filtered
+Zink OpenGL full viewer and lifecycle pass. This does not claim Android GPU or
 online repair throughput.
 """
 import hashlib
@@ -101,6 +101,25 @@ def fex_initialization(state):
             'total_registration_loads': len(loads)}
 
 
+def opengl_driver_inventory():
+    """Prove the actual CI rootfs includes its packaged Zink driver."""
+    package = 'libgl1-mesa-dri'
+    version = subprocess.check_output(['dpkg-query', '-W', '-f=${Version}', package],
+                                      text=True, timeout=10).strip()
+    assert re.fullmatch(r'[A-Za-z0-9.+:~\-]{1,128}', version), 'Invalid CI Mesa package version'
+    files = subprocess.check_output(['dpkg-query', '-L', package], text=True, timeout=10).splitlines()
+    matches = [Path(name) for name in files if name.endswith('/zink_dri.so')]
+    assert len(matches) == 1 and matches[0].is_file(), 'CI rootfs Zink driver is missing or ambiguous'
+    driver = matches[0].resolve(strict=True)
+    glxinfo = Path('/usr/bin/glxinfo').resolve(strict=True)
+    inventory = {'format': 1, 'package': package, 'version': version,
+                 'zink_driver_path': str(matches[0]),
+                 'zink_driver_sha256': hashlib.sha256(driver.read_bytes()).hexdigest(),
+                 'glxinfo_sha256': hashlib.sha256(glxinfo.read_bytes()).hexdigest()}
+    Path('/logs/opengl-driver-inventory.json').write_text(json.dumps(inventory, indent=2))
+    return inventory
+
+
 def main():
     if sys.argv[1:] == ['seed']:
         seed(); return
@@ -111,7 +130,8 @@ def main():
     mode = os.environ['LSB_TEST_MATRIX_MODE']
     assert engine in ('box64', 'fex') and mode in ('baseline', 'filtered')
     assert os.environ.get('LSB_TEST_FILTERED') == '1', 'Renderer comparisons must both use verified filtering'
-    assert (os.environ.get('LSB_TEST_UPDATER_VULKAN_DDRAW') == '1') == (mode == 'filtered')
+    assert (os.environ.get('LSB_TEST_UPDATER_HARDWARE_GRAPHICS') == '1') == (mode == 'filtered')
+    driver_inventory = opengl_driver_inventory()
     protected = inventory(Path('/baseline-prefix'))
     official = inventory(Path('/official'))
     source_hash = hashlib.sha256(json.dumps(protected, sort_keys=True).encode()).hexdigest()
@@ -128,9 +148,9 @@ def main():
                                   if row.get('source') == 'wine' and row.get('event') == 'wined3d_renderer'})
     assert state['runtime_engine'] == engine and state['dxvk_selected'] == '2.5.3', state
     assert_filter(state)
-    assert_directdraw(directdraw, 'opengl' if mode == 'baseline' else 'vulkan')
+    assert_directdraw(directdraw, 'compatibility' if mode == 'baseline' else 'zink')
     if mode == 'filtered':
-        assert viewer_backends == ['vulkan'], ('Actual official viewer did not select only Vulkan', viewer_backends)
+        assert viewer_backends == ['opengl'], ('Actual official viewer did not select only OpenGL', viewer_backends)
     if engine == 'fex':
         assert state['fex_execution_verified'] is True, state
     initialization = fex_initialization(state)
@@ -149,7 +169,7 @@ def main():
         lifecycle = ['visible-clean-exit', 'no-window-high-exit', 'missing-dependency', 'restarted-visible-clean-exit']
     assert inventory(Path('/baseline-prefix')) == protected, 'Engine changed the protected Box64 seed'
     assert inventory(Path('/official')) == official, 'Engine changed the pinned official viewer input'
-    result = {'format': 3, 'engine': engine, 'mode': 'compatibility' if mode == 'baseline' else 'vulkan',
+    result = {'format': 4, 'engine': engine, 'mode': 'compatibility' if mode == 'baseline' else 'zink',
               'artifact_directory': mode, 'transport': 'patched_proot', 'network': 'disabled',
               'renderer': 'DXVK 2.5.3 / CI lavapipe', 'filtering': True,
               'runtime_acceleration': state['runtime_acceleration'],
@@ -157,12 +177,13 @@ def main():
               'official_input_preserved': True, 'fex_execution_verified': state.get('fex_execution_verified'),
               'prefix_initialization': initialization, 'component_registration_verified': True,
               'lifecycle_cases': lifecycle, 'repair_io': benchmark, 'directdraw_graphics': directdraw,
+              'opengl_driver_inventory': driver_inventory,
               'directdraw_workload': {'helper_sha256': hashlib.sha256(Path('/probe/ddraw-check.exe').read_bytes()).hexdigest(),
                                      'width': 320, 'height': 240, 'pattern_width': 128, 'pattern_height': 128,
                                      'frames': 24, 'render_pixel_samples': 192, 'presented_pixel_samples': 192},
               'official_viewer_directdraw_backends': viewer_backends,
               'online_repair_verified': False,
-              'interpretation': 'One paired DirectDraw sample, independent copied prefixes, filtering active in both arms. CI software GPU timing is not phone hardware or repair throughput. No speedup threshold is claimed.'}
+              'interpretation': 'One paired DirectDraw OpenGL sample (software GL versus Zink), independent copied prefixes, filtering active in both arms. Zink uses CI software Vulkan; timing is not phone hardware or repair throughput. No speedup threshold is claimed.'}
     Path('/logs/playonline-engine-matrix.json').write_text(json.dumps(result, indent=2))
     print('PASS:', engine, mode, 'actual PRoot, copied prefix and bounded Windows workload; source inputs unchanged', flush=True)
 

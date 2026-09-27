@@ -12,6 +12,7 @@ import subprocess
 import time
 
 from startup_diagnostics import StartupDiagnostics
+from updater_gl import qualify as qualify_opengl
 
 LOGS = Path('/logs')
 FIELDS = {'format', 'bits', 'passed', 'stage', 'hresult', 'adapter_vendor_id',
@@ -126,8 +127,8 @@ def run_probe(supervisor, environment):
 
 
 def configure(supervisor, environment):
-    requested = supervisor.req.get('updater_vulkan_ddraw', False)
-    report = {'format': 1, 'requested': 'vulkan' if requested else 'compatibility',
+    requested = supervisor.req.get('updater_hardware_graphics', False)
+    report = {'format': 1, 'requested': 'hardware' if requested else 'compatibility',
               'active': 'compatibility', 'state': 'disabled', 'reason': 'not_requested'}
     if not requested:
         # Fixed CI-only comparison. Android's cleared environment does not
@@ -147,17 +148,21 @@ def configure(supervisor, environment):
             or supervisor.engine not in ('box64', 'fex')):
         report.update(state='fallback', reason='unsupported_profile')
         return dict(environment), report
-    candidate = dict(environment, WINE_D3D_CONFIG='csmt=1,renderer=vulkan')
+    # The pinned Wine Vulkan backend failed the actual D3D7 pixel gate. Keep
+    # Wine's established GL backend and qualify its native Zink implementation.
+    candidate, report['opengl'] = qualify_opengl(supervisor, environment)
+    if report['opengl']['state'] != 'verified':
+        report.update(state='fallback', reason='opengl_check_failed')
+        return dict(environment), report
     candidate['WINEDLLOVERRIDES'] = environment.get('WINEDLLOVERRIDES', '') + ';ddraw=b'
     supervisor.status('checking_updater_graphics', message='Checking hardware rendering for PlayOnline')
     report['probe'] = probe = run_probe(supervisor, candidate)
-    # DDraw may report a compatibility PCI vendor rather than Qualcomm's
-    # physical identity. The same verified ICD binding is authoritative for
-    # hardware; the actual DDraw backend and all pixel operations must pass.
-    device_ok = state.get('hardware_verified') is True or bool(os.environ.get('LSB_TEST_VULKAN_ICD'))
+    # Native GL hardware identity alone does not qualify the translated Windows
+    # rendering path. Require the real PE32 draw, blit and presentation pixels.
     if (probe.get('passed') is True and probe.get('exit_code') == 0
-            and probe.get('backend') == 'vulkan' and device_ok):
-        report.update(active='vulkan', state='verified', reason='directdraw_pixels_verified')
+            and probe.get('backend') == 'opengl'):
+        report['opengl']['directdraw_verified'] = True
+        report.update(active='zink', state='verified', reason='zink_directdraw_pixels_verified')
         return candidate, report
     report.update(state='fallback', reason='directdraw_check_failed')
     return dict(environment), report

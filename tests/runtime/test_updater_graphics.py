@@ -24,7 +24,7 @@ def receipt():
 
 class DirectDrawContracts(unittest.TestCase):
     def instance(self):
-        return SimpleNamespace(req=dict(action='update-client', renderer='turnip26', updater_vulkan_ddraw=True),
+        return SimpleNamespace(req=dict(action='update-client', renderer='turnip26', updater_hardware_graphics=True),
                                state=dict(dxvk_selected='2.5.3', hardware_verified=True),
                                engine='box64', status=Mock())
 
@@ -62,32 +62,48 @@ class DirectDrawContracts(unittest.TestCase):
         self.assertEqual(graphics.shader_diagnostics(lines),
                          dict(hlsl_count=1, hlsl_code=-4, spirv_count=2, spirv_code=-2))
 
-    def test_verified_backend_changes_only_updater_copy(self):
+    def gl_qualified(self, _instance, original):
+        from updater_gl import candidate_environment
+        return candidate_environment(original), dict(state='verified', active='zink', directdraw_verified=False)
+
+    def test_verified_backend_requires_native_gl_and_windows_pixels(self):
         original = dict(WINE_D3D_CONFIG='csmt=1', WINEDLLOVERRIDES='d3d9=n', LIBGL_ALWAYS_SOFTWARE='1')
         for engine in ('box64', 'fex'):
             instance = self.instance(); instance.engine = engine
-            with patch.object(graphics, 'run_probe', return_value=dict(receipt(), backend='vulkan', exit_code=0)) as probe:
+            with patch.object(graphics, 'qualify_opengl', side_effect=self.gl_qualified), \
+                    patch.object(graphics, 'run_probe', return_value=dict(receipt(), backend='opengl', exit_code=0)) as probe:
                 environment, report = graphics.configure(instance, original)
-            self.assertEqual(report['state'], 'verified')
-            self.assertEqual(environment['WINE_D3D_CONFIG'], 'csmt=1,renderer=vulkan')
+            self.assertEqual((report['state'], report['active']), ('verified', 'zink'))
+            self.assertTrue(report['opengl']['directdraw_verified'])
+            self.assertEqual(environment['WINE_D3D_CONFIG'], 'csmt=1,renderer=gl')
+            self.assertEqual(environment['MESA_LOADER_DRIVER_OVERRIDE'], 'zink')
+            self.assertNotIn('LIBGL_ALWAYS_SOFTWARE', environment)
             self.assertEqual(environment['WINEDLLOVERRIDES'], 'd3d9=n;ddraw=b')
             self.assertEqual(original['WINE_D3D_CONFIG'], 'csmt=1')
             self.assertEqual(probe.call_args.args[1], environment)
 
-    def test_failure_and_unverified_hardware_preserve_compatibility(self):
-        original = {'WINE_D3D_CONFIG': 'csmt=1'}
-        for change in ({'passed': False}, {'backend': 'opengl'}, {'exit_code': 1}, {'probe_error': True, 'passed': False}):
+    def test_failed_windows_check_preserves_original_after_native_gl_success(self):
+        original = {'WINE_D3D_CONFIG': 'csmt=1', 'LIBGL_ALWAYS_SOFTWARE': '1'}
+        for change in ({'passed': False}, {'backend': 'vulkan'}, {'exit_code': 1}, {'probe_error': True, 'passed': False}):
             instance = self.instance()
-            with patch.object(graphics, 'run_probe', return_value=dict(receipt(), backend='vulkan', exit_code=0) | change):
+            with patch.object(graphics, 'qualify_opengl', side_effect=self.gl_qualified), \
+                    patch.object(graphics, 'run_probe', return_value=dict(receipt(), backend='opengl', exit_code=0) | change):
                 environment, report = graphics.configure(instance, original)
             self.assertEqual(environment, original); self.assertEqual(report['state'], 'fallback')
-        instance = self.instance(); instance.state['hardware_verified'] = False
-        with patch.dict(os.environ, {}, clear=True), patch.object(graphics, 'run_probe', return_value=dict(receipt(), backend='vulkan', exit_code=0)):
-            environment, report = graphics.configure(instance, original)
+            self.assertFalse(report['opengl']['directdraw_verified'])
+
+    def test_failed_native_gl_and_cancellation_never_activate(self):
+        original = {'WINE_D3D_CONFIG': 'csmt=1'}
+        with patch.object(graphics, 'qualify_opengl', return_value=(original, {'state': 'fallback'})), \
+                patch.object(graphics, 'run_probe') as probe:
+            environment, report = graphics.configure(self.instance(), original)
         self.assertEqual(environment, original); self.assertEqual(report['state'], 'fallback')
+        probe.assert_not_called()
+        with patch.object(graphics, 'qualify_opengl', side_effect=Stopped()), self.assertRaises(Stopped):
+            graphics.configure(self.instance(), original)
 
     def test_disabled_and_unsupported_profiles_do_not_probe(self):
-        for change in ({'updater_vulkan_ddraw': False}, {'action': 'launch'}, {'renderer': 'software'}):
+        for change in ({'updater_hardware_graphics': False}, {'action': 'launch'}, {'renderer': 'software'}):
             instance = self.instance(); instance.req.update(change)
             with patch.dict(os.environ, {}, clear=True), patch.object(graphics, 'run_probe') as probe:
                 environment, report = graphics.configure(instance, {'safe': 'unchanged'})
@@ -131,8 +147,8 @@ class DirectDrawContracts(unittest.TestCase):
 
     def test_request_is_boolean_and_updater_only(self):
         base = dict(format=1, action='update-client', renderer='turnip26', audio=True, session_id=str(uuid.uuid4()))
-        for value in (True, False): self.assertEqual(validate_request(dict(base, updater_vulkan_ddraw=value))['updater_vulkan_ddraw'], value)
+        for value in (True, False): self.assertEqual(validate_request(dict(base, updater_hardware_graphics=value))['updater_hardware_graphics'], value)
         for value in (1, 'vulkan', None, {}):
-            with self.assertRaises(ValueError): validate_request(dict(base, updater_vulkan_ddraw=value))
+            with self.assertRaises(ValueError): validate_request(dict(base, updater_hardware_graphics=value))
         for action in ('launch', 'probe', 'verify-client-update'):
-            with self.assertRaises(ValueError): validate_request(dict(base, action=action, updater_vulkan_ddraw=True))
+            with self.assertRaises(ValueError): validate_request(dict(base, action=action, updater_hardware_graphics=True))

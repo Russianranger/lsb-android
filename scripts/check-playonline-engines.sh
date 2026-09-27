@@ -2,8 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Actual patched PRoot with filtering active in all four cases. Compare the
-# DirectDraw compatibility and Vulkan backends using independent stopped seed
-# copies. Only the Vulkan arm repeats official viewer/lifecycle qualification.
+# Wine DirectDraw's software OpenGL and Zink implementations using independent
+# stopped seed copies. Only Zink repeats official viewer/lifecycle qualification.
 matrix="$PWD/out/playonline-test/engine-matrix"
 mkdir -p "$matrix"/{root,wine,baseline-prefix,seed-session,seed-tmp,seed-logs}
 tar -xzf out/fex-runtime/runtime-fex-arm64.tar.gz -C "$matrix/wine"
@@ -132,7 +132,7 @@ for engine in box64 fex; do
   if ! observe_filter "$proof" qualification "$case_root/session/qualification-private.log" "$logs" \
    timeout --kill-after=5s "$limit" "${host[@]}" TRASC_PROOT_REPORT=1 "${proot[@]}" "${bindings[@]}" \
    -w /probe /bin/sh -c 'exec "$@" > /session/qualification-private.log 2>&1' sh \
-   "${guest[@]}" "${settings[@]}" LSB_TEST_FILTERED=1 LSB_TEST_UPDATER_VULKAN_DDRAW="$backend" \
+   "${guest[@]}" "${settings[@]}" LSB_TEST_FILTERED=1 LSB_TEST_UPDATER_HARDWARE_GRAPHICS="$backend" \
    /usr/bin/python3 /tests/playonline_engine_matrix.py; then
    failed_cases+=("$engine/$mode: qualification")
   fi
@@ -155,15 +155,18 @@ for engine in ('box64', 'fex'):
     assert baseline['baseline_prefix_sha256'] == candidate['baseline_prefix_sha256']
     assert baseline['renderer'] == candidate['renderer'] == 'DXVK 2.5.3 / CI lavapipe'
     assert baseline['filtering'] and candidate['filtering'], 'Renderer pair must both use actual PRoot filtering'
-    assert baseline['mode'] == 'compatibility' and candidate['mode'] == 'vulkan'
+    assert baseline['mode'] == 'compatibility' and candidate['mode'] == 'zink'
     assert baseline['directdraw_workload'] == candidate['directdraw_workload']
+    assert baseline['opengl_driver_inventory'] == candidate['opengl_driver_inventory']
     before_draw, after_draw = (row['directdraw_graphics']['probe'] for row in (baseline, candidate))
-    assert before_draw['backend'] == 'opengl' and after_draw['backend'] == 'vulkan'
+    assert before_draw['backend'] == after_draw['backend'] == 'opengl'
+    assert candidate['directdraw_graphics']['active'] == 'zink'
+    assert candidate['directdraw_graphics']['opengl']['directdraw_verified'] is True
     directdraw_timings = []
     for field in ('elapsed_wall_ms', 'elapsed_ms', 'render_ms', 'first_frame_ms', 'max_frame_ms'):
         before, after = before_draw[field], after_draw[field]
-        directdraw_timings.append({'name': field, 'opengl': before, 'vulkan': after,
-                                  'opengl_over_vulkan': round(before / after, 3) if after else None})
+        directdraw_timings.append({'name': field, 'software_gl': before, 'zink': after,
+                                  'software_gl_over_zink': round(before / after, 3) if after else None})
     phases = []
     before_phases = baseline['repair_io']['windows']['phases']
     after_phases = candidate['repair_io']['windows']['phases']
@@ -171,19 +174,20 @@ for engine in ('box64', 'fex'):
     for before, after in zip(before_phases, after_phases):
         assert (before['name'], before['operations'], before['bytes']) == (after['name'], after['operations'], after['bytes'])
         phases.append({'name': before['name'], 'operations': before['operations'], 'bytes': before['bytes'],
-                       'compatibility_us': before['qpc_us'], 'vulkan_us': after['qpc_us']})
+                       'compatibility_us': before['qpc_us'], 'zink_us': after['qpc_us']})
     rows.append({'engine': engine, 'filtering': 'syscall_filter_in_both_arms',
                  'directdraw_workload': baseline['directdraw_workload'],
+                 'opengl_driver_inventory': candidate['opengl_driver_inventory'],
                  'directdraw_timings_ms': directdraw_timings,
                  'compatibility_adapter_vendor_id': before_draw['adapter_vendor_id'],
-                 'vulkan_adapter_vendor_id': after_draw['adapter_vendor_id'],
+                 'zink_adapter_vendor_id': after_draw['adapter_vendor_id'],
                  'file_io_control_phases': phases,
                  'compatibility_native_io_ms': baseline['repair_io']['native']['elapsed_ms'],
-                 'vulkan_native_io_ms': candidate['repair_io']['native']['elapsed_ms'],
+                 'zink_native_io_ms': candidate['repair_io']['native']['elapsed_ms'],
                  'compatibility_windows_io_ms': baseline['repair_io']['windows']['elapsed_ms'],
-                 'vulkan_windows_io_ms': candidate['repair_io']['windows']['elapsed_ms']})
+                 'zink_windows_io_ms': candidate['repair_io']['windows']['elapsed_ms']})
 result = {'format': 1, 'cases': rows, 'speed_threshold': None, 'online_repair_verified': False,
-          'interpretation': 'One paired DirectDraw sample per engine, with filtering active in both arms. CI uses software GL/Vulkan, not the phone GPU; file I/O is a separate control. Host caches/order may differ. No phone repair throughput guarantee.'}
+          'interpretation': 'One paired Wine DirectDraw OpenGL sample per engine (software GL versus Zink), with filtering active in both arms. Zink uses CI software Vulkan, not the phone GPU; file I/O is a separate control. Host caches/order may differ. No phone repair throughput guarantee.'}
 Path('out/playonline-test/logs/playonline-directdraw-comparison.json').write_text(json.dumps(result, indent=2))
-print('PASS: filtered updater DirectDraw compatibility/Vulkan qualification for both engines; comparison', json.dumps(result, sort_keys=True))
+print('PASS: filtered updater DirectDraw software OpenGL/Zink qualification for both engines; comparison', json.dumps(result, sort_keys=True))
 PYPAIR

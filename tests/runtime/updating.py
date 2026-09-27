@@ -67,20 +67,32 @@ def configure_updater_runtime(request):
     configure_filter(request)
     # Only the paired renderer matrix opts in. The existing software COM and
     # online-network cases keep their established requests and preparation.
-    backend = os.environ.get('LSB_TEST_UPDATER_VULKAN_DDRAW')
+    backend = os.environ.get('LSB_TEST_UPDATER_HARDWARE_GRAPHICS')
     if backend is not None:
         assert backend in ('0', '1'), 'Unknown updater DirectDraw matrix arm'
-        request['updater_vulkan_ddraw'] = backend == '1'
+        request['updater_hardware_graphics'] = backend == '1'
 
 
-def assert_directdraw(report, backend):
+def assert_directdraw(report, implementation):
     """Require the fixed PE32 pixel workload and the observed Wine backend."""
-    expected = 'vulkan' if backend == 'vulkan' else 'compatibility'
     assert isinstance(report, dict), 'Production DirectDraw report is absent'
-    assert report.get('requested') == report.get('active') == expected, report
+    assert implementation in ('compatibility', 'zink')
+    assert report.get('requested') == ('hardware' if implementation == 'zink' else 'compatibility'), report
+    assert report.get('active') == implementation, report
     assert report.get('state') == 'verified', report
+    if implementation == 'zink':
+        opengl = report.get('opengl', {})
+        assert opengl.get('state') == 'verified' and opengl.get('active') == 'zink', opengl
+        assert opengl.get('directdraw_verified') is True, opengl
+        native = opengl.get('probe', {})
+        assert native.get('state') == 'completed' and native.get('exit_code') == 0, native
+        assert native.get('renderer') == 'zink' and native.get('direct') is True, native
+        for name in ('accelerated', 'cpu_renderer'):
+            assert type(native.get(name)) is bool, native
+        for name in ('vendor_id', 'device_id'):
+            assert type(native.get(name)) is int and 0 <= native[name] <= 0xffffffff, native
     probe = report.get('probe', {})
-    assert probe.get('backend') == backend and probe.get('exit_code') == 0, probe
+    assert probe.get('backend') == 'opengl' and probe.get('exit_code') == 0, probe
     assert probe.get('format') == 1 and probe.get('bits') == 32 and probe.get('passed') is True, probe
     assert probe.get('stage') == 'completed' and probe.get('hresult') == 0, probe
     for key in ('frames', 'expected_frames', 'colorfills', 'uploads', 'blits', 'ffp_frames', 'presents'):
@@ -211,8 +223,8 @@ def main():
                 assert not (SESSION / 'playonline-process.json').exists(), 'viewer started despite a missing dependency'
                 assert 'process' not in report and 'viewer_exit_code' not in report, report
             else:
-                if os.environ.get('LSB_TEST_UPDATER_VULKAN_DDRAW') == '1':
-                    assert_directdraw(report.get('directdraw_graphics'), 'vulkan')
+                if os.environ.get('LSB_TEST_UPDATER_HARDWARE_GRAPHICS') == '1':
+                    assert_directdraw(report.get('directdraw_graphics'), 'zink')
                 assert attempts[0]['exit_code'] == 0 and all(row['ok'] and row['win32_error'] == 0 for row in dependencies), attempts
                 native = report['process']
                 assert native['format'] == 2 and native['bits'] == 32 and native['phase'] == 'exited', native

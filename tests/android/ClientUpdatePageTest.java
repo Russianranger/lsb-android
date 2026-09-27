@@ -214,7 +214,7 @@ public class ClientUpdatePageTest {
         CheckBox graphics=(CheckBox)text(update,"Hardware PlayOnline graphics");
         assertNotNull(graphics);assertTrue(graphics.isChecked());assertTrue(graphics.isEnabled());assertUnchanged();
         graphics.performClick();
-        Map<String,Object> expected=new HashMap<>(runtimeSettings);expected.put("updater_vulkan_ddraw",false);
+        Map<String,Object> expected=new HashMap<>(runtimeSettings);expected.put("updater_hardware_graphics",false);
         assertEquals(expected,context.getSharedPreferences("runtime",0).getAll());
         update=card("clientUpdateCard","Client update · PlayOnline");
         assertFalse(((CheckBox)text(update,"Hardware PlayOnline graphics")).isChecked());
