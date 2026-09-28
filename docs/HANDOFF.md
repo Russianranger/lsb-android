@@ -28,12 +28,56 @@ preserves the build's client setting, and rejects swallowed connection or bulk
 SQL errors. New tests include real MariaDB with the exact selected upstream
 dbtool revision and reduced fixture SQL for all three database modes.
 
-Validation and APK delivery are pending CI. The development environment is
-currently disconnected (exec-server websocket failure); no shell or signing
-tools are exposed. Code changes can be pushed and tested through GitHub.
-Do not deliver the disposable-certificate CI APK as an update. Once the workspace
-is restored, sign the qualified 0.5.47 / code 63 pair with the retained preview
-key and save/deliver as usual. See [TESTING-0.5.47.md](TESTING-0.5.47.md).
+Qualified application/backend source:
+`ffb4b75d676df0780bd1b38f863a556e56a98732`. In
+[baseline run 36368991590](https://github.com/Russianranger/lsb-android/actions/runs/36368991590),
+verify job `108761153420` passed all 108 Android tests, 192 runtime Python tests,
+68 server Python tests and both APK compilation/packaging/verification checks.
+Server deployment job `108761080219` passed real MariaDB preservation, fresh
+setup, imported SQL replacement, mandatory staging checks, tamper rejection,
+stale player-data rejection, activation/rollback and existing session-recovery
+tests. Those new cases run the exact selected upstream dbtool implementation
+against reduced fixture SQL, not a mocked database tool.
+
+Native [source run 36368991593](https://github.com/Russianranger/lsb-android/actions/runs/36368991593),
+job `108761080188`, also passed: all four selected-source ARM64 executables
+compiled, started and bound allocation to jemalloc. Client/Box64/FEX source and
+assets were not changed. Their broad baseline reruns were still running at
+delivery preparation; do not describe the entire baseline as complete.
+
+The new real integration test found and fixed a genuine upstream CLI transport
+problem: an explicit mysql host/port selected TCP even with MYSQL_UNIX_PORT set.
+The wrapper now removes conflicting transport options and explicitly forces the
+private staging socket for mysql/mariadb and dump commands. The failed attempt
+left the active server/database intact. The qualified rerun passed all modes.
+
+**Signed APK delivery remains blocked by the disconnected development workspace.**
+The exec-server websocket failed; no shell, filesystem execution, image viewer or
+signing tools are exposed in this turn. No 0.5.47 device update has been signed or
+delivered. Do not install/deliver the disposable-certificate CI APK as an update.
+
+Exact-head CI artifacts, version 0.5.47 / code 63:
+
+- Normal build artifact `10948482766`, archive SHA-256
+  `a02c57ce28814690a60950eb2c40a3570ebd5c8b2ab62272508760b795938aa8`.
+  CI APK SHA-256 `1bbecfb2255edbdac7eb601d40349bdbfd05e88e126c5108a07bd97a51a3cda4`.
+- Restore-Test artifact `10948886459`, archive SHA-256
+  `6b3163516a47e89d7ead20fdfd993ec06f1d2ec122ac9b5409cfd919ca899401`.
+  CI APK SHA-256 `ff647dd4ec44677f64035c4a2ee86fbb2aea7b869c28b077490097e98de82886`.
+- UI previews `10949045474`, archive SHA-256
+  `5c84d96d625344b69974a5f5f0672b5a0106f160b06cd22b91f067721e79018e`.
+  Includes Build workspace wide/narrow images. They are generated but visual
+  inspection is pending because the workspace/image viewer is unavailable.
+- APK verification tools `10948976147`, archive SHA-256
+  `4523227968e68584f5a89a3dbbb1245a90d082573a532ad1cf68ac19166e35f2`.
+
+Once the workspace is available, download these exact artifacts, verify archive
+and CI APK hashes, inspect the Build previews, then sign both APKs with the
+retained preview key. Verify certificate SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`,
+package IDs, version/code, 16 KiB alignment and nonsignature payload equality.
+Save and deliver both signed APKs. There is no need to rerun the already passed
+source or database compilation gates. See [TESTING-0.5.47.md](TESTING-0.5.47.md).
 
 # 0.5.46: live server operation logs
 
