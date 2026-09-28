@@ -35,12 +35,55 @@ SQL, the signed legacy parent shape and counter gaps, a reproduced pre-fix forei
 key error, staged preservation, and incompatible-schema rejection. These tests use
 synthetic rows; no owner database contents are committed or uploaded to CI.
 
-All 82 server Python tests pass locally. Real MariaDB qualification and
-0.5.49 / code 65 APK signing are pending. Do not claim delivery
-until the gate and signature results are recorded. Install the matching Restore-Test
-update, retain the completed build, then repeat **Prepare database and stage this
-build** with **Keep current player data**. No new fetch, compilation or adoption is
-needed. Check the new staged pair before deployment. See
+Qualified source commit: `22a8ebb1d290e314d9a4342e3bfc3daff5563d90`.
+All 82 server Python tests pass locally. Exact-head
+[baseline run 36470020120](https://github.com/Russianranger/lsb-android/actions/runs/36470020120)
+passed APK verify job `109089764774`: 108 Android tests, 192 runtime Python tests,
+82 server Python tests, both APK builds and 67-entry variant payload equality.
+Real ARM64 MariaDB job `109089618162` passed the pre-fix error 1005 / errno 150
+reproduction with exact upstream SQL, isolated copy-current/import repair,
+account/password/character/blob/counter preservation, real FK enforcement and
+cascade, app account creation at the preserved counter, repeated preparation,
+and fail-closed cases. Existing staging, deployment, rollback and session-restore
+gates also passed. These tests use synthetic data; the phone's actual staging
+retry remains for the owner. Presentation and Windows launcher jobs passed.
+Unchanged PlayOnline/Box64/FEX runtime jobs were still running at qualification;
+do not claim the whole baseline is complete.
+
+**Signed 0.5.49 / code 65 APKs delivered on 2026-09-28.** Both passed v2/v3
+signature verification with the retained preview certificate, expected package
+IDs/version/code, 16 KiB alignment, equality of all 69 nonsignature CI payload
+entries, and equality of all 25 server/runtime source assets. The two variants
+share 67 identical payload entries. Each is 18,527,574 bytes.
+
+- `LSB-Android-Restore-Test-0.5.49.apk` SHA-256:
+  `ce33d46bd606214b27c4d28b12bb0c2430c2f1aea902271269836dd35097f7aa`.
+- `LSB-Android-0.5.49.apk` SHA-256:
+  `d0ba637f864971558e6cb1514041363b56853f9aef4fad78c075bb8ccf783a50`.
+- Certificate SHA-256:
+  `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+
+CI artifacts (archive hashes verified before signing): normal `10991253276`,
+SHA-256 `9e1e477506b39c621b847b342848397b42e6d196e329e54f2f8058f1f499c996`;
+Restore-Test `10991248335`, SHA-256
+`fa7b174449e491308e61db7fe1fb3f787c2b4a8a50f8e1225549540ec7d5ff3a`.
+The unsigned-content provenance is additionally tied to the CI-logged APK hashes
+`2927b3bb6d7b9bec170d8f2a483b087f1665d4bef02ade8ae0b38d7580ced41b`
+(normal) and `08f691429737005dbb3b9d2bf0ed780f2972736f2a54bf34975c5690b54d729a`
+(Restore-Test), checked before signing. The workspace retains
+`verification/delivery-verification-0.5.49.json`, complete gate logs, signature
+and package reports, and save receipts in `verification/library-delivery-0.5.49.json`.
+
+Both APKs were saved successfully, with local metadata applied. Save identities:
+- `LSB-Android-Restore-Test-0.5.49.apk`: `libfile_26c7e1786b508191879c7a61b26a266f` /
+  `file_00000000058481f58fad73b96882e51d`.
+- `LSB-Android-0.5.49.apk`: `libfile_3c4f6f50d5e481919c3d1bdfe68f973c` /
+  `file_0000000058b081fba9deaaaeb2bf6cc6`.
+
+Install the matching Restore-Test update over the existing app, retain the
+completed build, then repeat step 3 **Prepare database and stage this build**
+with **Keep current player data**. No new fetch, compilation or adoption is
+needed. Run **Check staged build and database** before deployment. See
 [TESTING-0.5.49.md](TESTING-0.5.49.md).
 
 # 0.5.48: recover successful builds rejected for ASIO cache symlinks
