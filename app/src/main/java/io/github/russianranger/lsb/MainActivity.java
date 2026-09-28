@@ -61,7 +61,7 @@ public final class MainActivity extends Activity {
                 if(runtimeStatus!=null)runtimeStatus.setText(ClientRuntime.get(MainActivity.this).status);
                 if(serverStatus!=null)serverStatus.setText(ServerRuntime.get(MainActivity.this).status);
                 if(serverStartup!=null)serverStartup.setText(ServerRuntime.get(MainActivity.this).startupLog());
-                if(tab.equals("Server")&&serverAliveUi!=ServerRuntime.get(MainActivity.this).alive())draw();
+                if((tab.equals("Server")||tab.equals("Build"))&&serverAliveUi!=ServerRuntime.get(MainActivity.this).alive())draw();
             }
             if (generation != WorkService.generation) { generation = WorkService.generation; draw(); }
             renderServerLogs();requestServerLogs();
@@ -146,7 +146,7 @@ public final class MainActivity extends Activity {
         runtimeStatus=null;serverStatus=null;serverStartup=null;serverLogBody=null;serverLogScroll=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;clearServerPasswords();serverPassword=null;serverPasswordConfirm=null;
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(12), dp(6), dp(12), dp(6));
         FrameLayout hero=new FrameLayout(this);hero.setBackground(background(Color.rgb(15,35,58)));
-        try(InputStream in=getAssets().open("art/"+(tab.equals("Server")?"server-background.png":"client-background.png"))){ImageView art=new ImageView(this);art.setImageDrawable(android.graphics.drawable.Drawable.createFromStream(in,null));art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));}catch(IOException ignored){}
+        try(InputStream in=getAssets().open("art/"+((tab.equals("Server")||tab.equals("Build"))?"server-background.png":"client-background.png"))){ImageView art=new ImageView(this);art.setImageDrawable(android.graphics.drawable.Drawable.createFromStream(in,null));art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));}catch(IOException ignored){}
         View shade=new View(this);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xe5091526,0x66091526,0x11091526}));hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
         boolean compact=getResources().getConfiguration().screenHeightDp<500;
         LinearLayout title=column();title.setPadding(dp(20),dp(compact?10:12),dp(16),dp(8));
@@ -154,8 +154,8 @@ public final class MainActivity extends Activity {
         TextView subtitle=label("A world of adventure, on your device",compact?11:13,Color.rgb(175,219,255));subtitle.setPadding(0,dp(3),0,0);title.addView(subtitle);
         hero.addView(title);page.addView(hero,new LinearLayout.LayoutParams(-1,dp(compact?72:100)));
         page.addView(label((getPackageName().endsWith(".restoretest")?"LSB Restore Test · separate installation":"Client & server launcher")+" · "+appVersion(this),11,MUTED));
-        LinearLayout nav = new LinearLayout(this);nav.setOrientation(LinearLayout.VERTICAL);LinearLayout navRow=null;int navIndex=0;int navColumns=getResources().getConfiguration().screenWidthDp>=600?6:3;
-        for (String name : new String[]{"Client", "Controller", "Server", "Runtime", "Profile", "Diagnostics"}) {
+        LinearLayout nav = new LinearLayout(this);nav.setOrientation(LinearLayout.VERTICAL);LinearLayout navRow=null;int navIndex=0;int navColumns=getResources().getConfiguration().screenWidthDp>=600?7:4;
+        for (String name : new String[]{"Client", "Controller", "Server", "Build", "Runtime", "Profile", "Diagnostics"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12);b.setTypeface(Typeface.create("serif",Typeface.BOLD)); b.setPadding(dp(4),dp(8),dp(4),dp(8)); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));b.setSelected(name.equals(tab));
             b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x446ed5e8),new FantasyTiles.Panel(getResources().getDisplayMetrics().density,name.equals(tab)),null));
             if(navIndex++%navColumns==0){navRow=new LinearLayout(this);nav.addView(navRow);}LinearLayout.LayoutParams navCell=new LinearLayout.LayoutParams(0,-2,1);navCell.setMargins(dp(3),dp(3),dp(3),dp(3));navRow.addView(b,navCell);
@@ -174,7 +174,7 @@ public final class MainActivity extends Activity {
         }
         if(SessionBackup.active){content.addView(label("Complete session transfer in progress. Keep LSB open while files and settings are verified.",15,TEXT));return;}
         final String currentTab=tab;tiles=new FantasyTiles(this,expandedSections.getOrDefault(tab,""),value->expandedSections.put(currentTab,value));
-        try { switch (tab) { case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Controller": controllerPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
+        try { switch (tab) { case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Build": buildPage(); break; case "Controller": controllerPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
         catch (Exception e) { content.addView(label("Cannot read app state: " + e.getMessage(), 16, TEXT)); }
         content.addView(tiles);
         if(WorkService.busy)disableControls(content);
@@ -534,28 +534,12 @@ public final class MainActivity extends Activity {
         serverStartup=label(sr.startupLog(),12,MUTED);live.addView(serverStartup);
         JSONObject active=sr.deployment();
         if(active.has("generation"))live.addView(label("Last saved count · "+active.optInt("accounts")+" accounts · "+active.optInt("characters")+" characters\nExpected client: "+active.optString("expected_client"),15,TEXT));
-        else live.addView(label("Start with the server ZIP and database backup that match your working client and xiloader. Install the server runtime, import both files, then deploy that revision.",15,TEXT));
+        else live.addView(label("Open the Build tab to fetch or import source, compile with jemalloc, prepare a database, and check the exact build before deploying.",15,TEXT));
         button(live,"Start managed server",()->startForegroundService(new Intent(this,ServerService.class))).setEnabled(sr.installed()&&active.has("generation")&&!running);
         button(live,"Stop managed server",()->startForegroundService(new Intent(this,ServerService.class).setAction("stop"))).setEnabled(running);
         live.addView(label("Wait for Ready before connecting: mob scripts can take several minutes to load after login opens. Stop any server in Termux or the other LSB app first; they share login/map ports. Then connect to 127.0.0.1. Stop the client and server before backups or maintenance.",13,MUTED));
         supportTile();
-        LinearLayout existing=card("Import your working server");
-        button(existing,sr.toolsCurrent()?"Server runtime ready":sr.installed()?"Update server runtime and build tools":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(idle&&!sr.toolsCurrent());
-        if(sr.installed()&&!sr.toolsCurrent())existing.addView(label("Update the server runtime to add libraries required by your imported server. Your imported server, SQL backup and deployed databases are retained.",13,MUTED));
-        button(existing,"Import existing server folder ZIP",()->pick("source")).setEnabled(idle);
-        File report=new File(storage(this),"server/current/source-report.txt");
-        if(report.exists())existing.addView(label(FilesEx.read(report,8192),13,MUTED));
-        else existing.addView(label("Choose the complete matching server folder, including settings, scripts, sql, tools, modules, meshes and source. Compiled Linux ARM64 binaries can be reused after checks.",13,MUTED));
-        button(existing,"Import existing database (.sql / .sql.gz)",()->pick("server-sql")).setEnabled(idle);
-        existing.addView(label(sr.hasDatabaseImport()?"SQL backup staged. Your active database has not changed.":"A server ZIP alone usually does not contain live accounts or characters. Import a full SQL database dump as well; raw MariaDB data folders are not supported.",13,MUTED));
-        EditText database=loginField(existing,"Original database name",getSharedPreferences("server",0).getString("database","xidb"),android.text.InputType.TYPE_CLASS_TEXT);database.setContentDescription("Server database name");
-        CheckBox local=new CheckBox(this);local.setText("Configure all zones for one local map process");local.setTextColor(TEXT);local.setChecked(getSharedPreferences("server",0).getBoolean("local_zones",true));existing.addView(local);
-        Runnable save=()->{String name=database.getText().toString().trim();if(!name.matches("[A-Za-z][A-Za-z0-9_]{0,47}"))throw new IllegalArgumentException("Enter a database name using letters, digits and underscores");getSharedPreferences("server",0).edit().putString("database",name).putBoolean("local_zones",local.isChecked()).apply();};
-        button(existing,"Deploy matching server + database",()->{save.run();run("Deploying existing server",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",false,p));}).setEnabled(sr.toolsCurrent()&&report.exists()&&sr.hasDatabaseImport()&&idle);
-        button(existing,"Build imported revision and deploy",()->{save.run();run("Building existing server revision",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",true,p));}).setEnabled(sr.toolsCurrent()&&report.exists()&&sr.hasDatabaseImport()&&idle);
-        existing.addView(label("Try the matching compiled server first. If its binaries need rebuilding, build this same imported revision. Deployment stages an independent database and retains the previous server/database pair.",13,MUTED));
-        button(existing,"Export Termux packaging helper",()->create("server-helper","export-existing-lsb.py"));
-        existing.addView(label("If you still need the SQL dump, run the helper inside your existing server's Linux distro: python3 export-existing-lsb.py /path/to/server. It creates a server ZIP and SQL.gz without updating them.",13,MUTED));
+        button(live,"Open Build tab",()->{tab="Build";draw();},true);
         LinearLayout accounts=card("Create account");
         accounts.addView(label("Create a normal player account in the deployed database. Existing accounts and characters are preserved. Stop the client and server first.",15,TEXT));
         EditText username=loginField(accounts,"Account name","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);username.setContentDescription("New server account name");
@@ -572,35 +556,146 @@ public final class MainActivity extends Activity {
             });
         }).setEnabled(sr.toolsCurrent()&&active.has("generation")&&idle);
         if(!active.has("generation"))accounts.addView(label("Deploy your matching server and database first.",13,MUTED));
-        else if(!sr.toolsCurrent())accounts.addView(label("Update server runtime and build tools under Import your working server first.",13,MUTED));
+        else if(!sr.toolsCurrent())accounts.addView(label("Open Build → Server build tools to update the runtime first.",13,MUTED));
         LinearLayout recovery=card("Database backup & restore");
         recovery.addView(label("Full database backups include accounts, characters and world data. Keep an exported copy outside the app before making changes.",15,TEXT));
         button(recovery,"Export full database backup",()->create("server-db","lsb-database.sql.gz")).setEnabled(active.has("generation")&&idle);
-        button(recovery,"Import database backup (.sql / .sql.gz)",()->pick("server-sql")).setEnabled(idle);
-        recovery.addView(label(sr.hasDatabaseImport()?"Imported SQL is staged and ready to restore.":"Import an SQL or SQL.gz backup to enable restore.",13,MUTED));
-        button(recovery,"Restore imported database",()->confirm("Restore imported database","This stages the imported backup with the currently deployed server files. It does not fetch source or run database updates. Accounts and character progress will become those in the backup; the current server/database pair remains available for rollback.",()->run("Restoring database backup",(ctx,p)->ServerRuntime.get(ctx).perform("restore-db",false,p)))).setEnabled(sr.installed()&&active.has("generation")&&sr.hasDatabaseImport()&&idle);
+        button(recovery,"Prepare a replacement database on Build",()->{tab="Build";draw();},true);
         button(recovery,"Restore previous server + database",()->confirm("Restore previous deployment","This switches both server files and player data to the retained previous generation. Progress made after that snapshot remains in the other generation.",()->run("Switching server generation",(ctx,p)->ServerRuntime.get(ctx).perform("rollback",false,p)))).setEnabled(active.has("generation")&&idle);
-        LinearLayout source=card("Source builds & updates");
-        source.addView(label("Choose a source revision and check that it builds with jemalloc. The build check saves its results for support and keeps your current server and database in place.",15,TEXT));
-        EditText repo=loginField(source,"GitHub repository",getSharedPreferences("server",0).getString("repository","https://github.com/LandSandBoat/server"),android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        EditText ref=loginField(source,"Branch, tag or exact commit",getSharedPreferences("server",0).getString("ref","base"),android.text.InputType.TYPE_CLASS_TEXT);
-        button(source,"Fetch selected source revision",()->{String repository=repo.getText().toString().trim(),revision=ref.getText().toString().trim();getSharedPreferences("server",0).edit().putString("repository",repository).putString("ref",revision).apply();run("Fetching source snapshot",(ctx,p)->SourceImport.download(new File(storage(ctx),"server"),repository,revision,p));}).setEnabled(idle);
-        button(source,"Inspect selected source",()->run("Inspecting source",(ctx,p)->ServerRuntime.get(ctx).perform("inspect",false,p))).setEnabled(sr.installed()&&report.exists()&&idle);
-        button(source,"Build selected source with jemalloc",()->run("Building selected source with jemalloc",(ctx,p)->ServerRuntime.get(ctx).perform("build-source",true,p))).setEnabled(sr.toolsCurrent()&&report.exists()&&idle&&!WorkService.busy);
-        source.addView(label("The build check needs only the selected source and server build tools. Stop the client and server first; compilation can take a while.",13,MUTED));
-        button(source,"Build and apply source + database update",()->confirm("Stage a server update","First verify the existing server deployment works. This builds the selected source and runs its database migrations on a separate copy. Your current server/database pair stays available for rollback. Client and loader versions must be compatible with the selected revision.",()->run("Staging server and database update",(ctx,p)->ServerRuntime.get(ctx).perform("update",true,p)))).setEnabled(sr.toolsCurrent()&&active.has("generation")&&idle);
-        source.addView(label("Fetching selects a snapshot only. Restoring an imported database always uses the currently deployed server, even if a newer source snapshot has been selected here.",13,MUTED));
         LinearLayout diagnostics=card("Server logs");
         button(diagnostics,"View server operation log",this::showLiveServerLog,true);
         button(diagnostics,"Probe saved server address",()->run("Checking server TCP ports",(ctx,p)->{String address=store(ctx).config().host;StringBuilder result=new StringBuilder("TCP reachability only: "+address+"\n");for(int port:new int[]{54231,54230,54001})try(Socket socket=new Socket()){socket.connect(new InetSocketAddress(address,port),2500);result.append(port).append(": reachable\n");}catch(IOException e){result.append(port).append(": unavailable\n");}FilesEx.text(new File(ctx.getFilesDir(),"server-probe.txt"),result.toString());return result.toString();}));
     }
+    private static JSONObject object(JSONObject parent,String name){JSONObject child=parent.optJSONObject(name);return child==null?new JSONObject():child;}
+    private static String sourceIdentity(JSONObject source){
+        if(source.length()==0)return "Source identity is unavailable. Fetch or import source to record its identity.";
+        StringBuilder text=new StringBuilder();
+        String repository=source.optString("repository"),ref=source.optString("ref"),commit=source.optString("commit"),origin=source.optString("origin"),snapshot=source.optString("snapshot_id");
+        if(!repository.isEmpty())text.append("Repository: ").append(repository).append('\n');
+        if(!ref.isEmpty())text.append("Requested ref: ").append(ref).append('\n');
+        if(!commit.isEmpty())text.append("Exact commit: ").append(commit).append('\n');
+        else text.append("Exact commit: unverified ZIP / legacy import\n");
+        if(!origin.isEmpty())text.append("Origin: ").append(origin).append('\n');
+        if(!snapshot.isEmpty())text.append("Snapshot: ").append(snapshot).append('\n');
+        String client=source.optString("expected_client");if(!client.isEmpty())text.append("Expected client: ").append(client).append('\n');
+        return text.toString().trim();
+    }
+    private static boolean sameSource(JSONObject first,JSONObject second){
+        String a=first.optString("snapshot_id"),b=second.optString("snapshot_id");
+        return !a.isEmpty()&&!b.isEmpty()&&a.equals(b);
+    }
+    private static String databaseModeLabel(String mode){
+        switch(mode){case "fresh":return "Fresh database from this build's SQL";case "import":return "Imported SQL backup, updated for this build";case "copy-current":return "Copy of current accounts and characters, updated for this build";default:return "Database choice not recorded";}
+    }
+    private static String receiptTime(JSONObject receipt,String key){
+        double seconds=receipt.optDouble(key,0);if(seconds<=0)return "not recorded";
+        return new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss z",Locale.getDefault()).format(new Date((long)(seconds*1000)));
+    }
+    private void addLiveServerLog(LinearLayout panel){
+        panel.addView(label("Updates automatically. Scroll up to read earlier output; return to the bottom to follow new lines.",13,MUTED));
+        serverLogBody=label("Reading server output…",12,TEXT);serverLogBody.setTypeface(Typeface.MONOSPACE);
+        serverLogScroll=new ScrollView(this);serverLogScroll.addView(serverLogBody);panel.addView(serverLogScroll,new LinearLayout.LayoutParams(-1,dp(260)));
+        trackServerLogTouches(serverLogScroll,serverLogBody);
+    }
+    private void buildPage() throws Exception {
+        ServerRuntime sr=ServerRuntime.get(this);serverAliveUi=sr.alive();boolean idle=!sr.alive()&&!ClientRuntime.get(this).alive();
+        JSONObject workspace=sr.buildState(),selected=object(workspace,"selected_source"),build=object(workspace,"build"),staged=object(workspace,"staged"),deployed=object(workspace,"deployed"),sql=object(workspace,"database_import");
+        JSONObject builtSource=object(build,"selected_source"),stagedSource=object(staged,"selected_source");
+        String buildId=build.optString("build_id"),stagedBuildId=staged.optString("build_id"),stagedId=staged.optString("generation");
+        boolean built="passed".equals(build.optString("state"))&&!buildId.isEmpty()&&"jemalloc".equals(build.optString("allocator"));
+        boolean hasStaged=!stagedId.isEmpty()&&!stagedBuildId.isEmpty();
+        File report=new File(storage(this),"server/current/source-report.txt");
+        LinearLayout summary=featuredCard("Build workspace");
+        summary.addView(label("Fetch → Build with jemalloc → Prepare database → Check staging → Deploy",15,TEXT));
+        summary.addView(label("Each step names its source or build. Fetching, compiling and staging keep your current server and database in place. Stop the client and server before changing this workspace.",13,MUTED));
+        if(deployed.has("generation")){
+            summary.addView(label("CURRENT DEPLOYMENT\nGeneration: "+deployed.optString("generation")+"\nBuild: "+deployed.optString("build_id","legacy deployment")+"\nExpected client: "+deployed.optString("expected_client","unknown")+"\nLast saved count: "+deployed.optInt("accounts")+" accounts · "+deployed.optInt("characters")+" characters",13,TEXT));
+            JSONObject activeSource=object(deployed,"selected_source");if(activeSource.length()>0)summary.addView(label(sourceIdentity(activeSource),12,MUTED));
+        }else summary.addView(label("Current deployment: none",14,MUTED));
+        LinearLayout live=featuredCard("Live build progress");serverStatus=label(sr.status,14,ACCENT);live.addView(serverStatus);addLiveServerLog(live);
+        LinearLayout tools=featuredCard("Server build tools");
+        button(tools,sr.toolsCurrent()?"Server runtime ready":sr.installed()?"Update server runtime and build tools":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(idle&&!sr.toolsCurrent());
+        if(!sr.toolsCurrent())tools.addView(label("Install or update the ARM64 compiler, MariaDB and jemalloc before building. Existing source and deployed databases are retained.",13,MUTED));
+        LinearLayout source=featuredCard("1 · Fetch or import source");
+        source.addView(label("FETCHED SOURCE\n"+sourceIdentity(selected),13,TEXT));
+        EditText repo=loginField(source,"GitHub repository",getSharedPreferences("server",0).getString("repository","https://github.com/LandSandBoat/server"),android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);repo.setContentDescription("Source GitHub repository");
+        EditText ref=loginField(source,"Branch, tag or exact commit",getSharedPreferences("server",0).getString("ref","base"),android.text.InputType.TYPE_CLASS_TEXT);ref.setContentDescription("Source branch tag or commit");
+        source.addView(label("Editing these fields does not change the fetched source until you tap Fetch.",12,MUTED));
+        button(source,"Fetch this source",()->{String repository=repo.getText().toString().trim(),revision=ref.getText().toString().trim();getSharedPreferences("server",0).edit().putString("repository",repository).putString("ref",revision).apply();run("Fetching source snapshot",(ctx,p)->SourceImport.download(new File(storage(ctx),"server"),repository,revision,p));}).setEnabled(idle);
+        button(source,"Import source / existing server ZIP",()->pick("source")).setEnabled(idle);
+        if(report.exists())button(source,"View fetched source report",()->{try{showText("Fetched source report",FilesEx.read(report,8192));}catch(Exception e){error(e);}},true);
+        LinearLayout compile=featuredCard("2 · Build this source with jemalloc");
+        compile.addView(label("Next build uses the fetched source shown in step 1. jemalloc is required and checked for all four server programs.",13,MUTED));
+        compile.addView(label("Build workers",14,TEXT));
+        Spinner workers=new Spinner(this);String[] workerLabels=new String[16];for(int i=0;i<workerLabels.length;i++)workerLabels[i]="j"+(i+1)+" · "+(i+1)+" worker"+(i==0?"":"s");
+        workers.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,workerLabels));workers.setContentDescription("Build worker count");
+        workers.setSelection(Math.max(1,Math.min(16,getSharedPreferences("server",0).getInt("jobs",2)))-1);compile.addView(workers);
+        workers.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> parent,View view,int position,long id){getSharedPreferences("server",0).edit().putInt("jobs",position+1).apply();}public void onNothingSelected(AdapterView<?> parent){}});
+        compile.addView(label("Default j2. More workers use more memory and may heat the device; j1 uses the least memory.",12,MUTED));
+        button(compile,"Build fetched source with jemalloc",()->{getSharedPreferences("server",0).edit().putInt("jobs",workers.getSelectedItemPosition()+1).apply();run("Building fetched source with jemalloc",(ctx,p)->ServerRuntime.get(ctx).performBuild("build-source","","","",p));}).setEnabled(sr.toolsCurrent()&&report.exists()&&idle);
+        if(!built&&buildId.isEmpty()&&"passed".equals(build.optString("state"))&&"jemalloc".equals(build.optString("allocator"))){
+            compile.addView(label("A successful build from the previous app version is available. Verify its saved binaries and assign a build ID to reuse it without compiling again.",13,ACCENT));
+            button(compile,"Verify and reuse previous successful build",()->run("Verifying previous jemalloc build",(ctx,p)->ServerRuntime.get(ctx).performBuild("adopt-build","","","",p))).setEnabled(sr.toolsCurrent()&&idle);
+        }
+        if(built){
+            compile.addView(label("COMPLETED BUILD\nBuild ID: "+buildId+"\nAllocator: jemalloc · Workers: j"+build.optInt("jobs",2)+"\nCompleted: "+receiptTime(build,"finished_at")+"\n"+sourceIdentity(builtSource),13,TEXT));
+            if(!sameSource(selected,builtSource))compile.addView(label("This completed build is from a different or unverified source snapshot. Step 3 stages the build ID above, not the newly fetched source.",14,ACCENT));
+        }else compile.addView(label(buildId.isEmpty()?"No identified successful build yet. Build the fetched source or verify an available previous build before preparing its database.":"Latest build status: "+build.optString("state","unknown")+". Finish a successful jemalloc build before staging.",13,MUTED));
+        LinearLayout database=featuredCard("3 · Prepare database and stage build");
+        database.addView(label(built?"Build to stage: "+buildId+"\n"+sourceIdentity(builtSource):"Build to stage: none",13,TEXT));
+        button(database,"Import database backup (.sql / .sql.gz)",()->pick("server-sql")).setEnabled(idle);
+        database.addView(label(sql.optBoolean("available")?"Imported SQL: "+sql.optString("label","selected backup")+" · "+sql.optLong("bytes")/1048576+" MiB\nSHA-256: "+sql.optString("sha256","not recorded"):"Imported SQL: none. A server source ZIP does not include live accounts or characters.",13,MUTED));
+        EditText databaseName=loginField(database,"Original database name",getSharedPreferences("server",0).getString("database","xidb"),android.text.InputType.TYPE_CLASS_TEXT);databaseName.setContentDescription("Server database name");
+        CheckBox local=new CheckBox(this);local.setText("Configure all zones for one local map process");local.setTextColor(TEXT);local.setChecked(getSharedPreferences("server",0).getBoolean("local_zones",true));database.addView(local);
+        Runnable saveDatabase=()->{String name=databaseName.getText().toString().trim();if(!name.matches("[A-Za-z][A-Za-z0-9_]{0,47}"))throw new IllegalArgumentException("Enter a database name using letters, digits and underscores");getSharedPreferences("server",0).edit().putString("database",name).putBoolean("local_zones",local.isChecked()).apply();};
+        final String[] modes={"copy-current","import","fresh"};
+        Spinner mode=new Spinner(this);mode.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Keep current player data · copy and update","Replace player data · use imported SQL","Replace player data · create fresh database"}));mode.setContentDescription("Staged database source");
+        String preferred=getSharedPreferences("server",0).getString("database_mode",deployed.has("generation")?"copy-current":sql.optBoolean("available")?"import":"fresh");int modeIndex=Arrays.asList(modes).indexOf(preferred);mode.setSelection(modeIndex<0?0:modeIndex);database.addView(mode);
+        TextView modeExplanation=label("",13,ACCENT);database.addView(modeExplanation);
+        Button prepare=button(database,"Prepare database and stage this build",()->{
+            saveDatabase.run();final String choice=modes[mode.getSelectedItemPosition()];
+            String message="Build ID: "+buildId+"\n"+sourceIdentity(builtSource)+"\n\n"+databaseModeLabel(choice)+".\n\n"+(choice.equals("copy-current")?"Copies your current accounts and characters, then applies this build's database updates.":choice.equals("import")?"When deployed, accounts and characters become those in the imported backup.":"When deployed, current player data is replaced by the data supplied by this build's SQL. Existing progress is not copied.")+"\n\nThis step prepares a separate server/database pair. Deploy in step 5 after checking it.";
+            confirm("Prepare this build and database",message,()->run("Preparing database and staging build",(ctx,p)->ServerRuntime.get(ctx).performBuild("stage-build",buildId,"",choice,p)));
+        });
+        Runnable updateMode=()->{
+            String choice=modes[mode.getSelectedItemPosition()];getSharedPreferences("server",0).edit().putString("database_mode",choice).apply();
+            boolean available=choice.equals("fresh")||choice.equals("import")&&sql.optBoolean("available")||choice.equals("copy-current")&&deployed.has("generation");
+            modeExplanation.setText(!available?(choice.equals("import")?"Import an SQL backup first.":"No current deployment to copy. Choose imported SQL or a fresh database."):choice.equals("copy-current")?"Preserves player data by updating a separate copy.":choice.equals("import")?"Deployment will replace current player data with the imported backup.":"Deployment will replace current player data with this build's SQL data. Existing progress is not copied.");
+            prepare.setEnabled(built&&available&&sr.toolsCurrent()&&idle&&!WorkService.busy);
+        };
+        mode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> parent,View view,int position,long id){updateMode.run();}public void onNothingSelected(AdapterView<?> parent){}});updateMode.run();
+        LinearLayout check=featuredCard("4 · Check staged build and database");
+        String stagedDescription=hasStaged?"STAGED PAIR\nBuild ID: "+stagedBuildId+"\nGeneration: "+stagedId+"\n"+sourceIdentity(stagedSource)+"\nDatabase: "+databaseModeLabel(staged.optString("database_mode"))+"\n"+staged.optInt("accounts")+" accounts · "+staged.optInt("characters")+" characters\nExpected client: "+staged.optString("expected_client","unknown")+"\nPrepared: "+receiptTime(staged,"created_at"):"No staged build/database pair yet. Complete step 3 first.";
+        check.addView(label(stagedDescription,13,TEXT));
+        if(hasStaged){
+            JSONObject meshes=object(staged,"meshes");
+            check.addView(label("Staged meshes: navmeshes · "+(meshes.optBoolean("navmeshes")?"present; content not verified":"missing or not recorded")+"\nximeshes · "+(meshes.optBoolean("ximeshes")?"present; content not verified":"missing or not recorded")+"\nA staging check does not confirm world navigation or gameplay.",13,MUTED));
+            JSONObject pair=object(staged,"client_pair");String expected=staged.optString("expected_client"),recorded=pair.optString("client_version");
+            boolean versionsKnown=expected.matches("[0-9]{8}_[0-9]+")&&recorded.matches("[0-9]{8}_[0-9]+");
+            check.addView(label("Client version recorded when staged: "+(recorded.isEmpty()?"unknown":recorded)+"\n"+(versionsKnown?(expected.equals(recorded)?"Recorded client version matches this build's expected version.":"Version mismatch: this build expects "+expected+". Update or choose a matching client before connecting."):"Client/server version match is unverified.")+"\nA matching version still needs a client and loader connection test.",13,versionsKnown&&!expected.equals(recorded)?ACCENT:MUTED));
+        }
+        if(!staged.optString("staged_from_generation").isEmpty())check.addView(label("Based on deployed generation: "+staged.optString("staged_from_generation"),12,MUTED));
+        if(hasStaged&&!stagedBuildId.equals(buildId))check.addView(label("The staged pair uses an earlier build. Check and Deploy below use the staged build ID shown here.",14,ACCENT));
+        check.addView(label(hasStaged?"Staging check: "+staged.optString("state","not checked"):"Staging check: not run",14,ACCENT));
+        if(staged.has("checked_at"))check.addView(label("Last checked: "+receiptTime(staged,"checked_at"),12,MUTED));
+        if(!staged.optString("check_error").isEmpty())check.addView(label("Check needs attention: "+staged.optString("check_error"),13,ACCENT));
+        if(staged.optBoolean("stale_database"))check.addView(label("Current player data changed after staging. Prepare a new database copy before deployment.",14,ACCENT));
+        button(check,"Check staged build and database",()->run("Checking staged server and database",(ctx,p)->ServerRuntime.get(ctx).performBuild("check-staged",stagedBuildId,stagedId,"",p))).setEnabled(hasStaged&&sr.toolsCurrent()&&idle);
+        check.addView(label("Checks the staged files, the four binaries and jemalloc, database contents, and saved source identity. Confirm the expected client version shown above matches your client and loader before connecting.",13,MUTED));
+        LinearLayout deploy=featuredCard("5 · Deploy the checked pair");
+        deploy.addView(label(hasStaged?"Deploy build: "+stagedBuildId+"\nDatabase generation: "+stagedId+"\n"+databaseModeLabel(staged.optString("database_mode")):"Nothing is staged for deployment.",13,TEXT));
+        button(deploy,"Deploy checked build and database",()->confirm("Replace current server and database",stagedDescription+"\n\nThis exact staged pair will replace the current server and database. Player data will become the staged counts shown above. The current pair is retained for rollback. Deployment checks this pair again and never rebuilds from newly fetched source.",()->run("Deploying checked server and database",(ctx,p)->ServerRuntime.get(ctx).performBuild("deploy-staged",stagedBuildId,stagedId,"",p)))).setEnabled(hasStaged&&"checked".equals(staged.optString("state"))&&!staged.optBoolean("stale_database")&&sr.toolsCurrent()&&idle);
+        deploy.addView(label("After deployment, start the managed server from the Server tab. Match its expected client version before connecting.",13,MUTED));
+        LinearLayout existing=card("Advanced: imported compiled server");
+        existing.addView(label("For an existing server ZIP that already contains matching Linux ARM64 binaries. This path uses the fetched/imported snapshot in step 1 and the imported SQL backup, not the completed build in step 2.",13,MUTED));
+        button(existing,"Deploy imported binaries with imported SQL",()->{saveDatabase.run();confirm("Deploy imported binaries and SQL",sourceIdentity(selected)+"\n\nUses binaries inside this selected snapshot and the imported SQL backup. Current accounts and characters will be replaced by those in the backup; the current server/database pair is retained for rollback.",()->run("Deploying imported server and SQL",(ctx,p)->ServerRuntime.get(ctx).perform("deploy",false,p)));}).setEnabled(sr.toolsCurrent()&&report.exists()&&sql.optBoolean("available")&&idle);
+        button(existing,"Export Termux packaging helper",()->create("server-helper","export-existing-lsb.py"));
+        existing.addView(label("Run inside your existing server's Linux distro: python3 export-existing-lsb.py /path/to/server. It creates a server ZIP and SQL.gz.",13,MUTED));
+    }
     private void diagnosticsPage() throws IOException {
         supportTile();
         LinearLayout live=featuredCard("Live server log");
-        live.addView(label("Updates automatically while this screen is open. Recent output is shown below; scroll up to read earlier lines.",13,MUTED));
-        serverLogBody=label("Reading server output…",12,TEXT);serverLogBody.setTypeface(Typeface.MONOSPACE);
-        serverLogScroll=new ScrollView(this);serverLogScroll.addView(serverLogBody);live.addView(serverLogScroll,new LinearLayout.LayoutParams(-1,dp(260)));
-        trackServerLogTouches(serverLogScroll,serverLogBody);
+        addLiveServerLog(live);
         LinearLayout d = card("Support and validation");
         d.addView(label("Support ZIPs contain the reference profile, key-file hashes, import summary, saved server/region, and app operation/probe logs. They exclude game payloads, Wine registry hives, and account passwords.", 14, MUTED));
         button(d, "View client inventory", () -> { try { showText("Client inventory", store(this).inventory()); } catch (Exception e) { error(e); } });

@@ -1,8 +1,8 @@
 # LSB Android
 
-Current development: **0.5.46 adds live server operation output beneath the progress message and in Diagnostics.** The completed phone build of the selected source passed all four ARM64/jemalloc dependency checks. See the [0.5.46 test steps](docs/TESTING-0.5.46.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
+Current development: **0.5.47 introduces a separate Build tab for fetching source, compiling with jemalloc, preparing a database, checking staging, and deploying the exact completed build.** It shows fetched, built, staged and deployed identities, supports j1–j16 workers, and displays live progress. See the [0.5.47 test steps](docs/TESTING-0.5.47.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
 
-The Server tab imports an existing source/binary ZIP plus its logical SQL dump, deploys an independent server/database pair, creates normal player accounts, and exports or restores database backups. Imported binaries are checked for ARM64/dependency compatibility; an explicit fallback builds the same imported revision. Restores reuse the deployed server files and retain the previous pair for rollback. Source updates remain a separate later action. The user's matching server archive is still required for the first real deployment.
+The Build tab prepares an independent server/database pair using an identified successful jemalloc build. Choose a migrated copy of current player data, an imported SQL backup, or a fresh database. The active pair changes only after an explicit checked deployment and remains available for rollback. The Server tab handles start/stop, accounts, database export and rollback. A separately labelled advanced path retains imported ARM64 binaries plus SQL deployment.
 
 Follow [the server setup and verification guide](docs/server-first-0529.md). The server uses a separate Ubuntu 26.04 ARM64 environment; it does not modify the client runtime or the working Termux installation.
 

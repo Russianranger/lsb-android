@@ -12,6 +12,7 @@ import java.lang.reflect.Field;
 import java.util.Map;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.*;
@@ -36,20 +37,28 @@ public class ServerPageTest {
         Bitmap b=Bitmap.createBitmap(width,v.getHeight(),Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);c.drawColor(0xff0c141f);v.draw(c);
         File target=new File("out/ui-previews",name);target.getParentFile().mkdirs();try(OutputStream out=new FileOutputStream(target)){assertTrue(b.compress(Bitmap.CompressFormat.PNG,100,out));}b.recycle();
     }
-    @Test public void serverControlsSeparateAccountsRestoreAndSourceUpdatesAndClearSecrets()throws Exception{
+    private static View described(View view,String description){
+        if(description.equals(view.getContentDescription()))return view;
+        if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){View found=described(((ViewGroup)view).getChildAt(i),description);if(found!=null)return found;}return null;
+    }
+    private static JSONObject source(String snapshot,String commit)throws Exception{return new JSONObject().put("snapshot_id",snapshot).put("repository","Russianranger/LSB-server").put("ref","test").put("commit",commit).put("origin","Russianranger/LSB-server @ "+commit).put("expected_client","30260904_1");}
+    private static void writeSource(Context context,JSONObject identity)throws Exception{
+        File directory=new File(MainActivity.storage(context),"server/current");FilesEx.text(new File(directory,"source-report.txt"),"Source: "+identity.optString("origin")+"\nExpected client: 30260904_1\n");
+        FilesEx.text(new File(directory,"source-identity.json"),identity.toString());
+    }
+    @Test public void serverTabKeepsAccountsAndRecoveryAndLinksToBuild()throws Exception{
         Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
         ServerRuntime sr=ServerRuntime.get(ctx);String id="11111111-1111-1111-1111-111111111111";
         FilesEx.text(new File(sr.root,"lsb-server-ready"),"ready");FilesEx.text(new File(sr.root,"lsb-server-tools-v4"),"ready");
         FilesEx.text(new File(sr.state,"active.json"),"{\"current\":\""+id+"\"}");
         FilesEx.text(new File(sr.state,"generations/"+id+"/deployment.json"),"{\"generation\":\""+id+"\",\"accounts\":1,\"characters\":1,\"expected_client\":\"30251204_1\"}");
-        FilesEx.text(new File(sr.state,"import.sql"),"a complete staged fixture dump");
         SharedPreferences prefs=ctx.getSharedPreferences("runtime",0);prefs.edit().putBoolean("proot_acceleration",true).putBoolean("dxvk_two_compilers",true).commit();Map<String,?> before=prefs.getAll();
         org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Server")).setup();
         try{
-            Field tileField=MainActivity.class.getDeclaredField("tiles");tileField.setAccessible(true);FantasyTiles tiles=(FantasyTiles)tileField.get(controller.get());
-            assertNotNull(text(tiles,"◇  Import your working server"));assertNotNull(text(tiles,"◇  Create account"));assertNotNull(text(tiles,"◇  Database backup & restore"));assertNotNull(text(tiles,"◇  Source builds & updates"));
-            capture(tiles,920,"server-tiles-wide.png");
-            text(tiles,"◇  Create account").performClick();
+            FantasyTiles tiles=(FantasyTiles)member(controller.get(),"tiles");View content=(View)member(controller.get(),"content");
+            assertNull(text(tiles,"◇  Import your working server"));assertNull(text(tiles,"◇  Source builds & updates"));
+            assertNotNull(text(tiles,"◇  Create account"));assertNotNull(text(tiles,"◇  Database backup & restore"));assertNotNull(text(content,"Open Build tab"));
+            capture(tiles,920,"server-tiles-wide.png");text(tiles,"◇  Create account").performClick();
             assertTrue(text(tiles,"Create player account").isEnabled());
             EditText user=field(tiles,"New server account name"),password=field(tiles,"New server account password"),confirm=field(tiles,"Confirm server account password");
             assertNotNull(user);assertNotNull(password);assertNotNull(confirm);assertFalse(password.isSaveEnabled());assertFalse(confirm.isSaveEnabled());
@@ -57,50 +66,67 @@ public class ServerPageTest {
             user.setText("test account");password.setText("private-password");confirm.setText("different");text(tiles,"Create player account").performClick();
             AlertDialog dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();assertNotNull(dialog);assertTrue(((TextView)dialog.findViewById(android.R.id.message)).getText().toString().contains("do not match"));dialog.dismiss();assertFalse(WorkService.busy);
             controller.pause();assertEquals("",password.getText().toString());assertEquals("",confirm.getText().toString());controller.resume();
-            text(tiles,"◇  Database backup & restore").performClick();capture(tiles,920,"server-database-wide.png");capture(tiles,400,"server-database-narrow.png");
-            text(tiles,"Restore imported database").performClick();dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();
-            String message=((TextView)dialog.findViewById(android.R.id.message)).getText().toString();assertTrue(message.contains("currently deployed server"));assertTrue(message.contains("does not fetch source"));dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();assertFalse(WorkService.busy);
+            text(tiles,"◇  Database backup & restore").performClick();assertNull(text(tiles,"Restore imported database"));assertNotNull(text(tiles,"Restore previous server + database"));
+            text(tiles,"Prepare a replacement database on Build").performClick();assertEquals("Build",member(controller.get(),"tab"));assertNotNull(text((View)member(controller.get(),"content"),"Build workspace"));
             assertEquals(before,prefs.getAll());
         }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);prefs.edit().clear().commit();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }
-    @Test public void installedRuntimeOffersDependencyUpgradeBeforeDeployment()throws Exception{
+    @Test public void buildTabRequiresCurrentToolsAndOffersWorkersWithoutDatabase()throws Exception{
         Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
-        ServerRuntime sr=ServerRuntime.get(ctx);FilesEx.delete(sr.home);
+        ServerRuntime sr=ServerRuntime.get(ctx);FilesEx.delete(sr.home);ctx.getSharedPreferences("server",0).edit().clear().commit();
         FilesEx.text(new File(sr.root,"lsb-server-ready"),"ready");FilesEx.text(new File(sr.root,"lsb-server-tools-v3"),"old tools");
-        FilesEx.text(new File(sr.state,"import.sql"),"staged SQL fixture");
-        File report=new File(MainActivity.storage(ctx),"server/current/source-report.txt");FilesEx.text(report,"matching server fixture");
-        org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Server")).setup();
+        writeSource(ctx,source("snapshot-a","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         try{
-            Field tileField=MainActivity.class.getDeclaredField("tiles");tileField.setAccessible(true);FantasyTiles tiles=(FantasyTiles)tileField.get(controller.get());
-            text(tiles,"◇  Import your working server").performClick();
-            assertTrue(text(tiles,"Update server runtime and build tools").isEnabled());
-            assertFalse(text(tiles,"Deploy matching server + database").isEnabled());
-            assertFalse(text(tiles,"Build imported revision and deploy").isEnabled());
-            assertNotNull(text(tiles,"Update the server runtime to add libraries required by your imported server."));
-            capture(tiles,920,"server-runtime-update-wide.png");capture(tiles,400,"server-runtime-update-narrow.png");
-            text(tiles,"◇  Source builds & updates").performClick();
-            assertFalse(text(tiles,"Build selected source with jemalloc").isEnabled());
-        }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);report.delete();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
-    }
-    @Test public void sourceBuildNeedsNoDatabaseOrDeploymentAndDisablesWhileBusy()throws Exception{
-        Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
-        ServerRuntime sr=ServerRuntime.get(ctx);FilesEx.delete(sr.home);
-        FilesEx.text(new File(sr.root,"lsb-server-ready"),"ready");FilesEx.text(new File(sr.root,"lsb-server-tools-v4"),"ready");
-        File report=new File(MainActivity.storage(ctx),"server/current/source-report.txt");FilesEx.text(report,"selected source fixture");
-        try{
-            assertFalse(sr.hasDatabaseImport());assertFalse(sr.deployment().has("generation"));
-            for(boolean busy:new boolean[]{false,true}){
+            for(boolean toolsCurrent:new boolean[]{false,true})for(boolean busy:new boolean[]{false,true}){
+                if(toolsCurrent)FilesEx.text(new File(sr.root,"lsb-server-tools-v4"),"ready");
                 WorkService.busy=busy;
-                org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Server")).setup();
+                org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Build")).setup();
                 try{
-                    Field tileField=MainActivity.class.getDeclaredField("tiles");tileField.setAccessible(true);FantasyTiles tiles=(FantasyTiles)tileField.get(controller.get());
-                    text(tiles,"◇  Source builds & updates").performClick();
-                    assertEquals(!busy,text(tiles,"Build selected source with jemalloc").isEnabled());
-                    assertFalse(text(tiles,"Build and apply source + database update").isEnabled());
-                    if(!busy){capture(tiles,920,"server-source-build-wide.png");capture(tiles,400,"server-source-build-narrow.png");}
+                    View content=(View)member(controller.get(),"content");
+                    assertNotNull(text(content,"FETCHED SOURCE"));assertNotNull(text(content,"Live build progress"));
+                    assertEquals(toolsCurrent&&!busy,text(content,"Build fetched source with jemalloc").isEnabled());
+                    assertFalse(text(content,"Prepare database and stage this build").isEnabled());assertFalse(text(content,"Check staged build and database").isEnabled());assertFalse(text(content,"Deploy checked build and database").isEnabled());
+                    Spinner workers=(Spinner)described(content,"Build worker count");assertEquals(16,workers.getCount());assertEquals(!busy,workers.isEnabled());
+                    if(!busy){workers.setSelection(15);Shadows.shadowOf(Looper.getMainLooper()).idle();assertEquals(16,ctx.getSharedPreferences("server",0).getInt("jobs",0));}
+                    if(!toolsCurrent&&!busy){assertTrue(text(content,"Update server runtime and build tools").isEnabled());capture(content,400,"build-tools-upgrade-narrow.png");}
+                    assertFalse(sr.hasDatabaseImport());assertFalse(sr.deployment().has("generation"));
                 }finally{controller.pause().stop().destroy();Shadows.shadowOf(Looper.getMainLooper()).idle();}
             }
-        }finally{WorkService.busy=false;FilesEx.delete(sr.home);report.delete();singleton.set(null,null);}
+        }finally{WorkService.busy=false;FilesEx.delete(sr.home);FilesEx.delete(new File(MainActivity.storage(ctx),"server"));ctx.getSharedPreferences("server",0).edit().clear().commit();singleton.set(null,null);}
+    }
+    @Test public void buildTabNamesDifferentFetchedBuiltAndStagedSourcesAndConfirmsReplacement()throws Exception{
+        Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
+        ServerRuntime sr=ServerRuntime.get(ctx);FilesEx.delete(sr.home);ctx.getSharedPreferences("server",0).edit().clear().commit();
+        FilesEx.text(new File(sr.root,"lsb-server-ready"),"ready");FilesEx.text(new File(sr.root,"lsb-server-tools-v4"),"ready");
+        JSONObject selected=source("snapshot-new","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),built=source("snapshot-built","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),stagedSource=source("snapshot-staged","cccccccccccccccccccccccccccccccccccccccc");
+        writeSource(ctx,selected);
+        String buildId="11111111-1111-4111-8111-111111111111",stagedBuildId="22222222-2222-4222-8222-222222222222",generation="33333333-3333-4333-8333-333333333333";
+        FilesEx.text(new File(sr.state,"source-build/server/android-build.json"),new JSONObject().put("state","passed").put("build_id",buildId).put("allocator","jemalloc").put("jobs",2).put("selected_source",built).toString());
+        JSONObject stage=new JSONObject().put("state","staged").put("generation",generation).put("build_id",stagedBuildId).put("database_mode","fresh").put("selected_source",stagedSource).put("accounts",0).put("characters",0).put("expected_client","30260904_1");
+        FilesEx.text(new File(sr.state,"staged.json"),stage.toString());
+        org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Build")).setup();
+        try{
+            MainActivity activity=controller.get();View content=(View)member(activity,"content");
+            assertTrue(text(content,"FETCHED SOURCE").getText().toString().contains(selected.getString("commit")));
+            assertTrue(text(content,"COMPLETED BUILD").getText().toString().contains(built.getString("commit")));assertTrue(text(content,"COMPLETED BUILD").getText().toString().contains(buildId));
+            assertNotNull(text(content,"This completed build is from a different"));assertNotNull(text(content,"The staged pair uses an earlier build"));
+            assertTrue(text(content,"STAGED PAIR").getText().toString().contains(stagedSource.getString("commit")));
+            assertTrue(text(content,"Check staged build and database").isEnabled());assertFalse(text(content,"Deploy checked build and database").isEnabled());
+            Spinner mode=(Spinner)described(content,"Staged database source");mode.setSelection(0);Shadows.shadowOf(Looper.getMainLooper()).idle();assertFalse(text(content,"Prepare database and stage this build").isEnabled());
+            mode.setSelection(1);Shadows.shadowOf(Looper.getMainLooper()).idle();assertFalse(text(content,"Prepare database and stage this build").isEnabled());
+            mode.setSelection(2);Shadows.shadowOf(Looper.getMainLooper()).idle();assertTrue(text(content,"Prepare database and stage this build").isEnabled());
+            text(content,"Prepare database and stage this build").performClick();
+            AlertDialog dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();String message=((TextView)dialog.findViewById(android.R.id.message)).getText().toString();
+            assertTrue(message.contains(buildId));assertTrue(message.contains(built.getString("commit")));assertTrue(message.contains("no player progress"));dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();assertFalse(WorkService.busy);
+            stage.put("state","checked");FilesEx.text(new File(sr.state,"staged.json"),stage.toString());
+            java.lang.reflect.Method draw=MainActivity.class.getDeclaredMethod("draw");draw.setAccessible(true);draw.invoke(activity);content=(View)member(activity,"content");
+            assertTrue(text(content,"Deploy checked build and database").isEnabled());text(content,"Deploy checked build and database").performClick();dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();message=((TextView)dialog.findViewById(android.R.id.message)).getText().toString();
+            assertTrue(message.contains(stagedBuildId));assertTrue(message.contains(generation));assertTrue(message.contains(stagedSource.getString("commit")));assertFalse(message.contains(selected.getString("commit")));assertTrue(message.contains("never rebuilds"));dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();assertFalse(WorkService.busy);
+            capture(content,920,"build-workspace-wide.png");capture(content,400,"build-workspace-narrow.png");
+            stage.put("stale_database",true).put("check_error","Current player data changed");FilesEx.text(new File(sr.state,"staged.json"),stage.toString());draw.invoke(activity);content=(View)member(activity,"content");
+            assertFalse(text(content,"Deploy checked build and database").isEnabled());assertNotNull(text(content,"Current player data changed after staging"));assertNotNull(text(content,"Check needs attention:"));
+
+        }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);FilesEx.delete(new File(MainActivity.storage(ctx),"server"));ctx.getSharedPreferences("server",0).edit().clear().commit();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }
     private static Object member(Object instance,String name)throws Exception{
         Field field=instance.getClass().getDeclaredField(name);field.setAccessible(true);return field.get(instance);
@@ -135,6 +161,27 @@ public class ServerPageTest {
             // A new server operation must not display the prior final line.
             setMember(runtime,"active",true);setMember(runtime,"logEpoch",runtime.logEpoch()+1);setMember(runtime,"logsReady",false);WorkService.busy=true;
             awaitText(body,"Waiting for server output");assertFalse(body.getText().toString().contains("xi_map"));assertEquals(View.GONE,latest.getVisibility());
+        }finally{WorkService.busy=false;setMember(runtime,"active",false);controller.pause().stop().destroy();FilesEx.delete(runtime.home);singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
+    }
+    @Test public void repeatedUnverifiedZipNamesDoNotImplyTheSameSource()throws Exception{
+        java.lang.reflect.Method same=MainActivity.class.getDeclaredMethod("sameSource",JSONObject.class,JSONObject.class);same.setAccessible(true);
+        JSONObject first=new JSONObject().put("origin","User-selected ZIP (revision unverified)"),second=new JSONObject(first.toString());
+        assertEquals(false,same.invoke(null,first,second));
+        first.put("snapshot_id","a");second.put("snapshot_id","b");assertEquals(false,same.invoke(null,first,second));
+        second.put("snapshot_id","a");assertEquals(true,same.invoke(null,first,second));
+    }
+    @Test public void buildPageShowsLiveOutputWhileBuildControlsAreLocked()throws Exception{
+        Context context=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
+        ServerRuntime runtime=ServerRuntime.get(context);FilesEx.delete(runtime.home);
+        FilesEx.text(new File(runtime.logs,"operation.log"),"[ 41%] Compiling build-page.cpp\n");setMember(runtime,"active",true);WorkService.busy=true;
+        org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(context,MainActivity.class).putExtra("tab","Build")).setup();
+        try{
+            MainActivity activity=controller.get();TextView body=(TextView)member(activity,"serverLogBody");View content=(View)member(activity,"content");
+            assertNotNull(text(content,"Live build progress"));assertFalse(text(content,"Fetch this source").isEnabled());assertFalse(text(content,"Build fetched source with jemalloc").isEnabled());
+            awaitText(body,"[ 41%]");FilesEx.text(new File(runtime.logs,"operation.log"),"[ 42%] Linking xi_map\n");awaitText(body,"[ 42%]");
+            controller.pause();String paused=body.getText().toString();FilesEx.text(new File(runtime.logs,"operation.log"),"[100%] Build complete\n");
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));assertEquals(paused,body.getText().toString());
+            controller.resume();awaitText(body,"Build complete");
         }finally{WorkService.busy=false;setMember(runtime,"active",false);controller.pause().stop().destroy();FilesEx.delete(runtime.home);singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }
     @Test public void serverLogButtonRemainsUsableDuringWorkAndDialogFollowsWithoutJumpingHistory()throws Exception{

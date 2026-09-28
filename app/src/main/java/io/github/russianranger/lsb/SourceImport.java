@@ -24,7 +24,10 @@ final class SourceImport {
         if (!sha.matches("[0-9a-f]{40}")) throw new IOException("GitHub did not return a commit SHA");
         progress.update("Downloading source at " + sha.substring(0, 12));
         HttpURLConnection archive = connect(base + "/zipball/" + sha);
-        try (InputStream in = archive.getInputStream()) { return stage(home, in, clean + " @ " + sha, progress); }
+        try (InputStream in = archive.getInputStream()) {
+            JSONObject identity=new JSONObject().put("repository",clean).put("ref",ref).put("commit",sha);
+            return stage(home,in,clean+" @ "+sha,identity,progress);
+        }
         finally { archive.disconnect(); }
     }
     static HttpURLConnection connect(String address) throws IOException {
@@ -40,6 +43,9 @@ final class SourceImport {
         throw new IOException("Too many GitHub redirects");
     }
     static String stage(File home, InputStream in, String origin, SafeZip.Progress progress) throws Exception {
+        return stage(home,in,origin,new JSONObject(),progress);
+    }
+    private static String stage(File home,InputStream in,String origin,JSONObject identity,SafeZip.Progress progress)throws Exception {
         FilesEx.mkdir(home);
         File current = new File(home, "current"), previous = new File(home, "previous"), incoming = new File(home, "incoming");
         if (!current.exists() && previous.exists()) FilesEx.move(previous, current);
@@ -55,12 +61,30 @@ final class SourceImport {
             for (String mesh : Arrays.asList("navmeshes", "ximeshes")) {
                 File dir = new File(source, mesh); report += mesh + ": " + (dir.isDirectory() && FilesEx.children(dir).length > 0 ? "directory present (content not verified)" : "missing; GitHub source ZIPs do not include submodule contents") + "\n";
             }
+            identity.put("format",1).put("snapshot_id",UUID.randomUUID().toString()).put("origin",origin)
+                    .put("expected_client",expectedClient(source)).put("fetched_at_millis",System.currentTimeMillis());
+            FilesEx.text(new File(incoming,"source-identity.json"),identity.toString());
             FilesEx.text(new File(incoming, "source-report.txt"), report);
             SafeZip.checkCancelled(); FilesEx.delete(previous); if (current.exists()) FilesEx.move(current, previous);
             try { FilesEx.move(incoming, current); }
             catch (IOException e) { if (!current.exists() && previous.exists()) FilesEx.move(previous, current); throw e; }
             return report;
         } finally { FilesEx.delete(incoming); }
+    }
+    /** Small acquisition receipt only; full source verification belongs to the build worker. */
+    static JSONObject identity(File home)throws Exception {
+        File current=new File(home,"current"),receipt=new File(current,"source-identity.json");
+        if(receipt.isFile())return new JSONObject(FilesEx.read(receipt,32768));
+        JSONObject result=new JSONObject();File report=new File(current,"source-report.txt");
+        if(!report.isFile())return result;
+        for(String line:FilesEx.read(report,32768).split("\\n")){
+            if(line.startsWith("Source: "))result.put("origin",line.substring(8).trim());
+            if(line.startsWith("Expected client: "))result.put("expected_client",line.substring(17).trim());
+        }
+        String origin=result.optString("origin");
+        java.util.regex.Matcher git=java.util.regex.Pattern.compile("^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+) @ ([0-9a-f]{40})$").matcher(origin);
+        if(git.matches())result.put("repository",git.group(1)).put("commit",git.group(2));
+        result.put("legacy",true);return result;
     }
     private static File unwrap(File dir) throws IOException {
         List<File> candidates=new ArrayList<>();findSources(dir,8,candidates);

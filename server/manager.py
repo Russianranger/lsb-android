@@ -146,8 +146,12 @@ def configure_tools(root):
     values.update(mysql_bin='/usr/bin/',auto_backup=0,auto_update_client=False)
     file.write_text(yaml.safe_dump([{k:v} for k,v in values.items()]))
 
+def checked_jobs(jobs):
+    if type(jobs) is not int or not 1<=jobs<=16:raise ValueError('Use between 1 and 16 build workers')
+    return jobs
+
 def build(root, jobs):
-    if jobs not in (1,2,4):raise ValueError('Use 1, 2 or 4 build workers')
+    checked_jobs(jobs)
     root=root.resolve();started=time.time()
     (root/'android-build.json').unlink(missing_ok=True)
     hook=Path(__file__).with_name('android-build.cmake').resolve()
@@ -171,7 +175,7 @@ def build(root, jobs):
         status('building','Configuring the server with jemalloc…')
         command(['cmake','-S',root,'-B',root/'build',*options],cwd=root)
         status('building','Compiling the four server programs with jemalloc…')
-        command(['cmake','--build',root/'build','--parallel',str(jobs),'--target',*PROCESSES],cwd=root,timeout=7200)
+        command(['cmake','--build',root/'build','--parallel',str(jobs),'--target',*PROCESSES],cwd=root,timeout=max(7200,21600//jobs))
         for name in PROCESSES:
             if not (root/name).is_file():
                 found=[p for p in (root/'build').rglob(name) if p.is_file()]
@@ -253,16 +257,196 @@ def validate_jemalloc(root):
                             bytes=path.stat().st_size,needed=needed,allocator='libjemalloc.so.2')
     return binaries
 
+def tree_fingerprint(root, include_binaries=True):
+    """Hash copied source/runtime payload; never generated builds or log files."""
+    excluded={'.git','.venv','venv','build','logs','log','mysql','node_modules','android-build.json'}
+    digest=hashlib.sha256();count=0
+    def walk(folder):
+        nonlocal count
+        for path in sorted(folder.iterdir(),key=lambda p:p.name):
+            cancelled()
+            if path.name in excluded or (not include_binaries and path.parent==root and path.name in PROCESSES):continue
+            if path.is_symlink():raise ValueError('Build payload contains a symlink; copy the source again')
+            relative=path.relative_to(root).as_posix().encode()
+            if path.is_dir():
+                digest.update(b'directory\0'+relative+b'\0');walk(path)
+            elif path.is_file():
+                with path.open('rb') as stream:value=hashlib.file_digest(stream,'sha256').digest()
+                digest.update(b'file\0'+relative+b'\0'+value);count+=1
+                if count%1000==0:print('Verified '+str(count)+' source files',flush=True)
+            else:raise ValueError('Build payload contains an unsupported file')
+    walk(root)
+    return digest.hexdigest()
+
+def selected_source(req, content_hash):
+    # Provenance describes the selected acquisition, not a synthetic snapshot Git commit.
+    identity=req.get('source_identity',{})
+    if not isinstance(identity,dict):raise ValueError('Source identity must be an object')
+    result={key:str(identity[key])[:1000] for key in ('repository','ref','commit','origin','snapshot_id') if key in identity}
+    result['content_sha256']=content_hash
+    return result
+
 def build_source(req):
-    # No SQL import, database process, active-pointer write or version pairing is
-    # needed to compile. Only replace this disposable compilation workspace.
+    # Compiling never touches the active server/database. Only this workspace is replaced.
     source=source_root(INPUT);workspace=STATE/'source-build';root=workspace/'server'
-    status('copying','Copying the selected source for a separate build check…')
+    status('copying','Copying the selected source for a reusable jemalloc build…')
     if workspace.exists():shutil.rmtree(workspace)
     workspace.mkdir(parents=True)
     snapshot_source(source,root,recover_build_binaries=False)
-    report=build(root,int(req.get('jobs',2)))
-    status('build_ready','All four ARM64 server programs built with jemalloc. The active server and database are unchanged.',build=report)
+    identity=selected_source(req,tree_fingerprint(root,include_binaries=False))
+    report=build(root,checked_jobs(req.get('jobs',2)))
+    identity['expected_client']=report['source']['expected_client']
+    report.update(build_id=str(uuid.uuid4()),selected_source=identity,content_sha256=tree_fingerprint(root))
+    atomic(root/'android-build.json',report);atomic(LOGS/'build-report.json',report)
+    status('build_ready','Jemalloc build '+report['build_id'][:8]+' is ready. Choose its database, then check and deploy this exact build.',build=report)
+
+def load_build(build_id=None):
+    root=STATE/'source-build/server';path=root/'android-build.json'
+    if not path.is_file():raise ValueError('Build the selected source with jemalloc first')
+    report=json.loads(path.read_text())
+    if report.get('state')!='passed' or report.get('allocator')!='jemalloc':raise ValueError('The latest build did not pass jemalloc validation')
+    if build_id is not None and (not build_id or report.get('build_id')!=build_id):raise ValueError('The selected build changed. Review the latest successful build before staging it.')
+    validate_binaries(root);binaries=validate_jemalloc(root)
+    if binaries!=report.get('binaries'):raise ValueError('Built binaries changed after compilation; rebuild the selected source')
+    if report.get('content_sha256') and tree_fingerprint(root)!=report['content_sha256']:raise ValueError('Built source or runtime files changed after compilation; rebuild the selected source')
+    recorded=report.get('source',{});actual=source_info(root)
+    if recorded.get('expected_client')!=actual['expected_client'] or recorded.get('source_hashes')!=actual['source_hashes']:
+        raise ValueError('The built source no longer matches its recorded source and client version')
+    return root,report
+
+def adopt_build(req):
+    # A previous app's receipt can prove binaries, but cannot prove a repository
+    # identity. Never relabel these files as the currently fetched source.
+    root,report=load_build()
+    if not report.get('build_id'):
+        report.update(build_id=str(uuid.uuid4()),
+                      selected_source=dict(origin='Previously built source; original repository not recorded',expected_client=report['source']['expected_client']),
+                      content_sha256=tree_fingerprint(root),adopted_at=time.time())
+        atomic(root/'android-build.json',report);atomic(LOGS/'build-report.json',report)
+    status('build_ready','Existing successful jemalloc build verified. Its original repository identity was not recorded.',build=report)
+
+def initialize_database(generation,name):
+    name=checked_name(name);creds=start_database(generation)
+    sql("CREATE DATABASE `"+name+"` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci; CREATE USER 'lsb'@'localhost' IDENTIFIED BY '"+creds['game']+"'; CREATE USER 'lsb'@'127.0.0.1' IDENTIFIED BY '"+creds['game']+"'; GRANT ALL ON `"+name+"`.* TO 'lsb'@'localhost'; GRANT ALL ON `"+name+"`.* TO 'lsb'@'127.0.0.1';",creds['root'])
+    return creds
+
+def prepare_database(root,name,creds,mode):
+    if not (root/'.venv/bin/python').exists():
+        command(['/usr/bin/python3','-m','venv',root/'.venv'])
+        command([root/'.venv/bin/pip','install','-r',root/'tools/requirements.txt'],cwd=root,timeout=1800)
+    configure_tools(root)
+    config=RUN/'update-credentials.json'
+    atomic(config,dict(database=name,password=creds['game'],mode=mode));os.chmod(config,0o600)
+    try:command([root/'.venv/bin/python',Path(__file__).with_name('db_update.py'),root,RUN/'mysql.sock',config],cwd=root,timeout=3600)
+    finally:config.unlink(missing_ok=True)
+
+def write_staged(generation,info):
+    atomic(generation/'deployment.json',info)
+    atomic(STATE/'staged.json',info)
+
+def active_generation():
+    path=STATE/'active.json'
+    return json.loads(path.read_text()).get('current') if path.is_file() else None
+
+def file_sha256(path):
+    with path.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+
+def invalidate_database_stage(reason):
+    path=STATE/'staged.json'
+    if not path.is_file():return
+    info=json.loads(path.read_text())
+    if info.get('database_mode')!='copy-current' or info.get('generation')==active_generation():return
+    if info.get('staged_from_generation')!=active_generation():return
+    info.update(state='staged',stale_database=True,check_error=reason);info.pop('checked_at',None)
+    generation=STATE/'generations'/info['generation']
+    write_staged(generation,info)
+
+def stage_build(req):
+    root,report=load_build(req.get('build_id',''));mode=req.get('database_mode')
+    if mode not in ('fresh','import','copy-current'):raise ValueError('Choose a fresh database, imported SQL, or a copy of the active database')
+    name=checked_name(req.get('database','xidb'));base=active_generation();dump=STATE/'import.sql'
+    if mode=='copy-current':
+        previous=current();name=json.loads((previous/'deployment.json').read_text())['database']
+        dump=RUN/'previous.sql'
+        status('backing_up','Copying the active database before preparing the selected build…')
+        dump_database(previous,dump)
+    if mode!='fresh' and not dump.is_file():raise ValueError('Import a database SQL or SQL.gz file first')
+    generation=STATE/'generations'/str(uuid.uuid4());generation.mkdir(parents=True)
+    staged=generation/'server';creds=None
+    status('copying','Staging exact jemalloc build '+report['build_id'][:8]+' and its source files…')
+    snapshot_source(root,staged,recover_build_binaries=False)
+    if tree_fingerprint(staged)!=report['content_sha256']:raise ValueError('Copied build does not match the successful build receipt')
+    try:
+        status('building_database','Building a fresh database from this build’s SQL…' if mode=='fresh' else 'Importing the selected database into an isolated generation…')
+        creds=initialize_database(generation,name) if mode=='fresh' else import_database(generation,dump,name)
+        before=account_counts(name,creds) if mode!='fresh' else None
+        write_network(staged,name,creds)
+        prepare_database(staged,name,creds,'fresh' if mode=='fresh' else 'update')
+        counts=account_counts(name,creds)
+        if before is not None and counts!=before:raise RuntimeError('Account or character counts changed while preparing the database; active deployment kept')
+        if req.get('local_zones',True):sql("UPDATE zone_settings SET zoneip='127.0.0.1',zoneport=54230;",creds['game'],'lsb',name)
+        info=source_info(staged)
+        if info['expected_client']!=report['source']['expected_client']:raise ValueError('Database preparation changed the build’s expected client version')
+        info.update(format=2,state='staged',generation=generation.name,build_id=report['build_id'],build=report,
+                    selected_source=report.get('selected_source',{}),database=name,database_mode=mode,
+                    database_input_sha256=(file_sha256(dump) if mode!='fresh' else None),
+                    accounts=counts['accounts'],characters=counts['chars'],created_at=time.time(),
+                    staged_from_generation=base,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),
+                    binaries={n:report['binaries'][n]['sha256'] for n in PROCESSES},
+                    staged_content_sha256=tree_fingerprint(staged))
+    finally:
+        if creds is not None:stop_database(creds)
+        else:stop_children()
+        if mode=='copy-current':dump.unlink(missing_ok=True)
+    cancelled();write_staged(generation,info)
+    status('staged','Exact build and database staged. Check the staged pair before deploying it.',deployment=info)
+
+def staged_pair(req):
+    generation_id=req.get('generation','')
+    if not re.fullmatch(r'[0-9a-f-]{36}',generation_id):raise ValueError('Choose a staged generation')
+    generation=STATE/'generations'/generation_id;path=generation/'deployment.json'
+    if not path.is_file():raise ValueError('The selected staged generation is no longer available')
+    info=json.loads(path.read_text())
+    if info.get('generation')!=generation_id or not req.get('build_id') or info.get('build_id')!=req['build_id']:
+        raise ValueError('The selected staged generation does not match this build')
+    pointer=STATE/'staged.json'
+    if not pointer.is_file() or json.loads(pointer.read_text()).get('generation')!=generation_id:raise ValueError('The staged pair changed. Review the latest staged build and database.')
+    if active_generation()==generation_id:raise ValueError('This build and database are already deployed')
+    return generation,info
+
+def check_staged(req):
+    generation,info=staged_pair(req);root=generation/'server';creds=None
+    if info.get('stale_database'):raise ValueError('The active database changed after this copy was staged. Stage its database again to preserve newer progress.')
+    info['state']='staged';info.pop('checked_at',None);info.pop('check_error',None)
+    write_staged(generation,info)
+    status('checking_staged','Checking the staged source, jemalloc binaries and database…')
+    try:
+        if tree_fingerprint(root)!=info.get('staged_content_sha256'):raise ValueError('Staged source or runtime files changed; stage the build again')
+        validate_binaries(root);binaries=validate_jemalloc(root)
+        if binaries!=info['build']['binaries']:raise ValueError('Staged binaries do not match the exact successful jemalloc build')
+        if {n:binaries[n]['sha256'] for n in PROCESSES}!=info['binaries']:raise ValueError('Staged binary receipt is inconsistent')
+        if source_info(root)['expected_client']!=info['expected_client']:raise ValueError('Staged source expects a different client')
+        creds=start_database(generation)
+        counts=account_counts(info['database'],creds)
+        if counts!={'accounts':info['accounts'],'chars':info['characters']}:raise ValueError('Staged database counts changed; stage the database again')
+        command(['mariadb-check',cnf('lsb',creds['game']),'--check','--databases',info['database']],timeout=3600)
+    except Exception as error:
+        info['check_error']=str(error);write_staged(generation,info);raise
+    finally:
+        if creds is not None:stop_database(creds)
+        else:stop_children()
+    cancelled();info.update(state='checked',checked_at=time.time());write_staged(generation,info)
+    status('staged_checked','Staged source, all four jemalloc programs and database checks passed. Ready to deploy.',deployment=info)
+    return generation,info
+
+def deploy_staged(req):
+    generation,info=staged_pair(req)
+    if info.get('state')!='checked':raise ValueError('Check the staged build and database before deploying')
+    if active_generation()!=info.get('staged_from_generation'):raise ValueError('The active deployment changed after staging. Stage this build and database again.')
+    generation,info=check_staged(req)
+    cancelled();previous=active_generation()
+    atomic(STATE/'active.json',dict(current=generation.name,previous=previous))
+    status('ready','Build '+info['build_id'][:8]+' and its checked database deployed. The previous server and database are retained.',deployment=info)
 
 def validate_binaries(root):
     # Retain the loader's evidence even when validation fails before any server
@@ -376,8 +560,7 @@ def clean_dump(source, target):
             cancelled()
 
 def import_database(generation, dump, name):
-    name=checked_name(name);creds=start_database(generation)
-    sql("CREATE DATABASE `"+name+"` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci; CREATE USER 'lsb'@'localhost' IDENTIFIED BY '"+creds['game']+"'; CREATE USER 'lsb'@'127.0.0.1' IDENTIFIED BY '"+creds['game']+"'; GRANT ALL ON `"+name+"`.* TO 'lsb'@'localhost'; GRANT ALL ON `"+name+"`.* TO 'lsb'@'127.0.0.1';",creds['root'])
+    name=checked_name(name);creds=initialize_database(generation,name)
     cleaned=RUN/'import.sql';clean_dump(dump,cleaned)
     try:
         with cleaned.open('rb') as stream:command(['mariadb',cnf('lsb',creds['game']),'--binary-mode','--local-infile=0',name],stdin=stream,timeout=3600)
@@ -553,6 +736,7 @@ class StartupProgress:
                     pending_processes=pending,stage=stage,recent_lines=self.recent[:],login_port_reachable=port_ready)
 
 def serve():
+    invalidate_database_stage('The active server was started after this database copy was staged. Stage its database again.')
     generation=current();root=generation/'server';validate_binaries(root);ensure_ports()
     meta=json.loads((generation/'deployment.json').read_text());status('starting','Starting the managed server…',deployment=meta)
     creds=start_database(generation,True)
@@ -604,14 +788,19 @@ def serve():
 def main():
     for p in (STATE,RUN,LOGS):p.mkdir(parents=True,exist_ok=True)
     req=json.loads((RUN/'request.json').read_text());action=req.get('action')
-    if action not in ('deploy','update','start','backup','rollback','inspect','restore-db','create-account','build-source'):raise ValueError('Unknown server action')
-    if req.get('jobs',2) not in (1,2,4):raise ValueError('Use 1, 2 or 4 build workers')
+    if action not in ('deploy','update','start','backup','rollback','inspect','restore-db','create-account','build-source','adopt-build','stage-build','check-staged','deploy-staged'):raise ValueError('Unknown server action')
+    checked_jobs(req.get('jobs',2))
     if action=='inspect':
         info=source_info(source_root(INPUT));status('inspected','Selected source expects client '+info['expected_client']+'. Meshes: '+', '.join(k+(' present' if v else ' missing') for k,v in info['meshes'].items()),source=info)
     elif action=='build-source':build_source(req)
+    elif action=='adopt-build':adopt_build(req)
+    elif action=='stage-build':stage_build(req)
+    elif action=='check-staged':check_staged(req)
+    elif action=='deploy-staged':deploy_staged(req)
     elif action in ('deploy','update'):deploy(req)
     elif action=='restore-db':restore_database(req)
     elif action=='create-account':
+        invalidate_database_stage('An account operation changed the active database. Stage its database again.')
         from accounts import create_account
         generation=current()
         try:result=create_account(sys.modules[__name__],generation,sys.stdin.buffer)

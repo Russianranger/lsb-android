@@ -329,4 +329,71 @@ public class WorkServiceTest {
             assertEquals("[100%] build 3",runtime.liveLog().latest);
         }finally{FilesEx.delete(runtime.home);}
     }
+    @Test public void buildRequestsBindDisplayedIdsAndSelectedWorkers()throws Exception {
+        File home=new File(context.getFilesDir(),"server-runtime");java.util.List<org.json.JSONObject> requests=new java.util.ArrayList<>();
+        ServerRuntime runtime=new ServerRuntime(nativeContext(),builder->{
+            try{requests.add(new org.json.JSONObject(FilesEx.read(new File(home,"run/request.json"),32768)));}
+            catch(org.json.JSONException error){throw new IOException(error);}return new Child(false);
+        });
+        File identity=new File(MainActivity.storage(context),"server/current/source-identity.json");
+        String build="11111111-2222-4333-8444-555555555555",generation="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+        try{
+            FilesEx.delete(runtime.home);FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");FilesEx.text(new File(runtime.root,"lsb-server-tools-v4"),"ready");
+            FilesEx.text(identity,"{\"origin\":\"Selected source A\",\"snapshot_id\":\"source-a\",\"commit\":\"16281a81de58acfb315b639d9b79aaacd52a64f2\"}");
+            context.getSharedPreferences("server",0).edit().putInt("jobs",3).commit();
+            runtime.performBuild("build-source","","","",s->{});
+            org.json.JSONObject request=requests.get(0);
+            assertEquals(3,request.getInt("jobs"));assertTrue(request.getBoolean("build"));assertEquals("source-a",request.getJSONObject("source_identity").getString("snapshot_id"));
+            // Fetch selection can change; later operations must keep the explicit build ID.
+            FilesEx.text(identity,"{\"origin\":\"Selected source B\",\"snapshot_id\":\"source-b\"}");
+            runtime.performBuild("stage-build",build,"","copy-current",s->{});
+            runtime.performBuild("check-staged",build,generation,"",s->{});
+            runtime.performBuild("deploy-staged",build,generation,"",s->{});
+            assertEquals(4,requests.size());
+            for(int i=1;i<4;i++){assertEquals(build,requests.get(i).getString("build_id"));assertFalse(requests.get(i).getBoolean("build"));assertFalse(requests.get(i).has("source_identity"));}
+            assertEquals("copy-current",requests.get(1).getString("database_mode"));
+            assertEquals(generation,requests.get(2).getString("generation"));assertEquals(generation,requests.get(3).getString("generation"));
+            String before=FilesEx.read(new File(runtime.run,"request.json"),32768);
+            try{runtime.performBuild("deploy-staged","",generation,"",s->{});fail("No implied latest build");}catch(IOException expected){}
+            try{runtime.performBuild("stage-build",build,"","erase",s->{});fail("Unknown database mode");}catch(IOException expected){}
+            assertEquals(before,FilesEx.read(new File(runtime.run,"request.json"),32768));assertEquals(4,requests.size());assertFalse(runtime.alive());
+            context.getSharedPreferences("server",0).edit().putInt("jobs",17).commit();
+            try{runtime.performBuild("build-source","","","",s->{});fail("Invalid jobs must not launch a process");}catch(IOException expected){assertTrue(expected.getMessage().contains("1 to 16"));}
+            assertEquals(4,requests.size());assertFalse(runtime.alive());
+        }finally{context.getSharedPreferences("server",0).edit().remove("jobs").commit();identity.delete();FilesEx.delete(runtime.home);}
+    }
+    @Test public void buildStateSeparatesFetchedBuiltStagedAndActiveReceipts()throws Exception {
+        ServerRuntime runtime=new ServerRuntime(context,builder->{throw new AssertionError("Reading receipts must not start a process");});
+        File identity=new File(MainActivity.storage(context),"server/current/source-identity.json");
+        String id="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+        try{
+            FilesEx.delete(runtime.home);
+            FilesEx.text(identity,"{\"origin\":\"Fetched B\",\"snapshot_id\":\"b\"}");
+            FilesEx.text(new File(runtime.state,"source-build/server/android-build.json"),"{\"state\":\"passed\",\"build_id\":\"11111111-2222-4333-8444-555555555555\",\"selected_source\":{\"origin\":\"Built A\"}}");
+            FilesEx.text(new File(runtime.state,"staged.json"),"{\"generation\":\""+id+"\",\"state\":\"checked\",\"database_mode\":\"fresh\"}");
+            FilesEx.text(new File(runtime.state,"active.json"),"{\"current\":\""+id+"\"}");
+            FilesEx.text(new File(runtime.state,"generations/"+id+"/deployment.json"),"{\"generation\":\""+id+"\",\"expected_client\":\"old-client\"}");
+            org.json.JSONObject state=runtime.buildState();
+            assertEquals("Fetched B",state.getJSONObject("selected_source").getString("origin"));
+            assertEquals("Built A",state.getJSONObject("build").getJSONObject("selected_source").getString("origin"));
+            assertEquals("fresh",state.getJSONObject("staged").getString("database_mode"));
+            assertEquals("deployed",state.getJSONObject("staged").getString("state"));
+            assertEquals("old-client",state.getJSONObject("deployed").getString("expected_client"));
+            assertFalse(state.getJSONObject("database_import").getBoolean("available"));assertFalse(runtime.alive());
+        }finally{identity.delete();FilesEx.delete(runtime.home);}
+    }
+    @Test public void importedDatabaseIdentityTracksExactUncompressedBackup()throws Exception {
+        ServerRuntime runtime=new ServerRuntime(context,builder->{throw new AssertionError("Import must not deploy or start database");});
+        byte[] bytes="CREATE TABLE fixture(id INT);\n".getBytes("UTF-8");
+        try{
+            FilesEx.delete(runtime.home);runtime.importDatabase(new ByteArrayInputStream(bytes),s->{});
+            org.json.JSONObject imported=runtime.buildState().getJSONObject("database_import");
+            assertTrue(imported.getBoolean("available"));assertEquals(bytes.length,imported.getLong("bytes"));
+            StringBuilder hash=new StringBuilder();for(byte b:java.security.MessageDigest.getInstance("SHA-256").digest(bytes))hash.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+            assertEquals(hash.toString(),imported.getString("sha256"));assertFalse(new File(runtime.state,"active.json").exists());
+            FilesEx.text(new File(runtime.state,"import.sql"),"A different, longer backup is now selected\n");
+            assertFalse(runtime.buildState().getJSONObject("database_import").has("sha256"));
+        }finally{FilesEx.delete(runtime.home);}
+    }
+
 }

@@ -286,3 +286,81 @@ assert archived_objects(session_source)==snapshot
 assert (session_target/'managed/session/current/client/sentinel').read_bytes()==b'accepted client kept'
 assert b'NewPlayer' in (session_target/'files/server-runtime/state/export.sql').read_bytes()
 print('PASS: complete-session restore boots physical MariaDB at a new app path, preserves accounts/passwords/characters/blobs/routines/events/triggers/client/server, and restored-only writes leave the original app unchanged',flush=True)
+
+# The Build tab reuses a checked build and stages its database separately.
+# Use the exact current upstream dbtool implementation with a deliberately tiny
+# SQL fixture, so the real setup/update CLI, GitPython, connector and mysql
+# subprocess paths run without a full LandSandBoat data import.
+import urllib.request
+build_root=state/'source-build/server'
+if build_root.parent.exists():shutil.rmtree(build_root.parent)
+backend.snapshot_source(state/'generations'/selected()['current']/'server',build_root,recover_build_binaries=False)
+with urllib.request.urlopen('https://raw.githubusercontent.com/LandSandBoat/server/16281a81de58acfb315b639d9b79aaacd52a64f2/tools/dbtool.py',timeout=60) as response:
+ (build_root/'tools/dbtool.py').write_bytes(response.read())
+(build_root/'tools/requirements.txt').write_text('mariadb\npyyaml\nGitPython\ncolorama\n')
+(build_root/'tools/migrations').mkdir(exist_ok=True)
+(build_root/'modules').mkdir(exist_ok=True);(build_root/'modules/init.txt').write_text('')
+# Preserve existing accounts/chars during updates; the upstream tool treats
+# these filenames as protected. Fresh setup imports all three exact build SQLs.
+(build_root/'sql/accounts.sql').write_text("DROP TABLE IF EXISTS accounts; CREATE TABLE accounts(id INT PRIMARY KEY,login VARCHAR(32));\n")
+(build_root/'sql/chars.sql').write_text("DROP TABLE IF EXISTS chars; CREATE TABLE chars(charid INT PRIMARY KEY,charname VARCHAR(32));\n")
+(build_root/'sql/zone_settings.sql').write_text("DROP TABLE IF EXISTS zone_settings; CREATE TABLE zone_settings(zoneid INT,zoneip VARCHAR(32),zoneport INT); INSERT INTO zone_settings VALUES(42,'192.0.2.42',54230);\n")
+backend.validate_binaries(build_root)
+receipt=dict(format=1,state='passed',allocator='jemalloc',jobs=2,source=backend.source_info(build_root),binaries=backend.validate_jemalloc(build_root))
+backend.atomic(build_root/'android-build.json',receipt)
+adopted=invoke('adopt-build')['build'];build_id=adopted['build_id']
+assert adopted['binaries']==receipt['binaries'] and 'repository' not in adopted['selected_source']
+active_before=selected()['current'];pointer_before=selected()
+# Fetching a different source now must not influence any deployment step.
+(source/'sql/fixture.sql').write_text('THIS IS NOT VALID SQL; newly fetched source must not be used')
+(source/'settings/default/login.lua').write_text("CLIENT_VER = 'different-fetched-client',\n")
+built_hashes={name:hashlib.sha256((build_root/name).read_bytes()).hexdigest() for name in backend.PROCESSES}
+
+def stage_build_fixture(mode):
+ report=invoke('stage-build',build_id=build_id,database_mode=mode)['deployment']
+ assert report['build_id']==build_id and report['selected_source']==adopted['selected_source']
+ assert report['binaries']==built_hashes and selected()['current']==active_before
+ return report,dict(build_id=build_id,generation=report['generation'])
+
+preserved,selection=stage_build_fixture('copy-current')
+assert preserved['accounts']==2 and preserved['characters']==2
+assert query_generation(preserved['generation'],"SELECT zoneid FROM zone_settings; SELECT COUNT(*) FROM chars;").splitlines()==['42','2']
+invoke('check-staged',**selection)
+assert selected()==pointer_before
+# A real account mutation invalidates a staged preserving copy, even though
+# the active generation ID stays the same.
+invoke('create-account',payload=b'LSBACCOUNT1\nPipelinePlayer\nPrivate pipeline fixture 42!\n')
+assert json.loads((state/'staged.json').read_text())['stale_database']
+invoke('check-staged',False,**selection)
+preserved,selection=stage_build_fixture('copy-current')
+assert preserved['accounts']==3 and preserved['characters']==2
+invoke('check-staged',**selection);invoke('deploy-staged',**selection)
+assert selected()==dict(current=preserved['generation'],previous=active_before)
+assert query_generation(preserved['generation'],"SELECT COUNT(*) FROM accounts; SELECT COUNT(*) FROM chars; SELECT zoneid FROM zone_settings;").splitlines()==['3','2','42']
+invoke('rollback');assert selected()['current']==active_before
+print('PASS: exact upstream migrate/update preserve accounts, reuse the recorded jemalloc build, reject stale player copies and deploy/rollback atomically',flush=True)
+
+fresh,selection=stage_build_fixture('fresh')
+assert fresh['accounts']==0 and fresh['characters']==0
+assert query_generation(fresh['generation'],"SELECT COUNT(*) FROM accounts; SELECT COUNT(*) FROM chars; SELECT zoneid FROM zone_settings;").splitlines()==['0','0','42']
+invoke('deploy-staged',False,**selection)
+invoke('check-staged',**selection)
+staged_binary=state/'generations'/fresh['generation']/'server/xi_map'
+original_binary=staged_binary.read_bytes();staged_binary.write_bytes(original_binary+b'changed')
+invoke('deploy-staged',False,**selection);assert selected()['current']==active_before
+staged_binary.write_bytes(original_binary)
+invoke('check-staged',**selection);invoke('deploy-staged',**selection)
+assert selected()==dict(current=fresh['generation'],previous=active_before)
+assert query_generation(fresh['generation'],"SELECT COUNT(*) FROM accounts;").strip()=='0'
+invoke('rollback');assert selected()['current']==active_before
+print('PASS: exact upstream fresh setup creates the build SQL database, mandatory checks reject tampering, and replacement keeps the old server/database',flush=True)
+
+(state/'import.sql').write_bytes(dump)
+imported,selection=stage_build_fixture('import')
+assert imported['accounts']==1 and imported['characters']==1
+assert imported['database_input_sha256']==hashlib.sha256(dump).hexdigest()
+invoke('check-staged',**selection);invoke('deploy-staged',**selection)
+assert query_generation(imported['generation'],"SELECT COUNT(*) FROM accounts; SELECT COUNT(*) FROM chars; SELECT HEX(content) FROM fixture_blobs WHERE id=1;").splitlines()==['1','1','000A0DFF275C']
+invoke('rollback');assert selected()['current']==active_before
+assert (Path('/client')/'sentinel').read_bytes()==b'accepted client kept'
+print('PASS: imported SQL stages and replaces only the selected checked generation, retains SQL objects and allows rollback',flush=True)

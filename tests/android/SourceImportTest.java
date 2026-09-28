@@ -33,14 +33,28 @@ public class SourceImportTest {
         assertTrue(report.contains("Expected client: 30251204_1"));assertTrue(report.contains("Server-root binaries: 0/4"));
         assertTrue(new File(home,"current/wrapper/server/build/xi_connect").isFile());
         assertEquals("CLIENT_VER = '30251204_1',",FilesEx.read(new File(home,"current/wrapper/server/settings/login.lua"),4096));
+        org.json.JSONObject identity=SourceImport.identity(home);
+        assertEquals("User-selected server ZIP",identity.getString("origin"));assertEquals("30251204_1",identity.getString("expected_client"));
+        assertTrue(identity.getString("snapshot_id").matches("[a-f0-9-]{36}"));assertFalse(identity.has("commit"));
         assertFalse(new File(home,"incoming").exists());
     }
     @Test public void ambiguousServerZipPreservesSelectedSnapshot()throws Exception{
         File home=Files.createTempDirectory("server-ambiguous").toFile();
         SourceImport.stage(home,new ByteArrayInputStream(archive(false)),"known matching snapshot",s->{});
         byte[] before=Files.readAllBytes(new File(home,"current/source-report.txt").toPath());
+        String snapshot=SourceImport.identity(home).getString("snapshot_id");
         try{SourceImport.stage(home,new ByteArrayInputStream(archive(true)),"ambiguous",s->{});fail("Two server roots must be rejected");}
         catch(IOException expected){assertTrue(expected.getMessage().contains("exactly one"));}
+        assertEquals(snapshot,SourceImport.identity(home).getString("snapshot_id"));
         assertArrayEquals(before,Files.readAllBytes(new File(home,"current/source-report.txt").toPath()));assertFalse(new File(home,"incoming").exists());
     }
+    @Test public void legacyGitReceiptIsVisibleWithoutClaimingAnAcquisitionId()throws Exception{
+        File home=Files.createTempDirectory("source-identity-legacy").toFile();
+        String sha="16281a81de58acfb315b639d9b79aaacd52a64f2";
+        FilesEx.text(new File(home,"current/source-report.txt"),"Source: LandSandBoat/server @ "+sha+"\nExpected client: 30260904_1\n");
+        org.json.JSONObject identity=SourceImport.identity(home);
+        assertEquals(sha,identity.getString("commit"));assertEquals("LandSandBoat/server",identity.getString("repository"));
+        assertTrue(identity.getBoolean("legacy"));assertFalse(identity.has("snapshot_id"));
+    }
+
 }

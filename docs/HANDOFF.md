@@ -1,3 +1,40 @@
+# 0.5.47: explicit Build workspace
+
+The owner requested a separate Build tab with clear fetched source, jemalloc
+build, database preparation/replacement, staged validation and deployment,
+worker selection and live progress. This change implements that workflow.
+
+Source imports persist repository/ref/exact commit when known, an acquisition ID
+and expected client. Successful jemalloc builds record a unique build ID, full
+source/payload fingerprints and all four binary hashes. Staging uses that exact
+build and its SQL/tools, not the latest fetch. Database modes are a migrated
+copy of current player data, imported SQL, or fresh SQL initialization. Checks
+validate staged fingerprints, ARM64/jemalloc binaries and MariaDB tables/counts.
+Deployment repeats checks and atomically activates the staged server/database
+pair with the prior pair retained. Running the active server or changing accounts
+invalidates a staged preserving database copy. A prior successful 0.5.45/0.5.46
+build can be verified and adopted without compiling again; old provenance stays
+labelled unknown rather than borrowing the current fetch identity.
+
+Build workers support j1 through j16 (default j2). Compilation permits six hours
+for j1 and three for j2 while retaining cancellation. The Build page displays
+live output and separate fetched/completed/staged/current identities, staging
+failures, mesh availability and recorded client-version comparison. Server
+retains operating controls, accounts, backup export and rollback.
+
+The database wrapper now continues from successful migration CLI exits into the
+full update, handles fresh setup against the already-created isolated schema,
+preserves the build's client setting, and rejects swallowed connection or bulk
+SQL errors. New tests include real MariaDB with the exact selected upstream
+dbtool revision and reduced fixture SQL for all three database modes.
+
+Validation and APK delivery are pending CI. The development environment is
+currently disconnected (exec-server websocket failure); no shell or signing
+tools are exposed. Code changes can be pushed and tested through GitHub.
+Do not deliver the disposable-certificate CI APK as an update. Once the workspace
+is restored, sign the qualified 0.5.47 / code 63 pair with the retained preview
+key and save/deliver as usual. See [TESTING-0.5.47.md](TESTING-0.5.47.md).
+
 # 0.5.46: live server operation logs
 
 The owner submitted the completed phone compilation logs and authorized the

@@ -51,6 +51,42 @@ final class ServerRuntime {
         if(!id.matches("[a-f0-9-]{36}"))throw new IOException("Invalid server generation");
         return new JSONObject(FilesEx.read(new File(state,"generations/"+id+"/deployment.json"),32768));
     }
+    private static JSONObject receipt(File file)throws Exception {
+        if(!Files.exists(file.toPath(),LinkOption.NOFOLLOW_LINKS))return new JSONObject();
+        if(!Files.isRegularFile(file.toPath(),LinkOption.NOFOLLOW_LINKS))throw new IOException("Invalid server receipt: "+file.getName());
+        return new JSONObject(FilesEx.read(file,1048576));
+    }
+    /** Small persisted receipts; source/binary/SQL hashing runs in the server worker. */
+    JSONObject buildState()throws Exception {
+        File sql=new File(state,"import.sql");JSONObject database=new JSONObject().put("available",sql.isFile()).put("bytes",sql.isFile()?sql.length():0).put("label","Imported SQL backup");
+        JSONObject imported=receipt(new File(state,"import-info.json"));
+        if(sql.isFile()&&imported.optLong("bytes",-1)==sql.length()&&imported.optLong("modified_millis",-1)==sql.lastModified()){
+            database.put("sha256",imported.optString("sha256")).put("imported_at_millis",imported.optLong("imported_at_millis"));
+        }
+        JSONObject deployed=deployment(),staged=receipt(new File(state,"staged.json"));
+        if(!deployed.optString("generation").isEmpty()&&deployed.optString("generation").equals(staged.optString("generation")))staged.put("state","deployed");
+        return new JSONObject().put("selected_source",SourceImport.identity(new File(MainActivity.storage(context),"server")))
+                .put("build",receipt(new File(state,"source-build/server/android-build.json")))
+                .put("staged",staged).put("deployed",deployed).put("database_import",database);
+    }
+    private static void selectedId(String value,String label)throws IOException {
+        if(value==null||!value.matches("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"))throw new IOException("Select a completed "+label+" first");
+    }
+    String performBuild(String action,String buildId,String generation,String databaseMode,SafeZip.Progress progress)throws Exception {
+        if(!Arrays.asList("build-source","adopt-build","stage-build","check-staged","deploy-staged").contains(action))throw new IOException("Unknown build action");
+        JSONObject selection=new JSONObject();
+        if(Arrays.asList("stage-build","check-staged","deploy-staged").contains(action)){
+            selectedId(buildId,"build");selection.put("build_id",buildId);
+        }
+        if(action.equals("check-staged")||action.equals("deploy-staged")){
+            selectedId(generation,"staged deployment");selection.put("generation",generation);
+        }
+        if(action.equals("stage-build")){
+            if(!Arrays.asList("fresh","import","copy-current").contains(databaseMode))throw new IOException("Choose how to prepare the staged database");
+            selection.put("database_mode",databaseMode);
+        }
+        try(Operation reserved=beginOperation()){return performReserved(action,action.equals("build-source"),progress,null,selection);}
+    }
     private void idle()throws IOException {if(alive())throw new IOException("Stop the managed server before changing its deployment");}
     private final class Operation implements AutoCloseable {
         @Override public void close(){synchronized(ServerRuntime.this){if(operation==this){operation=null;active=false;}}}
@@ -104,17 +140,22 @@ final class ServerRuntime {
         try(Operation reserved=beginOperation()){return importDatabaseReserved(input,progress);}
     }
     private String importDatabaseReserved(InputStream input,SafeZip.Progress progress)throws Exception {
-        assets();File temp=new File(state,"import.sql.new");long count=0;
+        assets();File temp=new File(state,"import.sql.new");long count=0;MessageDigest digest=MessageDigest.getInstance("SHA-256");
         try{
             PushbackInputStream peek=new PushbackInputStream(new BufferedInputStream(input),2);byte[] magic=new byte[2];int n=peek.read(magic);if(n>0)peek.unread(magic,0,n);
             if(n==2&&magic[0]=='P'&&magic[1]=='K')throw new IOException("Select the SQL dump or SQL.gz inside the ZIP");
             InputStream in=n==2&&(magic[0]&255)==31&&(magic[1]&255)==139?new GZIPInputStream(peek):peek;
             try(OutputStream out=new FileOutputStream(temp)){
                 byte[] b=new byte[1024*1024];long next=0;
-                while((n=in.read(b))!=-1){SafeZip.checkCancelled();count+=n;if(count>16L*1073741824||home.getUsableSpace()<256L*1048576)throw new IOException("Not enough space for the database import");out.write(b,0,n);if(count>next){progress.update("Importing database: "+count/1048576+" MiB");next=count+32L*1048576;}}
+                while((n=in.read(b))!=-1){SafeZip.checkCancelled();count+=n;if(count>16L*1073741824||home.getUsableSpace()<256L*1048576)throw new IOException("Not enough space for the database import");out.write(b,0,n);digest.update(b,0,n);if(count>next){progress.update("Importing database: "+count/1048576+" MiB");next=count+32L*1048576;}}
             }
             if(count<16)throw new IOException("The selected database dump is empty");
-            Files.move(temp.toPath(),new File(state,"import.sql").toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
+            File imported=new File(state,"import.sql");
+            Files.move(temp.toPath(),imported.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
+            StringBuilder sha=new StringBuilder();for(byte b:digest.digest())sha.append(String.format(Locale.ROOT,"%02x",b&255));
+            File info=new File(state,"import-info.json.new");
+            FilesEx.text(info,new JSONObject().put("bytes",count).put("sha256",sha.toString()).put("modified_millis",imported.lastModified()).put("imported_at_millis",System.currentTimeMillis()).toString());
+            Files.move(info.toPath(),new File(state,"import-info.json").toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
             return "SQL backup imported ("+count/1048576+" MiB). The active database is unchanged until deployment.";
         }finally{temp.delete();}
     }
@@ -198,10 +239,17 @@ final class ServerRuntime {
         }finally{account.close();}
     }
     private String performReserved(String action,boolean build,SafeZip.Progress progress,ServerAccountRequest account)throws Exception {
+        return performReserved(action,build,progress,account,new JSONObject());
+    }
+    private String performReserved(String action,boolean build,SafeZip.Progress progress,ServerAccountRequest account,JSONObject selection)throws Exception {
         assets();if(!installed())throw new IOException("Install the server runtime first");
-        if((action.equals("deploy")||action.equals("update")||action.equals("build-source"))&&!toolsCurrent())throw new IOException("Update server runtime and build tools before deploying or rebuilding the server");
-        JSONObject request=new JSONObject().put("action",action).put("build",build).put("jobs",context.getSharedPreferences("server",0).getInt("jobs",2)).put("database",context.getSharedPreferences("server",0).getString("database","xidb")).put("local_zones",context.getSharedPreferences("server",0).getBoolean("local_zones",true));
-        if(action.equals("deploy")||action.equals("update"))try{request.put("client_pair",ClientRuntime.get(context).compatibilitySnapshot());}catch(Exception e){request.put("client_pair",new JSONObject().put("status","client_not_prepared"));}
+        if(Arrays.asList("deploy","update","build-source","adopt-build","stage-build","check-staged","deploy-staged").contains(action)&&!toolsCurrent())throw new IOException("Update server runtime and build tools before deploying or rebuilding the server");
+        int jobs=context.getSharedPreferences("server",0).getInt("jobs",2);
+        if(jobs<1||jobs>16)throw new IOException("Choose 1 to 16 build workers");
+        JSONObject request=new JSONObject().put("action",action).put("build",build).put("jobs",jobs).put("database",context.getSharedPreferences("server",0).getString("database","xidb")).put("local_zones",context.getSharedPreferences("server",0).getBoolean("local_zones",true));
+        if(action.equals("build-source"))request.put("source_identity",SourceImport.identity(new File(MainActivity.storage(context),"server")));
+        for(Iterator<String> keys=selection.keys();keys.hasNext();){String key=keys.next();request.put(key,selection.get(key));}
+        if(Arrays.asList("deploy","update","stage-build","deploy-staged").contains(action))try{request.put("client_pair",ClientRuntime.get(context).compatibilitySnapshot());}catch(Exception e){request.put("client_pair",new JSONObject().put("status","client_not_prepared"));}
         FilesEx.text(new File(run,"request.json"),request.toString());new File(run,"status.json").delete();
         execute(Arrays.asList("/usr/bin/python3","/opt/lsb-server/manager.py"),progress,account);return status;
     }
@@ -233,5 +281,6 @@ final class ServerRuntime {
         File s=new File(run,"status.json");if(s.isFile())SafeZip.entry(zip,"server/status.json",FilesEx.read(s,65536));
         File build=new File(logs,"build-report.json");if(build.isFile())SafeZip.entry(zip,"server/build-report.json",redactCredentials(FilesEx.read(build,1048576)));
         SafeZip.entry(zip,"server/operation.log",operationLog());
+        SafeZip.entry(zip,"server/build-state.json",redactCredentials(buildState().toString(2)));
     }
 }
