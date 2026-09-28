@@ -8,10 +8,11 @@ built and started only `xi_world`, `xi_search`, `xi_map`, and `xi_connect`.
 
 ## Recover the existing deployment
 
-1. Install **LSB-Android-Restore-Test-0.5.52.apk** over Restore Test, retaining its
-   data. Use the ordinary APK only for the separate ordinary app.
-2. Stop the client and managed server. On **Build**, select the desired worker
-   count. The repair uses this same worker preference.
+1. Stop the client and managed server, then install
+   **LSB-Android-Restore-Test-0.5.52.apk** over Restore Test, retaining its data.
+   Use the ordinary APK only for the separate ordinary app.
+2. On **Build**, select the desired worker count. The repair uses this same
+   worker preference.
 3. On **Server**, tap **Repair missing profile service**. Wait for completion;
    live progress and compiler output appear in **Diagnostics → Server operation
    log**. This requires the build dependencies/source downloads used by the

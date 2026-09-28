@@ -28,7 +28,53 @@ Profile readiness requires its own process and both listeners. Logs include the
 profile process and repair receipt. Client diagnostics distinguish the specific
 profile-service connection failure from a general server connection error.
 
-Version 0.5.52 / code 68. Build, integration and delivery validation pending.
+Version 0.5.52 / code 68. Production candidate
+`72aa37392f37ac21c603e6a976663a934d06da94` passed verify job
+`109134814608` in run `36483506388`: 117 Android tests, 197 runtime tests,
+122 server tests, core import/recovery and APK compilation/packaging. The
+presentation and Windows launcher jobs also passed. CI-only follow-up
+`714de21f76c390d6e44916610b19751c7abe7e63` adds a focused real-profile gate;
+it does not change any app, server or runtime asset in these APKs.
+
+Real ARM64 server deployment job `109134668015` passed, including a profile-only
+jemalloc build, unchanged four server binaries, complete SQL and stopped database
+files, stable current generation/build receipt, idempotent repair, port collision
+rejection, and five-process readiness that waits for both profile listeners.
+The synthetic repair fixture intentionally fails if any of the other four
+targets is built. Existing database replacement/session restoration checks also
+passed. Exact upstream profile job `109139381299` in run `36484920525`
+passed: source `6d5a5137024e21602e37032f6e55a682971329be` compiled ARM64
+`xi_profile` through the production backend with two workers and bound `malloc`
+to jemalloc. The real service accepted authenticated TLS 1.3 connections on
+51220 and 51240 against an isolated MariaDB; invalid sessions were rejected.
+The named-tuple ASIO accept lifetime test also passed. Evidence artifact
+`11000015200` SHA-256 is
+`a9000f6880433c59c70f0e1fa589b63ca34819d5f242b67244551b84f9b84697`.
+The separate all-five upstream rebuild is still running.
+
+Broader runtime job `109135813544` timed out in the unchanged observed D3D8
+pixel fixture before login code. That fixture passed on the preceding 0.5.51
+candidate; the graphics code and fixture are unchanged. A fresh baseline run
+`36484920556` is running on the same production assets. This is not a passing
+full-runtime gate and does not establish successful phone login/world entry.
+FEX job `109135813612` likewise timed out in the unchanged compressed-texture
+fixture (`trace_probe.py:65`, 60 seconds), after the ordinary/observed pixels,
+software rendering, audio/input, migration and filtered-PRoot checks passed.
+The same texture fixture passed twice for 0.5.51. The fresh baseline also retries
+FEX on identical production assets; no graphics change was made for these timeouts.
+
+Both signed APKs retain update certificate SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+16 KiB alignment, signatures, package/version and all 70 payload entries were
+verified against the candidate CI APKs. All 68 shared entries match between
+variants, and all runtime/server assets match the source tree. Each APK is
+18,544,027 bytes. Signed SHA-256:
+
+- Restore Test: `3ec813ef9fc406007f373c23bda507ed1ac474bb4f5bd92b71868f3f87546ee2`
+- Ordinary: `fee4c267f0b30dabeb3f390edbef4f040bbf6512cc67cd02678250762efa920a`
+
+Both signed APKs were saved successfully for delivery. Real-device authentication
+and world entry remain to be confirmed after this repair.
 Follow [TESTING-0.5.52.md](TESTING-0.5.52.md).
 
 # 0.5.51: use the imported loader in the active updated client
