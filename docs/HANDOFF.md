@@ -29,10 +29,57 @@ files match the catalog. CRLF/LF normalization is needed: upstream CMake with
 CRLF exactly matches the phone's recorded CMake hash. This does not establish
 an exact original source commit; the adopted receipt stays unknown.
 
-Qualification and signed APK delivery are pending. Do not claim delivery until
-CI and signature results are recorded. Test instructions:
-[TESTING-0.5.50.md](TESTING-0.5.50.md). Install the Restore-Test update and press
-**Start managed server** online; retain the deployed database and completed build.
+Qualified source commit: `42e3b913c53b8aa5d85751951315a9b07dc9ad1d`.
+All 115 server unit tests passed locally, along with the focused startup test
+using real pinned binary map fixtures and actual child processes. Exact-head
+[baseline run 36477169636](https://github.com/Russianranger/lsb-android/actions/runs/36477169636)
+passed verify job `109113837646`: 108 Android tests, 192 runtime Python tests,
+115 server Python tests and both APK builds. ARM64 server-deployment job
+`109113666504` passed the production HTTPS download and header validation of all
+304 navigation meshes and 299 collision meshes, repeat preparation offline,
+missing-map exit-255 reproduction, failed download before DB/process launch,
+repaired startup, current timed readiness and a single successful login probe.
+The separate real MariaDB/ARM64 executable tests passed import, staging, account
+creation, deployment, rollback, session restore, and all 0.5.49 legacy-ID repair
+and data-preservation checks. Full LandSandBoat gameplay on the phone remains
+the next device test; the focused process fixture is not an unmodified game server.
+Presentation and Windows launcher jobs also passed. Unchanged client/runtime
+jobs were still running at qualification; do not claim the entire baseline is done.
+
+**Signed 0.5.50 / code 66 APKs delivered on 2026-09-28.** Both passed retained-key
+v2/v3 signature verification, expected package/version checks, 16 KiB alignment,
+equality of all 70 nonsignature CI entries, and all 26 source server/runtime
+assets. Variants share 68 identical payload entries; each is 18,535,835 bytes.
+
+- `LSB-Android-Restore-Test-0.5.50.apk` SHA-256:
+  `072e6d5093fa592351e7bbdfe185438ed6c67bb9f66ef40376f893ddcb57f51f`.
+- `LSB-Android-0.5.50.apk` SHA-256:
+  `37fbea3d2ae5e30acf18b8d878962cacdfec962c7b96a0552b7dcba3152e1556`.
+- Retained certificate SHA-256:
+  `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+
+CI archive hashes checked before extraction/signing: Restore-Test artifact
+`10994240923`, SHA-256
+`7ea7f5419bd64e55666b99be522776aad937cdcbbe533c2ad177b943a9f7cb97`;
+normal artifact `10994265763`, SHA-256
+`9bf79fd89c0d5fac592e847f0645ff31c68f2a83f73a8d9418972c30cac8a7c7`.
+CI APK bytes also matched the log hashes before signing: Restore-Test
+`ee04d195dbe7b44e0bd4eec4bd5f6d228a5adbea381d485065206bfac8183fbf`,
+normal `ef063cb2139ef83f8908094ae3c9389bc9faa92c9309677e601392368dce0cbe`.
+Local evidence: `verification/delivery-verification-0.5.50.json`,
+`verification/ci-verify-0.5.50.log`, `verification/ci-server-deployment-0.5.50.log`,
+and `verification/library-delivery-0.5.50.json`.
+
+Both APKs were saved successfully with local metadata applied. Save identities:
+- `LSB-Android-Restore-Test-0.5.50.apk`: `libfile_53afaca7adcc81919ea861d2c97d3728` /
+  `file_00000000bf0081f59c36b4c8828dd138`.
+- `LSB-Android-0.5.50.apk`: `libfile_b0496647d6cc8191950aced7e22f58c0` /
+  `file_00000000ffc881f58d32d5f37493fee9`.
+
+Test instructions: [TESTING-0.5.50.md](TESTING-0.5.50.md). Install the Restore-Test
+update over the existing app and press **Start managed server** online. Retain the
+deployed database and completed build: no fetch, compilation, database preparation,
+or deployment is needed for this recovery. The first start prepares missing maps.
 
 # 0.5.49: staged legacy account ID compatibility
 
