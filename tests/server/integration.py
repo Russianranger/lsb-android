@@ -288,21 +288,28 @@ assert b'NewPlayer' in (session_target/'files/server-runtime/state/export.sql').
 print('PASS: complete-session restore boots physical MariaDB at a new app path, preserves accounts/passwords/characters/blobs/routines/events/triggers/client/server, and restored-only writes leave the original app unchanged',flush=True)
 
 # The Build tab reuses a checked build and stages its database separately.
-# Use the exact current upstream dbtool implementation with a deliberately tiny
-# SQL fixture, so the real setup/update CLI, GitPython, connector and mysql
-# subprocess paths run without a full LandSandBoat data import.
+# Use the phone build's exact upstream dbtool and account schemas, with tiny
+# synthetic world/player fixtures. Pin every downloaded byte so this exercises
+# the real account foreign key and CLI imports without changing with upstream.
 import urllib.request
 build_root=state/'source-build/server'
 if build_root.parent.exists():shutil.rmtree(build_root.parent)
 backend.snapshot_source(state/'generations'/selected()['current']/'server',build_root,recover_build_binaries=False)
-with urllib.request.urlopen('https://raw.githubusercontent.com/LandSandBoat/server/16281a81de58acfb315b639d9b79aaacd52a64f2/tools/dbtool.py',timeout=60) as response:
- (build_root/'tools/dbtool.py').write_bytes(response.read())
+upstream_revision='6d5a5137024e21602e37032f6e55a682971329be'
+for relative,expected in {
+ 'tools/dbtool.py':'e4ca6e9945c00d58d156091e28fc65d99ce17ff9cb8cd8cc06c4c66f58108018',
+ 'sql/accounts.sql':'61aab89643ee8f5e6fd4232ea3cf50e1befa0b78a6e807f6e88345d7b5d6fa1f',
+ 'sql/accounts_files.sql':'6f332ce589194c113438c3f47bc6bb6b29bd3b72324f9436376e0b40967cf1a7',
+}.items():
+ with urllib.request.urlopen('https://raw.githubusercontent.com/LandSandBoat/server/'+upstream_revision+'/'+relative,timeout=60) as response:
+  content=response.read()
+ assert hashlib.sha256(content).hexdigest()==expected,relative
+ (build_root/relative).write_bytes(content)
 (build_root/'tools/requirements.txt').write_text('mariadb\npyyaml\nGitPython\ncolorama\n')
 (build_root/'tools/migrations').mkdir(exist_ok=True)
 (build_root/'modules').mkdir(exist_ok=True);(build_root/'modules/init.txt').write_text('')
 # Preserve existing accounts/chars during updates; the upstream tool treats
-# these filenames as protected. Fresh setup imports all three exact build SQLs.
-(build_root/'sql/accounts.sql').write_text("DROP TABLE IF EXISTS accounts; CREATE TABLE accounts(id INT PRIMARY KEY,login VARCHAR(32));\n")
+# these filenames as protected. Fresh setup imports the real account tables.
 (build_root/'sql/chars.sql').write_text("DROP TABLE IF EXISTS chars; CREATE TABLE chars(charid INT PRIMARY KEY,charname VARCHAR(32));\n")
 (build_root/'sql/zone_settings.sql').write_text("DROP TABLE IF EXISTS zone_settings; CREATE TABLE zone_settings(zoneid INT,zoneip VARCHAR(32),zoneport INT); INSERT INTO zone_settings VALUES(42,'192.0.2.42',54230);\n")
 backend.validate_binaries(build_root)
@@ -364,3 +371,93 @@ assert query_generation(imported['generation'],"SELECT COUNT(*) FROM accounts; S
 invoke('rollback');assert selected()['current']==active_before
 assert (Path('/client')/'sentinel').read_bytes()==b'accepted client kept'
 print('PASS: imported SQL stages and replaces only the selected checked generation, retains SQL objects and allows rollback',flush=True)
+
+# The phone's imported legacy schema used signed AUTO_INCREMENT account IDs.
+# Its rows are deliberately NOT a fixture: reproduce the DDL with synthetic
+# accounts/passwords/characters already created above, and preserve the source
+# database while repairing only a new staged generation.
+def account_schema(generation):
+ return query_generation(generation,"SELECT COLUMN_TYPE,EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='accounts' AND COLUMN_NAME='id'; SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='accounts';").splitlines()
+
+def player_snapshot(generation):
+ return query_generation(generation,"SELECT * FROM accounts ORDER BY id; SELECT * FROM chars ORDER BY charid; SELECT id,HEX(content) FROM fixture_blobs ORDER BY id;")
+
+def generation_cli(generation,statement):
+ folder=state/'generations'/generation;creds=None
+ try:
+  creds=backend.start_database(folder)
+  return subprocess.run(['mariadb',backend.cnf('lsb',creds['game']),'--batch','--skip-column-names','xidb'],input=statement,capture_output=True,text=True,timeout=60)
+ finally:
+  if creds is not None:backend.stop_database(creds)
+  else:backend.stop_children()
+
+query_generation(active_before,'ALTER TABLE accounts MODIFY COLUMN id INT NOT NULL AUTO_INCREMENT; ALTER TABLE accounts AUTO_INCREMENT=4000;')
+legacy_schema=account_schema(active_before)
+assert 'unsigned' not in legacy_schema[0] and legacy_schema[0].endswith('\tauto_increment') and legacy_schema[1]=='4000',legacy_schema
+legacy_rows=player_snapshot(active_before);legacy_pointer=selected()
+# Same import envelope as upstream dbtool: disabling checks does not make
+# mismatched signed/unsigned foreign-key definitions legal in InnoDB.
+reproduced=generation_cli(active_before,'SET foreign_key_checks=0;\n'+(build_root/'sql/accounts_files.sql').read_text())
+assert reproduced.returncode!=0 and 'ERROR 1005' in reproduced.stderr and 'errno: 150' in reproduced.stderr,reproduced.stderr
+assert account_schema(active_before)==legacy_schema and player_snapshot(active_before)==legacy_rows
+print('PASS: unpatched real MariaDB reproduces phone ERROR 1005 / errno 150 with exact upstream accounts_files.sql and synthetic legacy signed IDs',flush=True)
+
+normalized,selection=stage_build_fixture('copy-current')
+normalized_id=normalized['generation']
+assert normalized['accounts']==3 and normalized['characters']==2
+assert 'unsigned' in account_schema(normalized_id)[0] and account_schema(normalized_id)[1]=='4000'
+assert player_snapshot(normalized_id)==legacy_rows
+assert account_schema(active_before)==legacy_schema and player_snapshot(active_before)==legacy_rows and selected()==legacy_pointer
+assert query_generation(normalized_id,"SELECT COLUMN_NAME,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='accounts_files' AND REFERENCED_TABLE_NAME IS NOT NULL;").strip()=='accid\taccounts\tid'
+assert query_generation(normalized_id,"INSERT INTO accounts_files(accid,path,data) VALUES(1,0x0066697874757265,0x000A0DFF275C); START TRANSACTION; DELETE FROM accounts WHERE id=1; SELECT COUNT(*) FROM accounts_files; ROLLBACK;").strip()=='0'
+assert query_generation(normalized_id,'SELECT HEX(path),HEX(data) FROM accounts_files;').strip()=='0066697874757265\t000A0DFF275C'
+rejected=generation_cli(normalized_id,"INSERT INTO accounts_files(accid,path,data) VALUES(2147483647,0x01,0x02);")
+assert rejected.returncode!=0 and 'ERROR 1452' in rejected.stderr,rejected.stderr
+assert query_generation(normalized_id,'SELECT COUNT(*) FROM accounts_files;').strip()=='1'
+invoke('check-staged',**selection);invoke('deploy-staged',**selection)
+new_secret=b'Preserved schema player 42!'
+new_account=invoke('create-account',payload=b'LSBACCOUNT1\nAlignedPlayer\n'+new_secret+b'\n')
+assert new_account['accounts']==4 and new_account['characters']==2
+new_record=query_generation(normalized_id,"SELECT id,password FROM accounts WHERE login='AlignedPlayer';").strip().split('\t')
+assert int(new_record[0])==new_account['account_id']==4000 and bcrypt.checkpw(new_secret,new_record[1].encode('ascii'))
+assert query_generation(normalized_id,"SELECT password FROM accounts WHERE login='NewPlayer';").strip()==record[1]
+assert account_schema(normalized_id)[1]=='4001'
+# A second preparation must retain already existing protected account files;
+# unsigned account IDs require no further schema changes or FK removal.
+repeat=invoke('stage-build',build_id=build_id,database_mode='copy-current')['deployment']
+assert repeat['accounts']==4 and repeat['characters']==2 and selected()['current']==normalized_id
+assert player_snapshot(repeat['generation'])==player_snapshot(normalized_id)
+assert account_schema(repeat['generation'])==account_schema(normalized_id)
+assert query_generation(repeat['generation'],'SELECT HEX(path),HEX(data) FROM accounts_files;').strip()=='0066697874757265\t000A0DFF275C'
+invoke('rollback');assert selected()['current']==active_before
+assert account_schema(active_before)==legacy_schema and player_snapshot(active_before)==legacy_rows
+print('PASS: legacy copy-current aligns only staged IDs, preserves account/password/character/blob values and AUTO_INCREMENT, enforces real FK/cascade, permits app account creation, and retains protected account-file blobs on repeated preparation',flush=True)
+
+legacy_dump=dump.replace(b'id int(10) unsigned NOT NULL DEFAULT 0',b'id int(11) NOT NULL AUTO_INCREMENT',1)+b'\nALTER TABLE accounts AUTO_INCREMENT=4000;\n'
+assert legacy_dump!=dump
+(state/'import.sql').write_bytes(legacy_dump)
+imported,selection=stage_build_fixture('import')
+assert imported['accounts']==1 and imported['characters']==1
+assert imported['database_input_sha256']==hashlib.sha256(legacy_dump).hexdigest()
+assert 'unsigned' in account_schema(imported['generation'])[0] and account_schema(imported['generation'])[1]=='4000'
+assert query_generation(imported['generation'],"SELECT id,login FROM accounts; SELECT charid,charname FROM chars; SELECT HEX(content) FROM fixture_blobs WHERE id=1;").splitlines()==['1\tfixture','1\tFixture','000A0DFF275C']
+invoke('check-staged',**selection);invoke('deploy-staged',**selection)
+assert (state/'import.sql').read_bytes()==legacy_dump
+invoke('rollback');assert selected()['current']==active_before
+print('PASS: imported legacy SQL receives the same isolated compatibility migration while its original dump and deployed database remain unchanged',flush=True)
+
+safe_pointer=selected();safe_stage=(state/'staged.json').read_bytes()
+for label,extra_sql,expected_error in (
+ ('negative IDs',b"INSERT INTO accounts(id,login) VALUES(-1,'Negative');\n",'negative account IDs'),
+ ('custom ID width',b'ALTER TABLE accounts MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT;\n','unsupported column definition'),
+ ('existing foreign key',b'CREATE TABLE custom_account_link(accid INT NOT NULL,FOREIGN KEY(accid) REFERENCES accounts(id));\n','existing foreign-key dependencies'),
+):
+ unsafe_dump=legacy_dump+extra_sql;(state/'import.sql').write_bytes(unsafe_dump)
+ invoke('stage-build',False,build_id=build_id,database_mode='import')
+ assert expected_error in (logs/'operation.log').read_text(),label
+ assert selected()==safe_pointer and (state/'staged.json').read_bytes()==safe_stage
+ assert account_schema(active_before)==legacy_schema and player_snapshot(active_before)==legacy_rows
+ assert (state/'import.sql').read_bytes()==unsafe_dump
+(state/'import.sql').write_bytes(legacy_dump)
+assert (Path('/client')/'sentinel').read_bytes()==b'accepted client kept'
+print('PASS: negative IDs, unsupported custom columns and existing foreign-key dependencies fail closed without selecting a partial stage or changing active player data/client/import bytes',flush=True)

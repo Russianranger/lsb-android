@@ -92,7 +92,8 @@ def validate_schema(query):
     if engine!='InnoDB' or set(columns)!=set(SCHEMA_COLUMNS):raise ValueError('The accounts table has an unsupported schema')
     for name,pattern in SCHEMA_COLUMNS.items():
         kind,nullable,key,extra=columns[name]
-        if not re.fullmatch(pattern,kind,re.I) or nullable!='NO' or extra or (name=='id' and key!='PRI'):
+        supported_extra=not extra or (name=='id' and extra=='auto_increment')
+        if not re.fullmatch(pattern,kind,re.I) or nullable!='NO' or not supported_extra or (name=='id' and key!='PRI'):
             raise ValueError('The accounts table has an unsupported schema')
 
 
@@ -113,7 +114,8 @@ def insert_statement(login,hashed):
     hash_value="CONVERT(X'"+hashed.hex()+"' USING ascii)"
     return ("LOCK TABLES accounts WRITE;\n"
             "SET @lsb_exists=(SELECT COUNT(*) FROM accounts WHERE login="+login_value+");\n"
-            "SET @lsb_id=GREATEST(COALESCE((SELECT MAX(id) FROM accounts),0)+1,1000);\n"
+            "SET @lsb_id=GREATEST(COALESCE((SELECT MAX(id) FROM accounts),0)+1,1000,"
+            "COALESCE((SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='accounts'),0));\n"
             "INSERT INTO accounts(id,login,password,timecreate,timelastmodify,status,priv) "
             "SELECT @lsb_id,"+login_value+","+hash_value+",NOW(),NULL,1,1 "
             "WHERE @lsb_exists=0 AND @lsb_id<=4294967295;\n"

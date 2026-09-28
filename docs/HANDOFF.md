@@ -1,3 +1,48 @@
+# 0.5.49: staged legacy account ID compatibility
+
+Phone `lsb-support (1)(9).zip` (SHA-256
+`520f5d2bbc0255312da27e51309e17f9dfbb9065b643b1fa3457ce69f73f5876`)
+confirms the 0.5.48 build-reuse fix worked. Build
+`1a1d413d-40f2-4ba7-8b43-8eed50c83967` has a passed jemalloc receipt and v2 payload
+fingerprint. All four binaries passed dependency validation. Copy-current staging
+then ran all migrations but failed when importing missing protected table
+`accounts_files` (MariaDB error 1005 / errno 150). No stage was published and the
+active generation remained `c439f406-8af2-4c1b-907b-5f44ab2a91a1` (manifest: two
+accounts, three characters). Database logs show the active database only opened
+for the backup, followed by a separate failed staging generation.
+
+The earlier supplied SQL's actual parent DDL was checked again without exposing
+rows: `accounts.id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY`, InnoDB. Current
+source `6d5a5137024e21602e37032f6e55a682971329be` declares an unsigned integer
+account key; its new `accounts_files.accid INT UNSIGNED` foreign key cannot
+reference the retained signed key. Upstream protects existing account tables,
+so importing new content does not replace the legacy column definition.
+
+The wrapper now aligns this specifically recognized legacy key between migrate
+and update, inside the isolated staged database only. It retains IDs, account
+rows/passwords, defaults and AUTO_INCREMENT, and verifies the complete row digest
+and next-ID counter after the alteration. It refuses negative IDs, unsupported
+column/index/engine definitions and existing FK dependencies instead of dropping
+constraints or recreating accounts. The repair is gated on the selected source's
+accounts/accounts_files definitions. Already compatible schemas remain unchanged.
+The account-creation schema validator also accepts AUTO_INCREMENT on the unsigned
+id alone, preserving the other schema/credential checks. New account allocation
+respects the retained counter as well as MAX(id)+1 and the server minimum ID,
+so deleted IDs below a higher counter are not reused.
+
+Real MariaDB coverage now includes the exact upstream dbtool/accounts/accounts_files
+SQL, the signed legacy parent shape and counter gaps, a reproduced pre-fix foreign
+key error, staged preservation, and incompatible-schema rejection. These tests use
+synthetic rows; no owner database contents are committed or uploaded to CI.
+
+All 82 server Python tests pass locally. Real MariaDB qualification and
+0.5.49 / code 65 APK signing are pending. Do not claim delivery
+until the gate and signature results are recorded. Install the matching Restore-Test
+update, retain the completed build, then repeat **Prepare database and stage this
+build** with **Keep current player data**. No new fetch, compilation or adoption is
+needed. Check the new staged pair before deployment. See
+[TESTING-0.5.49.md](TESTING-0.5.49.md).
+
 # 0.5.48: recover successful builds rejected for ASIO cache symlinks
 
 The owner reported 0.5.47 Restore-Test failing after compilation with

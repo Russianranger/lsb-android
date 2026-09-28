@@ -258,6 +258,120 @@ class BuildPipelineTests(unittest.TestCase):
         self.assertEqual(json.loads((m.STATE/'active.json').read_text())['current'],'another')
 
 class DatabaseWrapperTests(unittest.TestCase):
+    @contextlib.contextmanager
+    def legacy_account_fixture(self,**overrides):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for name in ('tools','settings','sql'):(root/name).mkdir()
+            (root/'tools/dbtool.py').write_text("""import sys
+from pathlib import Path
+def main():
+    with (Path(__file__).parents[1]/'phases').open('a') as out:out.write(sys.argv[1]+'\\n')
+    raise SystemExit(0)
+""")
+            (root/'sql/accounts.sql').write_text("CREATE TABLE `accounts` (\n  `id` int(10) unsigned NOT NULL DEFAULT '0',\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB;")
+            (root/'sql/accounts_files.sql').write_text('CREATE TABLE `accounts_files` (\n  `accid` int(10) unsigned NOT NULL,\n  FOREIGN KEY (`accid`) REFERENCES `accounts` (`id`)\n) ENGINE=InnoDB;')
+            state=dict(column=('int(11)','NO',None,'auto_increment',''),table=('InnoDB',80),
+                       primary=[('id',)],references=None,minimum=1,rows=[(1,'alice',b'password1'),(2,'bob',b'password2')],
+                       after_corruption=None,alter_error=False,altered=False,queries=[])
+            state.update(overrides)
+            class FakeCursor:
+                def execute(self,query,parameters=None):
+                    state['queries'].append((query,parameters));self.rows=[]
+                    if 'information_schema.COLUMNS' in query:self.rows=[state['column']]
+                    elif 'information_schema.TABLES' in query:self.rows=[state['table']]
+                    elif 'information_schema.STATISTICS' in query:self.rows=state['primary']
+                    elif 'information_schema.KEY_COLUMN_USAGE' in query:self.rows=[] if state['references'] is None else [state['references']]
+                    elif query.startswith('SELECT MIN'):self.rows=[(state['minimum'],)]
+                    elif query.startswith('SELECT *'):self.rows=state['rows']
+                    elif query.startswith('ALTER TABLE'):
+                        if state['alter_error']:raise RuntimeError('ALTER denied')
+                        state['altered']=True
+                        state['column']=('int(10) unsigned',*state['column'][1:])
+                        corruption=state['after_corruption']
+                        if corruption=='rows':state['rows']=[(1,'alice',b'changed password'),(2,'bob',b'password2')]
+                        elif corruption=='counter':state['table']=('InnoDB',3)
+                        elif corruption=='column':state['column']=('int(10) unsigned','NO',None,'','')
+                        assert (root/'phases').read_text()=='migrate\n'
+                    else:raise AssertionError(query)
+                def fetchone(self):return self.rows[0] if self.rows else None
+                def fetchall(self):return self.rows
+                def __iter__(self):return iter(self.rows)
+                def close(self):pass
+            connection=mock.Mock();connection.cursor.return_value=FakeCursor()
+            module=types.ModuleType('mariadb');module.connect=mock.Mock(return_value=connection)
+            module.original_connect=module.connect
+            config=root/'config.json';config.write_text(json.dumps(dict(database='xidb',password='secret')))
+            script=Path(__file__).resolve().parents[2]/'server/db_update.py'
+            with mock.patch.dict(sys.modules,{'mariadb':module}),mock.patch.object(sys,'argv',[str(script),str(root),'/private/staged.sock',str(config)]),mock.patch.object(subprocess,'run'):
+                yield root,state,module,lambda:runpy.run_path(str(script),run_name='__main__')
+
+    def test_legacy_account_key_alignment_keeps_rows_counter_and_allocation_policy(self):
+        for extra,default in (('auto_increment',None),('',"'0'"),('',None)):
+            with self.subTest(extra=extra,default=default),self.legacy_account_fixture(column=('int(11)','NO',default,extra,'')) as (root,state,module,run):
+                run()
+                alter=[query for query,_ in state['queries'] if query.startswith('ALTER')]
+                expected='ALTER TABLE `accounts` MODIFY COLUMN `id` INT UNSIGNED NOT NULL'
+                if default is not None:expected+=' DEFAULT 0'
+                if extra:expected+=' AUTO_INCREMENT'
+                self.assertEqual(alter,[expected])
+                self.assertEqual(state['table'],('InnoDB',80))
+                self.assertEqual((root/'phases').read_text(),'migrate\nupdate\n')
+                module.original_connect.assert_called_once_with(user='lsb',password='secret',database='xidb',unix_socket='/private/staged.sock')
+                self.assertFalse(any('foreign_key_checks' in query.lower() or 'DROP' in query.upper() for query,_ in state['queries']))
+
+    def test_legacy_account_alignment_is_noop_for_unsigned_or_missing_accounts(self):
+        for column in (('int(10) unsigned','NO',None,'auto_increment',''),None):
+            with self.subTest(column=column),self.legacy_account_fixture(column=column) as (root,state,module,run):
+                run()
+                self.assertFalse(state['altered'])
+                self.assertEqual((root/'phases').read_text(),'migrate\nupdate\n')
+
+    def test_legacy_account_alignment_requires_matching_selected_source(self):
+        for change in ('missing-child','different-child','inconsistent-parent','unrelated-parent-table','unrelated-child-table'):
+            with self.subTest(change=change),self.legacy_account_fixture() as (root,state,module,run):
+                if change=='missing-child':(root/'sql/accounts_files.sql').unlink()
+                elif change=='different-child':(root/'sql/accounts_files.sql').write_text('CREATE TABLE unrelated (id INT);')
+                elif change=='inconsistent-parent':(root/'sql/accounts.sql').write_text('CREATE TABLE `accounts` (`id` bigint unsigned);')
+                elif change=='unrelated-parent-table':
+                    path=root/'sql/accounts.sql';path.write_text(path.read_text().replace('CREATE TABLE `accounts`','CREATE TABLE `unrelated`'))
+                else:
+                    path=root/'sql/accounts_files.sql';path.write_text(path.read_text().replace('CREATE TABLE `accounts_files`','CREATE TABLE `unrelated`'))
+                if change in ('inconsistent-parent','unrelated-parent-table'):
+                    with self.assertRaisesRegex(RuntimeError,'Selected source has incompatible'):run()
+                else:run()
+                module.original_connect.assert_not_called()
+                self.assertFalse(state['altered'])
+
+    def test_unsafe_legacy_account_shapes_fail_before_any_ddl_or_update(self):
+        cases=[
+            ({'minimum':-1},'negative account IDs'),
+            ({'references':('custom_child','accid')},'foreign-key dependencies'),
+            ({'primary':[('id',),('login',)]},'primary key'),
+            ({'table':('MyISAM',80)},'InnoDB'),
+            ({'column':('bigint(20)','NO',None,'auto_increment','')},'unsupported column'),
+            ({'column':('int(11)','YES',None,'','')},'unsupported column'),
+            ({'column':('int(11)','NO',None,'auto_increment','custom comment')},'unsupported column'),
+            ({'column':('int(11)','NO','-1','','')},'unsupported default'),
+        ]
+        for options,error in cases:
+            with self.subTest(options=options),self.legacy_account_fixture(**options) as (root,state,module,run):
+                with self.assertRaisesRegex(RuntimeError,error):run()
+                self.assertFalse(state['altered'])
+                self.assertEqual((root/'phases').read_text(),'migrate\n')
+
+    def test_legacy_account_alignment_rejects_data_or_sequence_changes(self):
+        for corruption in ('rows','counter','column'):
+            with self.subTest(corruption=corruption),self.legacy_account_fixture(after_corruption=corruption) as (root,state,module,run):
+                with self.assertRaisesRegex(RuntimeError,'verification failed'):run()
+                self.assertTrue(state['altered'])
+                self.assertEqual((root/'phases').read_text(),'migrate\n')
+
+    def test_legacy_account_alter_failure_prevents_upstream_update(self):
+        with self.legacy_account_fixture(alter_error=True) as (root,state,module,run):
+            with self.assertRaisesRegex(RuntimeError,'ALTER denied'):run()
+            self.assertEqual((root/'phases').read_text(),'migrate\n')
+
     def test_both_update_phases_run_after_successful_exit_and_login_is_preserved(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'tools').mkdir();(root/'settings').mkdir()

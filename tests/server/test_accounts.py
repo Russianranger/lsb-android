@@ -111,6 +111,22 @@ class AccountTests(unittest.TestCase):
             self.assertEqual(result,{'account_id':1000,'accounts':2,'characters':1});self.assertEqual(manager.events,['start','stop','children'])
             meta=json.loads((root/'deployment.json').read_text());self.assertEqual(meta['client_pair'],{'version':'unchanged'});self.assertEqual(meta['accounts'],2)
             self.assertNotIn('simple-password',str(meta));self.assertNotIn('$2b$',str(meta))
+    def test_create_supports_preserved_auto_increment_account_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=self.generation(d);manager=Manager()
+            def legacy_counter(*args):
+                result=self.query(*args)
+                if 'COLUMN_NAME' in args[-1]:result=result.replace('id\tint(10) unsigned\tNO\tPRI\t\n','id\tint(10) unsigned\tNO\tPRI\tauto_increment\n')
+                return result
+            with patch.object(a,'private_sql',side_effect=legacy_counter),patch.object(a,'password_hash',return_value=b'$2b$12$'+b'A'*53):
+                result=a.create_account(manager,root,io.BytesIO(b'LSBACCOUNT1\nUser\nsimple-password\n'))
+            self.assertEqual(result['account_id'],1000);self.assertEqual(manager.events,['start','stop','children'])
+    def test_generated_id_and_non_id_extra_remain_unsupported(self):
+        for old,new in [('PRI\t\n','PRI\tSTORED GENERATED\n'),('login\tvarchar(16)\tNO\t\t\n','login\tvarchar(16)\tNO\t\tauto_increment\n')]:
+            with self.subTest(extra=new):
+                rows=schema_rows().replace(old,new,1)
+                with self.assertRaisesRegex(ValueError,'unsupported schema'):
+                    a.validate_schema(lambda statement:'InnoDB\n' if 'SELECT ENGINE' in statement else rows)
     def test_duplicate_and_failed_start_keep_metadata_and_clean_up(self):
         with tempfile.TemporaryDirectory() as d:
             root=self.generation(d);original=(root/'deployment.json').read_bytes();manager=Manager()
