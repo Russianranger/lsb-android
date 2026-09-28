@@ -117,7 +117,7 @@ public class ServerPageTest {
             mode.setSelection(2);Shadows.shadowOf(Looper.getMainLooper()).idle();assertTrue(text(content,"Prepare database and stage this build").isEnabled());
             text(content,"Prepare database and stage this build").performClick();
             AlertDialog dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();String message=((TextView)dialog.findViewById(android.R.id.message)).getText().toString();
-            assertTrue(message.contains(buildId));assertTrue(message.contains(built.getString("commit")));assertTrue(message.contains("no player progress"));dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();assertFalse(WorkService.busy);
+            assertTrue(message.contains(buildId));assertTrue(message.contains(built.getString("commit")));assertTrue(message.contains("Existing progress is not copied."));dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();assertFalse(WorkService.busy);
             stage.put("state","checked");FilesEx.text(new File(sr.state,"staged.json"),stage.toString());
             java.lang.reflect.Method draw=MainActivity.class.getDeclaredMethod("draw");draw.setAccessible(true);draw.invoke(activity);content=(View)member(activity,"content");
             assertTrue(text(content,"Deploy checked build and database").isEnabled());text(content,"Deploy checked build and database").performClick();dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();message=((TextView)dialog.findViewById(android.R.id.message)).getText().toString();
