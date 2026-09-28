@@ -36,7 +36,33 @@ Privacy-safe diagnostics classify only exact known remote rejection messages;
 unknown replies remain generic and never persist raw text. Managed-server
 errors no longer incorrectly direct the user exclusively to Termux.
 
-Version is 0.5.51 / code 67. Delivery validation is pending.
+Version is 0.5.51 / code 67. Candidate
+`fbef52d2df0ad9e99460b7f6c5bcf682e1f116c2` tree
+`4a31fcac32c68dc3108e86039dae9c439343e43e` passed the verify job
+`109126712201` in run `36481072362`: 117 Android tests (including nine targeted
+loader-update tests), 196 runtime tests, 115 server tests, core import/recovery
+checks, and APK compilation/packaging. Native presentation and Windows launcher
+checks also passed. Broader runtime/server deployment jobs were still running
+at packaging; unchanged server source was already validated in 0.5.50.
+
+Both delivered APKs retain update certificate SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+16 KiB alignment, package/version, signatures and all 70 payload entries were
+verified against the tested CI APKs; all 68 shared entries match between variants,
+and all runtime/server assets match this source tree. Each APK is 18,539,931 bytes.
+
+- Restore Test SHA-256: `3b3ff31406bd989d3b512395efff1fe0cbc3d6997a8c3f96d679f10d73ad4b19`.
+- Ordinary SHA-256: `410c79218f8cdd7c5f8e2fb21384456455e492680062fde2729fdb95546324f8`.
+
+Upstream evidence inspected at the exact server revision:
+[`auth_session.cpp`](https://github.com/LandSandBoat/server/blob/6d5a5137024e21602e37032f6e55a682971329be/src/login/auth_session.cpp)
+rejects unsupported loader major/minor through JSON `error_message`;
+[`auth_session.h`](https://github.com/LandSandBoat/server/blob/6d5a5137024e21602e37032f6e55a682971329be/src/login/auth_session.h)
+requires 2.2.x. The loader
+[`network.cpp`](https://github.com/LandSandBoat/xiloader/blob/ceb79a0c905a575a5ab4caad093b9e9ab7ede17c/src/network.cpp)
+prints `Error from remote:` for this field. This supports the inferred version
+rejection but the old phone export cannot establish its discarded literal reason.
+The newly imported executable still needs an on-device login attempt.
 Follow [TESTING-0.5.51.md](TESTING-0.5.51.md).
 
 # 0.5.50: fetched source map submodules and current readiness markers
