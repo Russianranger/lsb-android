@@ -36,6 +36,7 @@ ARTIFACTS = Path('/artifacts')
 WORK = Path('/tmp/lsb-real-source-build')
 SOURCE = WORK / 'import' / f'server-{REVISION}'
 STAGING = WORK / 'staging'
+PROFILE_ONLY = os.environ.get('LSB_PROFILE_ONLY') == '1'
 
 
 def sha256(path):
@@ -161,7 +162,8 @@ def main():
         (ARTIFACTS / folder).mkdir(exist_ok=True)
     report = dict(source_repository='LandSandBoat/server', source_revision=REVISION,
                   source_archive_url=ARCHIVE_URL, expected_client=EXPECTED_CLIENT,
-                  machine=platform.machine(), status='started', binaries={})
+                  machine=platform.machine(), status='started', binaries={},
+                  build_scope='profile_only' if PROFILE_ONLY else 'all_server_programs')
     backend = None
     started = time.monotonic()
     try:
@@ -197,12 +199,13 @@ def main():
         report['source_info'] = info
         assert info['expected_client'] == EXPECTED_CLIENT, info
         backend.snapshot_source(SOURCE, STAGING, recover_build_binaries=False)
-        programs = backend.required_programs(STAGING)
-        assert set(programs) == {'xi_world', 'xi_search', 'xi_map', 'xi_connect', 'xi_profile'}, programs
+        required = backend.required_programs(STAGING)
+        assert set(required) == {'xi_world', 'xi_search', 'xi_map', 'xi_connect', 'xi_profile'}, required
+        programs = ('xi_profile',) if PROFILE_ONLY else required
         assert all(not (STAGING / name).exists() for name in programs)
-        print('Building the imported source through manager.build with two workers', flush=True)
-        backend.build(STAGING, 2)
-        backend.validate_binaries(STAGING)
+        print('Building '+', '.join(programs)+' through manager.build with two workers', flush=True)
+        backend.build(STAGING, 2, targets=programs if PROFILE_ONLY else None)
+        backend.validate_binaries(STAGING, programs)
         report['backend_build_report'] = json.loads((backend.LOGS / 'build-report.json').read_text())
         assert source_fingerprint(SOURCE) == before, 'Compilation modified the imported source'
         report['imported_source_unchanged'] = True
@@ -232,11 +235,13 @@ def main():
             except Exception as error:
                 errors[name] = str(error)
                 report['binaries'][name]['smoke_error'] = str(error)
-        for label, probe in (('source_patch_boundaries', source_patch_integration),
-                             ('accept_loop_lifetimes', accept_loop_integration),
-                             ('profile_accept_lifetimes', profile_accept_integration),
-                             ('entity_evasion', entity_evasion_integration),
-                             ('sol_key_lookups', sol_key_integration)):
+        probes = [('profile_accept_lifetimes', profile_accept_integration)]
+        if not PROFILE_ONLY:
+            probes += [('source_patch_boundaries', source_patch_integration),
+                       ('accept_loop_lifetimes', accept_loop_integration),
+                       ('entity_evasion', entity_evasion_integration),
+                       ('sol_key_lookups', sol_key_integration)]
+        for label, probe in probes:
             try:
                 report[label] = probe.check(STAGING, ARTIFACTS / 'logs')
             except Exception as error:
@@ -251,7 +256,8 @@ def main():
             report['verification_errors'] = errors
             raise AssertionError('Post-build verification failed: ' + json.dumps(errors))
         report['status'] = 'passed'
-        print('PASS: all five selected-source ARM64 executables compile and bind malloc to jemalloc; '
+        built = 'selected-source ARM64 xi_profile compiles and binds' if PROFILE_ONLY else 'all five selected-source ARM64 executables compile and bind'
+        print('PASS: '+built+' malloc to jemalloc; '
               'the real profile service accepts authenticated TLS connections on both ports', flush=True)
     except BaseException as error:
         report['status'] = 'failed'

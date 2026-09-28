@@ -17,6 +17,58 @@ permissions:
   contents: read
 
 jobs:
+  profile-service:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        id: compiler-cache
+        continue-on-error: true
+        with:
+          path: out/profile-ccache
+          key: ${{ runner.os }}-${{ runner.arch }}-server-gcc15-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-profile
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-server-gcc15-v1-
+      - name: Build and authenticate the real profile service
+        run: |
+          mkdir -p out/profile-source out/profile-ccache
+          docker run --rm --init \
+            -e LSB_PROFILE_ONLY=1 \
+            -v "$PWD:/src:ro" \
+            -v "$PWD/out/profile-source:/artifacts" \
+            -v "$PWD/out/profile-ccache:/ccache" \
+            ubuntu:26.04 bash /src/tests/server/source-build-check.sh
+      - name: Preserve readable profile evidence
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" out/profile-source out/profile-ccache
+      - uses: actions/cache/save@v4
+        if: always() && steps.compiler-cache.outputs.cache-primary-key != ''
+        continue-on-error: true
+        with:
+          path: out/profile-ccache
+          key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-source-arm64-evidence
+          path: |
+            out/profile-source/report.json
+            out/profile-source/toolchain.log
+            out/profile-source/logs/
+            out/profile-source/run/
+            out/profile-source/cmake/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-source-arm64-binaries
+          path: out/profile-source/binaries/
+          if-no-files-found: ignore
+          retention-days: 30
+
   arm64-jemalloc:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
