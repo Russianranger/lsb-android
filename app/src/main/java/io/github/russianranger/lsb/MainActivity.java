@@ -609,7 +609,7 @@ public final class MainActivity extends Activity {
         summary.addView(label("Fetch → Build with jemalloc → Prepare database → Check staging → Deploy",15,TEXT));
         summary.addView(label("Each step names its source or build. Fetching, compiling and staging keep your current server and database in place. Stop the client and server before changing this workspace.",13,MUTED));
         if(deployed.has("generation")){
-            summary.addView(label("CURRENT DEPLOYMENT\nGeneration: "+deployed.optString("generation")+"\nBuild: "+deployed.optString("build_id","legacy deployment")+"\nExpected client: "+deployed.optString("expected_client","unknown")+"\nLast saved count: "+deployed.optInt("accounts")+" accounts · "+deployed.optInt("characters")+" characters",13,TEXT));
+            summary.addView(label("CURRENT DEPLOYMENT\nGeneration: "+deployed.optString("generation")+"\nBuild: "+deployed.optString("build_id","legacy deployment")+"\nDatabase: "+deployed.optString("database","unknown")+"\nExpected client: "+deployed.optString("expected_client","unknown")+"\nLast saved count: "+deployed.optInt("accounts")+" accounts · "+deployed.optInt("characters")+" characters",13,TEXT));
             JSONObject activeSource=object(deployed,"selected_source");if(activeSource.length()>0)summary.addView(label(sourceIdentity(activeSource),12,MUTED));
         }else summary.addView(label("Current deployment: none",14,MUTED));
         LinearLayout live=featuredCard("Live build progress");serverStatus=label(sr.status,14,ACCENT);live.addView(serverStatus);addLiveServerLog(live);
@@ -645,7 +645,8 @@ public final class MainActivity extends Activity {
         database.addView(label(built?"Build to stage: "+buildId+"\n"+sourceIdentity(builtSource):"Build to stage: none",13,TEXT));
         button(database,"Import database backup (.sql / .sql.gz)",()->pick("server-sql")).setEnabled(idle);
         database.addView(label(sql.optBoolean("available")?"Imported SQL: "+sql.optString("label","selected backup")+" · "+sql.optLong("bytes")/1048576+" MiB\nSHA-256: "+sql.optString("sha256","not recorded"):"Imported SQL: none. A server source ZIP does not include live accounts or characters.",13,MUTED));
-        EditText databaseName=loginField(database,"Original database name",getSharedPreferences("server",0).getString("database","xidb"),android.text.InputType.TYPE_CLASS_TEXT);databaseName.setContentDescription("Server database name");
+        EditText databaseName=loginField(database,"Database name for fresh / imported SQL",getSharedPreferences("server",0).getString("database","xidb"),android.text.InputType.TYPE_CLASS_TEXT);databaseName.setContentDescription("Server database name");
+        if(deployed.has("generation"))database.addView(label("Keep current player data uses the active database name: "+deployed.optString("database","unknown"),12,MUTED));
         CheckBox local=new CheckBox(this);local.setText("Configure all zones for one local map process");local.setTextColor(TEXT);local.setChecked(getSharedPreferences("server",0).getBoolean("local_zones",true));database.addView(local);
         Runnable saveDatabase=()->{String name=databaseName.getText().toString().trim();if(!name.matches("[A-Za-z][A-Za-z0-9_]{0,47}"))throw new IllegalArgumentException("Enter a database name using letters, digits and underscores");getSharedPreferences("server",0).edit().putString("database",name).putBoolean("local_zones",local.isChecked()).apply();};
         final String[] modes={"copy-current","import","fresh"};
@@ -665,7 +666,7 @@ public final class MainActivity extends Activity {
         };
         mode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> parent,View view,int position,long id){updateMode.run();}public void onNothingSelected(AdapterView<?> parent){}});updateMode.run();
         LinearLayout check=featuredCard("4 · Check staged build and database");
-        String stagedDescription=hasStaged?"STAGED PAIR\nBuild ID: "+stagedBuildId+"\nGeneration: "+stagedId+"\n"+sourceIdentity(stagedSource)+"\nDatabase: "+databaseModeLabel(staged.optString("database_mode"))+"\n"+staged.optInt("accounts")+" accounts · "+staged.optInt("characters")+" characters\nExpected client: "+staged.optString("expected_client","unknown")+"\nPrepared: "+receiptTime(staged,"created_at"):"No staged build/database pair yet. Complete step 3 first.";
+        String stagedDescription=hasStaged?"STAGED PAIR\nBuild ID: "+stagedBuildId+"\nGeneration: "+stagedId+"\n"+sourceIdentity(stagedSource)+"\nDatabase: "+staged.optString("database","unknown")+"\nDatabase source: "+databaseModeLabel(staged.optString("database_mode"))+"\n"+staged.optInt("accounts")+" accounts · "+staged.optInt("characters")+" characters\nExpected client: "+staged.optString("expected_client","unknown")+"\nPrepared: "+receiptTime(staged,"created_at"):"No staged build/database pair yet. Complete step 3 first.";
         check.addView(label(stagedDescription,13,TEXT));
         if(hasStaged){
             JSONObject meshes=object(staged,"meshes");
@@ -683,7 +684,7 @@ public final class MainActivity extends Activity {
         button(check,"Check staged build and database",()->run("Checking staged server and database",(ctx,p)->ServerRuntime.get(ctx).performBuild("check-staged",stagedBuildId,stagedId,"",p))).setEnabled(hasStaged&&sr.toolsCurrent()&&idle);
         check.addView(label("Checks the staged files, the four binaries and jemalloc, database contents, and saved source identity. Confirm the expected client version shown above matches your client and loader before connecting.",13,MUTED));
         LinearLayout deploy=featuredCard("5 · Deploy the checked pair");
-        deploy.addView(label(hasStaged?"Deploy build: "+stagedBuildId+"\nDatabase generation: "+stagedId+"\n"+databaseModeLabel(staged.optString("database_mode")):"Nothing is staged for deployment.",13,TEXT));
+        deploy.addView(label(hasStaged?"Deploy build: "+stagedBuildId+"\nDatabase: "+staged.optString("database","unknown")+"\nDatabase generation: "+stagedId+"\n"+databaseModeLabel(staged.optString("database_mode")):"Nothing is staged for deployment.",13,TEXT));
         button(deploy,"Deploy checked build and database",()->confirm("Replace current server and database",stagedDescription+"\n\nThis exact staged pair will replace the current server and database. Player data will become the staged counts shown above. The current pair is retained for rollback. Deployment checks this pair again and never rebuilds from newly fetched source.",()->run("Deploying checked server and database",(ctx,p)->ServerRuntime.get(ctx).performBuild("deploy-staged",stagedBuildId,stagedId,"",p)))).setEnabled(hasStaged&&"checked".equals(staged.optString("state"))&&!staged.optBoolean("stale_database")&&sr.toolsCurrent()&&idle);
         deploy.addView(label("After deployment, start the managed server from the Server tab. Match its expected client version before connecting.",13,MUTED));
         LinearLayout existing=card("Advanced: imported compiled server");

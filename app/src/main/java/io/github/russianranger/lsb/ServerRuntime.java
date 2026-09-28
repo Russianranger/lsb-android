@@ -54,7 +54,8 @@ final class ServerRuntime {
     private static JSONObject receipt(File file)throws Exception {
         if(!Files.exists(file.toPath(),LinkOption.NOFOLLOW_LINKS))return new JSONObject();
         if(!Files.isRegularFile(file.toPath(),LinkOption.NOFOLLOW_LINKS))throw new IOException("Invalid server receipt: "+file.getName());
-        return new JSONObject(FilesEx.read(file,1048576));
+        try{return new JSONObject(FilesEx.read(file,1048576));}
+        catch(FileNotFoundException error){if(!Files.exists(file.toPath(),LinkOption.NOFOLLOW_LINKS))return new JSONObject();throw error;}
     }
     /** Small persisted receipts; source/binary/SQL hashing runs in the server worker. */
     JSONObject buildState()throws Exception {
