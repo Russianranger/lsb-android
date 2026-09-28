@@ -20,7 +20,39 @@ an automatically refreshing server log in Diagnostics, available while an
 operation runs. Bounded log reads run off the UI thread, with lifecycle cleanup,
 operation reset handling and credential redaction. Server compilation settings,
 source patches and client runtime assets remain the qualified 0.5.45 versions.
-Validation and signed APK delivery are pending this change's Android checks.
+Qualified app source `3b436a7727e07db4ea1b82c8390c663a04794b92` passed
+[baseline run 36363628692](https://github.com/Russianranger/lsb-android/actions/runs/36363628692),
+verify job `108745637645`: all 102 Android tests, core checks, APK compilation,
+dexing, packaging and verification passed. All 54 local server tests passed;
+ARM64 MariaDB deployment/recovery, native presentation and Windows launcher
+jobs passed. The narrow Diagnostics screenshot was visually checked. Log tests
+cover growth/rotation/truncation, redaction, operation reset, pause/resume,
+busy-state access, history scrolling, bottom following and cancellation of
+queued following after a gesture. The separate source-compilation run
+`36362806980` also passed at predecessor `3770862`; compiler/runtime source and
+assets are unchanged. The full Box64/FEX/PlayOnline reruns remain in progress at
+delivery, so this does not describe the entire baseline run as complete.
+
+Both signed APKs are saved and ready for delivery: version 0.5.46 / code 62,
+18,515,286 bytes each, with the retained certificate SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+All 69 nonsignature payload entries match their exact-head CI APKs; all 25
+server/runtime assets match the qualified repository. The variants share 67
+identical entries. Package identities and 16 KiB alignment were verified.
+
+- `LSB-Android-0.5.46.apk`: SHA-256
+  `12e96965037fdafb15ebbf1225058a6340b43861b3777df81849d1d0e1f3089c`.
+  CI artifact `10946865586`, archive SHA-256
+  `71feb62a95339fa132159fbc5049fe2aa20af635026cb09a453e9543e9dda708`.
+- `LSB-Android-Restore-Test-0.5.46.apk`: SHA-256
+  `5925a4202af0f328e172a5667a029c06efca09149d3ba95bbff1753a14e80d9b`.
+  CI artifact `10946895563`, archive SHA-256
+  `41bee1111b772ec02b7f3419b740feae841880f5a6e23a28de8245ed49ade046`.
+
+Install the matching APK over the existing app. Open **Diagnostics → Live
+server log**; during an operation the newest compiler line also appears below
+the phase message. The completed two-hour phone compilation does not need to
+be repeated for this UI update. See [TESTING-0.5.46.md](TESTING-0.5.46.md).
 
 # 0.5.45: selected server source compilation with jemalloc
 
