@@ -164,7 +164,7 @@ public class ServerPageTest {
             down=MotionEvent.obtain(now+2,now+2,MotionEvent.ACTION_DOWN,20,20,0);cancel=MotionEvent.obtain(now+2,now+3,MotionEvent.ACTION_CANCEL,20,20,0);
             body.dispatchTouchEvent(down);body.dispatchTouchEvent(cancel);down.recycle();cancel.recycle();scroll.scrollTo(0,0);
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600));assertEquals("A stale follow must not override a later gesture",0,scroll.getScrollY());
-            dialog.dismiss();assertNull(member(activity,"serverLogDialogBody"));
+            dialog.dismiss();Shadows.shadowOf(Looper.getMainLooper()).idle();assertNull(member(activity,"serverLogDialogBody"));
         }finally{WorkService.busy=false;setMember(runtime,"active",false);controller.pause().stop().destroy();FilesEx.delete(runtime.home);singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }
 }
