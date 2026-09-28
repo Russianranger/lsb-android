@@ -307,7 +307,7 @@ public class WorkServiceTest {
             FilesEx.text(credentials,"{invalid");snapshot=runtime.liveLog();assertEquals("",snapshot.latest);assertTrue(snapshot.text.contains("unavailable"));assertFalse(snapshot.text.contains("compiler"));
             FilesEx.text(credentials,"{\"password\":\"fixture-secret\"}");log.delete();
             java.nio.file.Files.createSymbolicLink(log.toPath(),credentials.toPath());assertEquals("",runtime.liveLog().latest);assertFalse(runtime.liveLog().text.contains("fixture-secret"));
-        }finally{FilesEx.delete(runtime.home);}
+        }finally{java.nio.file.Files.deleteIfExists(log.toPath());FilesEx.delete(runtime.home);}
     }
     @Test public void liveLogClearsAtOperationStartAndKeepsFinalOutputAfterExit()throws Exception {
         File home=new File(context.getFilesDir(),"server-runtime");AtomicInteger runs=new AtomicInteger();

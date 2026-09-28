@@ -148,9 +148,22 @@ public class ServerPageTest {
             TextView button=text(tiles,"View server operation log");assertTrue(button.isEnabled());button.performClick();
             AlertDialog dialog=(AlertDialog)member(activity,"serverLogDialog");assertTrue(dialog.isShowing());
             TextView body=(TextView)member(activity,"serverLogDialogBody");ScrollView scroll=(ScrollView)member(activity,"serverLogDialogScroll");awaitText(body,"compiler line 149");
-            scroll.measure(View.MeasureSpec.makeMeasureSpec(400,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(200,View.MeasureSpec.EXACTLY));scroll.layout(0,0,400,200);scroll.scrollTo(0,0);
+            // Finish initial layout/follow before the user starts reading history.
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600));
+            long now=android.os.SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,20,20,0),cancel=MotionEvent.obtain(now,now+1,MotionEvent.ACTION_CANCEL,20,20,0);
+            scroll.dispatchTouchEvent(down);scroll.dispatchTouchEvent(cancel);down.recycle();cancel.recycle();scroll.scrollTo(0,0);
             assertTrue(scroll.canScrollVertically(1));
             lines.append("[ 99%] Linking\n");FilesEx.text(new File(runtime.logs,"operation.log"),lines.toString());awaitText(body,"[ 99%]");assertEquals("Reading older output must preserve scroll position",0,scroll.getScrollY());
+            scroll.scrollTo(0,body.getBottom());assertFalse(scroll.canScrollVertically(1));
+            lines.append("[100%] Built target xi_map\n");FilesEx.text(new File(runtime.logs,"operation.log"),lines.toString());awaitText(body,"Built target xi_map");
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600));assertFalse("An append follows when already at the bottom",scroll.canScrollVertically(1));
+            // A touch after an append must also invalidate its queued follow.
+            scroll.scrollTo(0,body.getBottom());assertFalse(scroll.canScrollVertically(1));
+            java.lang.reflect.Method update=MainActivity.class.getDeclaredMethod("updateServerLogView",TextView.class,ScrollView.class,String.class);update.setAccessible(true);
+            update.invoke(activity,body,scroll,body.getText()+"new output queued before touch\n");
+            down=MotionEvent.obtain(now+2,now+2,MotionEvent.ACTION_DOWN,20,20,0);cancel=MotionEvent.obtain(now+2,now+3,MotionEvent.ACTION_CANCEL,20,20,0);
+            body.dispatchTouchEvent(down);body.dispatchTouchEvent(cancel);down.recycle();cancel.recycle();scroll.scrollTo(0,0);
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600));assertEquals("A stale follow must not override a later gesture",0,scroll.getScrollY());
             dialog.dismiss();assertNull(member(activity,"serverLogDialogBody"));
         }finally{WorkService.busy=false;setMember(runtime,"active",false);controller.pause().stop().destroy();FilesEx.delete(runtime.home);singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }

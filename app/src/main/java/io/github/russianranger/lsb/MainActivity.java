@@ -35,7 +35,7 @@ public final class MainActivity extends Activity {
     private ServerRuntime.LogSnapshot serverLogSnapshot;
     private ExecutorService serverLogReader;
     private boolean resumed,serverLogReadPending;
-    private long logReadAfter,logViewGeneration;
+    private long logReadAfter,logViewGeneration,logScrollGeneration;
     private static final Object READ_ONLY_CONTROL=new Object();
     private ProgressBar progress;
     private Button cancel;
@@ -600,10 +600,7 @@ public final class MainActivity extends Activity {
         live.addView(label("Updates automatically while this screen is open. Recent output is shown below; scroll up to read earlier lines.",13,MUTED));
         serverLogBody=label("Reading server output…",12,TEXT);serverLogBody.setTypeface(Typeface.MONOSPACE);
         serverLogScroll=new ScrollView(this);serverLogScroll.addView(serverLogBody);live.addView(serverLogScroll,new LinearLayout.LayoutParams(-1,dp(260)));
-        // The log sits inside the page scroll: keep a drag inside its own history.
-        final ScrollView logScroll=serverLogScroll;
-        View.OnTouchListener keepLogDrag=(view,event)->{ViewParent parent=logScroll.getParent();if(parent!=null)parent.requestDisallowInterceptTouchEvent(event.getActionMasked()!=MotionEvent.ACTION_UP&&event.getActionMasked()!=MotionEvent.ACTION_CANCEL);return false;};
-        serverLogScroll.setOnTouchListener(keepLogDrag);serverLogBody.setOnTouchListener(keepLogDrag);
+        trackServerLogTouches(serverLogScroll,serverLogBody);
         LinearLayout d = card("Support and validation");
         d.addView(label("Support ZIPs contain the reference profile, key-file hashes, import summary, saved server/region, and app operation/probe logs. They exclude game payloads, Wine registry hives, and account passwords.", 14, MUTED));
         button(d, "View client inventory", () -> { try { showText("Client inventory", store(this).inventory()); } catch (Exception e) { error(e); } });
@@ -682,6 +679,7 @@ public final class MainActivity extends Activity {
         if(serverLogDialog!=null)serverLogDialog.dismiss();
         serverLogDialogBody=label("Reading server output…",12,TEXT);serverLogDialogBody.setTypeface(Typeface.MONOSPACE);serverLogDialogBody.setPadding(dp(16),dp(8),dp(16),dp(8));
         serverLogDialogScroll=new ScrollView(this);serverLogDialogScroll.addView(serverLogDialogBody);
+        trackServerLogTouches(serverLogDialogScroll,serverLogDialogBody);
         serverLogDialog=new AlertDialog.Builder(this).setTitle("Live server operation log").setView(serverLogDialogScroll).setPositiveButton("Close",null).create();
         serverLogDialog.setOnDismissListener(dialog->{serverLogDialog=null;serverLogDialogBody=null;serverLogDialogScroll=null;});serverLogDialog.show();
         logReadAfter=0;renderServerLogs();requestServerLogs();
@@ -697,8 +695,22 @@ public final class MainActivity extends Activity {
     }
     private void updateServerLogView(TextView view,ScrollView scroll,String text){
         if(view==null||text.contentEquals(view.getText()))return;
-        boolean follow=!scroll.canScrollVertically(1);view.setText(text);
-        if(follow)scroll.post(()->{if(resumed&&(scroll==serverLogScroll||scroll==serverLogDialogScroll))scroll.fullScroll(View.FOCUS_DOWN);});
+        boolean follow=!scroll.canScrollVertically(1);final int beforeY=scroll.getScrollY();
+        final long gesture=logScrollGeneration,lifecycle=logViewGeneration;view.setText(text);
+        if(follow)scroll.post(()->{
+            if(resumed&&lifecycle==logViewGeneration&&gesture==logScrollGeneration&&beforeY==scroll.getScrollY()&&(scroll==serverLogScroll||scroll==serverLogDialogScroll))
+                // Scroll without moving keyboard/selection focus into the log.
+                scroll.scrollTo(0,Math.max(0,view.getBottom()+scroll.getPaddingBottom()-scroll.getHeight()));
+        });
+    }
+    private void trackServerLogTouches(ScrollView scroll,TextView body){
+        // A gesture over selectable text also belongs to this inner scroll area.
+        View.OnTouchListener listener=(view,event)->{
+            logScrollGeneration++;
+            ViewParent parent=scroll.getParent();if(parent!=null)parent.requestDisallowInterceptTouchEvent(event.getActionMasked()!=MotionEvent.ACTION_UP&&event.getActionMasked()!=MotionEvent.ACTION_CANCEL);
+            return false;
+        };
+        scroll.setOnTouchListener(listener);body.setOnTouchListener(listener);
     }
     private void requestServerLogs(){
         if(!resumed||SessionBackup.active||!SessionBackup.recoveryError.isEmpty()||serverLogReadPending||SystemClock.uptimeMillis()<logReadAfter)return;
