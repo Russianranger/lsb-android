@@ -1,8 +1,9 @@
 """Compile the phone-selected source archive with the real Android backend.
 
 This deliberately starts from GitHub's archive, without Git metadata or mesh
-submodules, just like Fetch selected source in the app. It does not start a
-database or server, and never substitutes prebuilt server executables.
+submodules, just like Fetch selected source in the app. After compilation it
+starts the real profile service with an isolated synthetic database. It never
+substitutes prebuilt server executables.
 """
 
 import hashlib
@@ -24,9 +25,11 @@ import source_patch_integration
 import sol_key_integration
 import accept_loop_integration
 import entity_evasion_integration
+import profile_accept_integration
+import profile_source_integration
 
 
-REVISION = '16281a81de58acfb315b639d9b79aaacd52a64f2'
+REVISION = '6d5a5137024e21602e37032f6e55a682971329be'
 EXPECTED_CLIENT = '30260904_1'
 ARCHIVE_URL = f'https://github.com/LandSandBoat/server/archive/{REVISION}.tar.gz'
 ARTIFACTS = Path('/artifacts')
@@ -194,7 +197,9 @@ def main():
         report['source_info'] = info
         assert info['expected_client'] == EXPECTED_CLIENT, info
         backend.snapshot_source(SOURCE, STAGING, recover_build_binaries=False)
-        assert all(not (STAGING / name).exists() for name in backend.PROCESSES)
+        programs = backend.required_programs(STAGING)
+        assert set(programs) == {'xi_world', 'xi_search', 'xi_map', 'xi_connect', 'xi_profile'}, programs
+        assert all(not (STAGING / name).exists() for name in programs)
         print('Building the imported source through manager.build with two workers', flush=True)
         backend.build(STAGING, 2)
         backend.validate_binaries(STAGING)
@@ -205,7 +210,7 @@ def main():
         # probe fails, so that failure can be investigated without recompiling.
         binaries = ARTIFACTS / 'binaries'
         binaries.mkdir()
-        for name in backend.PROCESSES:
+        for name in programs:
             shutil.copy2(STAGING / name, binaries / name)
             report['binaries'][name] = dict(sha256=sha256(STAGING / name), size=(STAGING / name).stat().st_size)
         report['build_state'] = 'compiled_and_linked'
@@ -220,7 +225,7 @@ def main():
         report['deployment_payload'] = dict(sha256=payload, snapshot_matches=True,
                                             fingerprint_version=backend.PAYLOAD_FINGERPRINT_VERSION)
         errors = {}
-        for name in backend.PROCESSES:
+        for name in programs:
             print(f'Checking real {name} startup and dynamic allocator binding', flush=True)
             try:
                 report['binaries'][name].update(runtime_smoke(name))
@@ -229,17 +234,25 @@ def main():
                 report['binaries'][name]['smoke_error'] = str(error)
         for label, probe in (('source_patch_boundaries', source_patch_integration),
                              ('accept_loop_lifetimes', accept_loop_integration),
+                             ('profile_accept_lifetimes', profile_accept_integration),
                              ('entity_evasion', entity_evasion_integration),
                              ('sol_key_lookups', sol_key_integration)):
             try:
                 report[label] = probe.check(STAGING, ARTIFACTS / 'logs')
             except Exception as error:
                 errors[label] = str(error)
+        try:
+            report['profile_service'] = profile_source_integration.check(
+                STAGING, ARTIFACTS / 'logs', WORK / 'profile-service', backend)
+        except Exception as error:
+            errors['profile_service'] = str(error)
+            (ARTIFACTS / 'logs' / 'profile-service-failure.log').write_text(traceback.format_exc())
         if errors:
             report['verification_errors'] = errors
             raise AssertionError('Post-build verification failed: ' + json.dumps(errors))
         report['status'] = 'passed'
-        print('PASS: all four selected-source ARM64 executables compile, start and bind malloc to jemalloc', flush=True)
+        print('PASS: all five selected-source ARM64 executables compile and bind malloc to jemalloc; '
+              'the real profile service accepts authenticated TLS connections on both ports', flush=True)
     except BaseException as error:
         report['status'] = 'failed'
         report['error'] = str(error)

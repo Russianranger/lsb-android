@@ -1,3 +1,36 @@
+# 0.5.52: profile service missing after successful login
+
+Phone `lsb-support (1)(10).zip` SHA-256
+`dd430705f3b6a1c1146123b4385838758aedec95531ac8235d1453b1a68ed36a`
+confirms the 0.5.51 loader activation succeeded at 15:49:55 CDT. Current prepared
+and launched loader now use `aec6c0686cf3b2fe65247b818fe44f89fb18fc175e8ebd3ba3b7cf099988f504`.
+Updated FFXi.dll / FFXiMain.dll remain `9053d410…` / `f2245d1c…`.
+All four managed programs were Ready at 15:51:34. The next attempt at 15:51:49
+records `autologin_started`, `login_message_seen`, `server_connected`, then
+`connection_failed`, with polcore.dll loaded and child exit 1 before a game window.
+
+The current pinned xiloader `ceb79a0c905a575a5ab4caad093b9e9ab7ede17c` starts its
+PlayOnline relay and calls `playonline::logIn` before GameStart. That operation
+requires `xi_profile`; failure maps to the prior generic `failed to connect`
+classifier. Server `6d5a5137024e21602e37032f6e55a682971329be` defines `xi_profile`,
+which listens on TCP 51220 (profile) and 51240 (IRC), with TLS 1.3. The app omitted
+this fifth target from builds, staging, validation and supervision. This is a
+newly reached failure after the corrected loader passed the earlier rejection.
+The exported private output does not retain the original literal error line.
+
+0.5.52 builds/stages/checks/starts the source's required programs, including
+xi_profile for modern source, while retaining legacy four-program support.
+Server → Repair missing profile service uses the exact current deployed source
+and selected Build worker count to compile only the missing target with jemalloc.
+It preserves database/player data, current generation, existing four binaries and
+original completed build evidence; additional repair evidence is separate.
+Profile readiness requires its own process and both listeners. Logs include the
+profile process and repair receipt. Client diagnostics distinguish the specific
+profile-service connection failure from a general server connection error.
+
+Version 0.5.52 / code 68. Build, integration and delivery validation pending.
+Follow [TESTING-0.5.52.md](TESTING-0.5.52.md).
+
 # 0.5.51: use the imported loader in the active updated client
 
 Phone `lsb-support(20260928-203125).zip` SHA-256

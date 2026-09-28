@@ -77,6 +77,7 @@ class PrivateEvents:
             (b'failed to login. expected xiloader version mismatch',b'login_version_mismatch'),
             (b'failed to login',b'login_rejected'),(b'failed to log in',b'login_rejected'),
             (b'incorrect password',b'login_invalid_credentials'),(b'invalid password',b'login_invalid_credentials'),
+            (b'failed to connect to the profile server',b'profile_connection_failed'),
             (b'failed to connect',b'connection_failed'),(b'failed to initialize connection',b'connection_failed'),
             (b'failed to initialize listen server',b'listen_failed'),
             (b'failed to initialize instance of polcore',b'polcore_initialization_failed'),

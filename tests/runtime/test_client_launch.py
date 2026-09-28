@@ -104,6 +104,7 @@ class LaunchContracts(unittest.TestCase):
         cases=[('Failed to login. Invalid username or password.','login_invalid_credentials'),
                ('Failed to login. Account already logged in.','login_already_active'),
                ('Failed to login. Expected xiloader version mismatch; check with your provider.','login_version_mismatch'),
+               ('Failed to connect to the profile server (0x3).','profile_connection_failed'),
                ('Failed to login.','login_rejected'),('Failed to connect to server!','connection_failed')]
         cases += [('Failed to initialize instance of polcore!','polcore_initialization_failed'),
                   ('Failed to initialize instance of FFxi!','ffxi_initialization_failed'),
@@ -118,6 +119,16 @@ class LaunchContracts(unittest.TestCase):
                 phase,_,reason=client_launch.progress(events.snapshot(),1)
                 self.assertEqual((phase,reason),('launch_failed',event))
                 self.assertNotIn('login_message_seen',events.snapshot())
+
+    def test_profile_failure_after_login_has_its_own_recovery_message(self):
+        events=supervisor.PrivateEvents()
+        emitted=events.feed(b'Autologin activated!\nSuccessfully logged in.\nConnected to server!\nFailed to connect to the profile server (0x3).\n')
+        self.assertIn(b'profile_connection_failed',emitted)
+        self.assertNotIn(b'\nconnection_failed',emitted)
+        phase,message,reason=client_launch.progress(events.snapshot(),2)
+        self.assertEqual((phase,reason),('launch_failed','profile_connection_failed'))
+        self.assertIn('Repair missing profile service',message)
+        self.assertNotIn('password',message)
 
     def test_failure_matching_waits_for_complete_line_and_ignores_echoes(self):
         events=supervisor.PrivateEvents()

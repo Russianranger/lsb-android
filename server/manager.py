@@ -20,6 +20,7 @@ RUN=Path('/server-run')
 LOGS=Path('/server-logs')
 INPUT=Path('/input')
 PROCESSES=('xi_world','xi_search','xi_map','xi_connect')
+ALL_PROCESSES=PROCESSES+('xi_profile',)
 DB_PORT=13306
 STARTUP_TIMEOUT_SECONDS=30*60
 PAYLOAD_FINGERPRINT_VERSION=2
@@ -66,6 +67,16 @@ def source_info(root):
             match=re.search(r"^\s*CLIENT_VER\s*=\s*['\"]([^'\"]+)['\"]",path.read_text(errors='replace'),re.M)
             if match:version=match[1]
     return dict(expected_client=version,source_hashes=files,meshes={name:(root/name).is_dir() and any((root/name).iterdir()) for name in ('navmeshes','ximeshes')})
+
+def required_programs(root):
+    """Older imported revisions have four services; newer sources require profiles."""
+    profile=root/'src/profile/CMakeLists.txt'
+    declared=False
+    if profile.is_file():
+        text=re.sub(r'#[^\n]*','',profile.read_text(errors='replace'))
+        declared=bool(re.search(r'\b(?:xi_add_executable|add_executable)\s*\(\s*xi_profile\b',text,re.I))
+    return ALL_PROCESSES if declared or (root/'xi_profile').exists() else PROCESSES
+
 
 def prepare_meshes(root, identity, download=True):
     # GitHub source archives omit submodules. Runtime data is installed only in
@@ -135,7 +146,7 @@ def snapshot_source(source, target, recover_build_binaries=True):
     # That tree is deliberately not carried into a new build, but its one
     # unambiguous executable per process can be used for a prebuilt deployment.
     if recover_build_binaries:
-        for name in PROCESSES:
+        for name in required_programs(source):
             if not (target/name).exists():
                 found=[p for p in (source/'build').rglob(name) if p.is_file()]
                 if len(found)>1:raise ValueError('Multiple build outputs for '+name+'. Keep one executable or rebuild the imported source.')
@@ -171,8 +182,12 @@ def checked_jobs(jobs):
     if type(jobs) is not int or not 1<=jobs<=16:raise ValueError('Use between 1 and 16 build workers')
     return jobs
 
-def build(root, jobs):
+def build(root, jobs, targets=None, report_path=None):
     checked_jobs(jobs)
+    programs=tuple(targets) if targets is not None else required_programs(root)
+    if not programs or len(set(programs))!=len(programs) or not set(programs).issubset(required_programs(root)):
+        raise ValueError('Invalid selected server build targets')
+    report_path=report_path or LOGS/'build-report.json'
     root=root.resolve();started=time.time()
     (root/'android-build.json').unlink(missing_ok=True)
     hook=Path(__file__).with_name('android-build.cmake').resolve()
@@ -180,39 +195,39 @@ def build(root, jobs):
              '-DPCH_ENABLE=OFF','-DENABLE_IPO=OFF','-DPython_EXECUTABLE='+str(root/'.venv/bin/python'),
              '-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES='+str(hook)]
     report=dict(format=1,state='building',started_at=started,source=source_info(root),
-                allocator='jemalloc',jobs=jobs,cmake_options=options,
+                allocator='jemalloc',jobs=jobs,programs=list(programs),cmake_options=options,
                 build_hook_sha256=hashlib.sha256(hook.read_bytes()).hexdigest())
-    atomic(LOGS/'build-report.json',report)
+    atomic(report_path,report)
     try:
         report['patches']=apply_source_patches(root)
-        atomic(LOGS/'build-report.json',report)
+        atomic(report_path,report)
         status('building','Preparing the selected source and Python build dependencies…')
         requirements=root/'tools/requirements.txt'
         command(['/usr/bin/python3','-m','venv',str(root/'.venv')],timeout=120)
         if requirements.is_file():command([root/'.venv/bin/pip','install','-r',requirements],cwd=root,timeout=1800)
         # This is an isolated staging tree. A requested build must never retain
         # an old executable just because CMake emits the new one in build/.
-        for name in PROCESSES:(root/name).unlink(missing_ok=True)
+        for name in programs:(root/name).unlink(missing_ok=True)
         status('building','Configuring the server with jemalloc…')
         command(['cmake','-S',root,'-B',root/'build',*options],cwd=root)
-        status('building','Compiling the four server programs with jemalloc…')
-        command(['cmake','--build',root/'build','--parallel',str(jobs),'--target',*PROCESSES],cwd=root,timeout=max(7200,21600//jobs))
-        for name in PROCESSES:
+        status('building','Compiling '+', '.join(programs)+' with jemalloc…')
+        command(['cmake','--build',root/'build','--parallel',str(jobs),'--target',*programs],cwd=root,timeout=max(7200,21600//jobs))
+        for name in programs:
             if not (root/name).is_file():
                 found=[p for p in (root/'build').rglob(name) if p.is_file()]
                 if len(found)!=1:raise RuntimeError('Build did not produce '+name)
                 shutil.copy2(found[0],root/name)
         status('building','Checking ARM64 binaries and jemalloc linkage…')
-        validate_binaries(root)
-        report['binaries']=validate_jemalloc(root)
+        validate_binaries(root,programs)
+        report['binaries']=validate_jemalloc(root,programs)
         report.update(state='passed',finished_at=time.time(),elapsed_seconds=round(time.time()-started,2))
         atomic(root/'android-build.json',report)
-        atomic(LOGS/'build-report.json',report)
+        atomic(report_path,report)
         return report
     except Exception as error:
         report.update(state='stopped' if isinstance(error,InterruptedError) else 'failed',
                       error=str(error),finished_at=time.time(),elapsed_seconds=round(time.time()-started,2))
-        atomic(LOGS/'build-report.json',report)
+        atomic(report_path,report)
         raise
 
 def apply_source_patches(root):
@@ -258,10 +273,10 @@ def apply_source_patches(root):
         evidence.append(item)
     return evidence
 
-def validate_jemalloc(root):
+def validate_jemalloc(root, programs=None):
     """Installing a package or mentioning it in CMake is not linkage proof."""
     binaries={}
-    for name in PROCESSES:
+    for name in (required_programs(root) if programs is None else programs):
         cancelled();path=root/name
         result=subprocess.run(['readelf','-d',str(path)],capture_output=True,text=True,timeout=30,
                               env=dict(os.environ,LC_ALL='C'))
@@ -287,7 +302,7 @@ def tree_fingerprint(root, include_binaries=True, version=PAYLOAD_FINGERPRINT_VE
         nonlocal count
         for path in sorted(folder.iterdir(),key=lambda p:p.name):
             cancelled()
-            if path.name in excluded or (not include_binaries and path.parent==root and path.name in PROCESSES):continue
+            if path.name in excluded or (not include_binaries and path.parent==root and path.name in ALL_PROCESSES):continue
             if version>=2 and generated_build_path(root,path):continue
             if path.is_symlink():raise ValueError('Build payload contains a symlink: '+path.relative_to(root).as_posix())
             relative=path.relative_to(root).as_posix().encode()
@@ -330,6 +345,8 @@ def load_build(build_id=None):
     report=json.loads(path.read_text())
     if report.get('state')!='passed' or report.get('allocator')!='jemalloc':raise ValueError('The latest build did not pass jemalloc validation')
     if build_id is not None and (not build_id or report.get('build_id')!=build_id):raise ValueError('The selected build changed. Review the latest successful build before staging it.')
+    if set(required_programs(root))-set(report.get('binaries',{})):
+        raise ValueError('This older build is missing xi_profile. Use Repair missing profile service for its current deployment, or rebuild this source before staging it again.')
     validate_binaries(root);binaries=validate_jemalloc(root)
     if binaries!=report.get('binaries'):raise ValueError('Built binaries changed after compilation; rebuild the selected source')
     fingerprint_version=report.get('content_fingerprint_version',1)
@@ -424,7 +441,7 @@ def stage_build(req):
                     database_input_sha256=(file_sha256(dump) if mode!='fresh' else None),
                     accounts=counts['accounts'],characters=counts['chars'],created_at=time.time(),
                     staged_from_generation=base,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),
-                    binaries={n:report['binaries'][n]['sha256'] for n in PROCESSES},
+                    binaries={n:report['binaries'][n]['sha256'] for n in required_programs(root)},
                     staged_content_sha256=tree_fingerprint(staged),staged_fingerprint_version=PAYLOAD_FINGERPRINT_VERSION)
     finally:
         if creds is not None:stop_database(creds)
@@ -456,7 +473,7 @@ def check_staged(req):
         if tree_fingerprint(root,version=info.get('staged_fingerprint_version',1))!=info.get('staged_content_sha256'):raise ValueError('Staged source or runtime files changed; stage the build again')
         validate_binaries(root);binaries=validate_jemalloc(root)
         if binaries!=info['build']['binaries']:raise ValueError('Staged binaries do not match the exact successful jemalloc build')
-        if {n:binaries[n]['sha256'] for n in PROCESSES}!=info['binaries']:raise ValueError('Staged binary receipt is inconsistent')
+        if {n:binaries[n]['sha256'] for n in required_programs(root)}!=info['binaries']:raise ValueError('Staged binary receipt is inconsistent')
         if source_info(root)['expected_client']!=info['expected_client']:raise ValueError('Staged source expects a different client')
         prepare_meshes(root,info.get('selected_source',{}),download=False)
         creds=start_database(generation)
@@ -469,7 +486,7 @@ def check_staged(req):
         if creds is not None:stop_database(creds)
         else:stop_children()
     cancelled();info.update(state='checked',checked_at=time.time());write_staged(generation,info)
-    status('staged_checked','Staged source, all four jemalloc programs and database checks passed. Ready to deploy.',deployment=info)
+    status('staged_checked','Staged source, all required jemalloc programs and database checks passed. Ready to deploy.',deployment=info)
     return generation,info
 
 def deploy_staged(req):
@@ -481,7 +498,7 @@ def deploy_staged(req):
     atomic(STATE/'active.json',dict(current=generation.name,previous=previous))
     status('ready','Build '+info['build_id'][:8]+' and its checked database deployed. The previous server and database are retained.',deployment=info)
 
-def validate_binaries(root):
+def validate_binaries(root, programs=None):
     # Retain the loader's evidence even when validation fails before any server
     # process or database starts. Previously capture_output discarded the only
     # useful missing-library names from both the UI and support export.
@@ -491,11 +508,12 @@ def validate_binaries(root):
     report.write_text('Server dependency check (Linux ARM64)\n')
     def record(name, detail):
         with report.open('a') as out:out.write('\n'+name+'\n'+detail[-16384:]+'\n')
-    for name in PROCESSES:
+    programs=required_programs(root) if programs is None else tuple(programs)
+    for name in programs:
         cancelled()
         file=root/name
         if not file.is_file():
-            reason='Missing '+name+'. Choose Build imported revision and deploy.'
+            reason=('Missing xi_profile. Use Repair missing profile service for this deployment.' if name=='xi_profile' else 'Missing '+name+'. Choose Build imported revision and deploy.')
             record(name,reason);failures.append(reason);continue
         with file.open('rb') as f:header=f.read(64)
         if len(header)<20 or header[:5]!=b'\x7fELF\x02' or header[5]!=1 or int.from_bytes(header[18:20],'little')!=183:
@@ -531,7 +549,7 @@ def validate_binaries(root):
     if failures:
         record('Summary','\n'.join(failures))
         raise ValueError('Server dependency check failed: '+'; '.join(failures)+'. Update server runtime and build tools, then retry deployment. If unavailable library versions remain, rebuild the same imported revision. See Server operation log for dependency details.')
-    record('Summary','PASS: all four Linux ARM64 server executables passed dependency validation')
+    record('Summary','PASS: all '+('four' if len(programs)==4 else str(len(programs)))+' Linux ARM64 server executables passed dependency validation')
 
 def credentials(generation):
     file=generation/'database-credentials.json'
@@ -645,7 +663,7 @@ def restore_database(req):
     root=generation/'server';creds=None
     status('copying','Copying the current server revision for database restore…')
     snapshot_deployment(previous/'server',root);validate_binaries(root)
-    binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in PROCESSES}
+    binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in required_programs(root)}
     if binaries!=meta.get('binaries'):raise ValueError('Current server binaries do not match the deployment record; active deployment kept')
     status('importing_database','Restoring SQL into a separate database generation…')
     try:
@@ -701,7 +719,7 @@ def deploy(req):
             if after!=before:raise RuntimeError('Account or character counts changed during the update; active deployment kept')
         info=source_info(root)
         if build_report is not None:info['build']=build_report
-        info.update(format=1,generation=generation.name,database=name,selected_source=identity,mesh_assets=mesh_assets,accounts=before['accounts'],characters=before['chars'],created_at=time.time(),updated=updating,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in PROCESSES})
+        info.update(format=1,generation=generation.name,database=name,selected_source=identity,mesh_assets=mesh_assets,accounts=before['accounts'],characters=before['chars'],created_at=time.time(),updated=updating,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in required_programs(root)})
         atomic(generation/'deployment.json',info)
     finally:stop_database(creds)
     old=json.loads((STATE/'active.json').read_text()).get('current') if (STATE/'active.json').exists() else None
@@ -709,18 +727,138 @@ def deploy(req):
     atomic(STATE/'active.json',dict(current=generation.name,previous=old))
     status('ready','Server and database deployed. The previous generation is retained.',deployment=info)
 
-def ensure_ports():
-    for port,kind in [(13306,socket.SOCK_STREAM),(54231,socket.SOCK_STREAM),(54230,socket.SOCK_STREAM),(54001,socket.SOCK_STREAM),(54002,socket.SOCK_STREAM),(54003,socket.SOCK_STREAM),(54230,socket.SOCK_DGRAM)]:
+def profile_compile_entries(root):
+    """The deployed build inputs, excluding binary output, caches and large maps."""
+    excluded={'.git','.venv','venv','build','logs','log','mysql','node_modules','android-build.json'}
+    def walk(folder):
+        for path in sorted(folder.iterdir()):
+            cancelled()
+            if path.name in excluded or generated_build_path(root,path):continue
+            if path.parent==root and (path.name in ALL_PROCESSES or path.name in ('navmeshes','ximeshes') or path.suffix in ('.cert','.key')):continue
+            if path.is_symlink():raise ValueError('Deployed compile source contains a symbolic link: '+path.relative_to(root).as_posix())
+            if path.is_dir():yield path;yield from walk(path)
+            elif path.is_file():yield path
+            else:raise ValueError('Unsupported deployed compile source file')
+    yield from walk(root)
+
+def profile_source_fingerprint(root):
+    digest=hashlib.sha256()
+    for path in profile_compile_entries(root):
+        digest.update(('directory\0' if path.is_dir() else 'file\0').encode()+path.relative_to(root).as_posix().encode()+b'\0')
+        if path.is_file():digest.update(bytes.fromhex(file_sha256(path)))
+    return digest.hexdigest()
+
+def profile_path(generation,name,required=False):
+    """All repair paths are fixed app-owned files; never follow imported links."""
+    if generation.is_symlink() or not generation.is_dir():raise ValueError('Invalid profile repair generation')
+    path=generation
+    for piece in name.split('/'):
+        if piece in ('','.','..'):raise ValueError('Invalid profile repair path')
+        path=path/piece
+        if path.is_symlink():raise ValueError('Profile repair contains a symbolic link')
+    if path.exists() and not path.is_file():raise ValueError('Invalid profile repair file')
+    if required and not path.is_file():raise ValueError('Missing profile repair file '+name)
+    return path
+
+def recover_profile_repair(generation):
+    journal=profile_path(generation,'profile-repair-pending.json')
+    if not journal.exists():return
+    transaction=json.loads(journal.read_text())
+    if transaction.get('format')!=1 or transaction.get('generation')!=generation.name:raise ValueError('Invalid profile repair journal')
+    before=transaction['old_metadata_sha256'];after=transaction['new_metadata_sha256']
+    metadata=profile_path(generation,'deployment.json',True)
+    if file_sha256(metadata) not in (before,after):raise ValueError('Deployment changed during profile repair; recovery stopped')
+    new_metadata=transaction['new_metadata']
+    serialized=json.dumps(new_metadata,indent=2).encode()
+    if hashlib.sha256(serialized).hexdigest()!=after:raise ValueError('Changed profile repair deployment receipt')
+    for name,expected in transaction['old_binaries'].items():
+        if name not in PROCESSES or file_sha256(profile_path(generation,'server/'+name,True))!=expected:
+            raise ValueError('An existing server binary changed during profile repair')
+    if set(transaction['old_binaries'])!=set(PROCESSES):raise ValueError('Incomplete profile repair binary receipt')
+    payload=profile_path(generation,'profile-repair-new.bin')
+    target=profile_path(generation,'server/xi_profile')
+    expected=transaction['binary_sha256']
+    if target.exists():
+        if file_sha256(target)!=expected:raise ValueError('Profile binary changed during repair; recovery stopped')
+    else:
+        if not payload.is_file() or file_sha256(payload)!=expected:raise ValueError('Missing or changed compiled profile recovery file')
+        os.chmod(payload,0o755);payload.replace(target)
+    # Only the binary and its receipt are published. No database command, source
+    # update, active-pointer change or rewrite of the original build takes place.
+    if file_sha256(metadata)!=after:atomic(metadata,new_metadata)
+    atomic(generation/'profile-repair.json',transaction['receipt'])
+    journal.unlink()
+    payload.unlink(missing_ok=True)
+
+def repair_profile(req):
+    generation=current()
+    if not req.get('generation') or req['generation']!=generation.name:raise ValueError('The active deployment changed; select its profile repair again')
+    recover_profile_repair(generation)
+    root=generation/'server';metadata=profile_path(generation,'deployment.json',True)
+    info=json.loads(metadata.read_text())
+    if 'xi_profile' not in required_programs(root):raise ValueError('This legacy source does not require a profile service')
+    if profile_path(generation,'server/xi_profile').exists():
+        validate_binaries(root);evidence=validate_jemalloc(root,('xi_profile',))
+        if info.get('binaries',{}).get('xi_profile')!=evidence['xi_profile']['sha256']:
+            raise ValueError('Existing profile binary does not match its deployment receipt')
+        status('ready','Profile service is already installed and verified. Start the managed server.',deployment=info)
+        return
+    jobs=checked_jobs(req.get('jobs',info.get('build',{}).get('jobs',2)))
+    previous={name:file_sha256(profile_path(generation,'server/'+name,True)) for name in PROCESSES}
+    if any(info.get('binaries',{}).get(name)!=value for name,value in previous.items()):
+        raise ValueError('Current server binaries do not match the deployment receipt; profile repair stopped')
+    validate_binaries(root,PROCESSES)
+    old_metadata=metadata.read_bytes();source_hash=profile_source_fingerprint(root)
+    workspace=STATE/'profile-repair-work';staged=workspace/'server'
+    if workspace.is_symlink():raise ValueError('Invalid profile repair workspace')
+    if workspace.exists():shutil.rmtree(workspace)
+    staged.mkdir(parents=True)
+    status('copying','Copying the deployed source to build only the missing profile service…')
+    for path in profile_compile_entries(root):
+        destination=staged/path.relative_to(root)
+        if path.is_dir():destination.mkdir(parents=True,exist_ok=True)
+        else:shutil.copy2(path,destination)
+    if profile_source_fingerprint(staged)!=source_hash:raise ValueError('Deployed source changed while copying profile build inputs')
+    report=build(staged,jobs,targets=('xi_profile',),report_path=LOGS/'profile-repair-report.json')
+    receipt=dict(format=1,state='passed',generation=generation.name,program='xi_profile',
+                 original_build_id=info.get('build_id'),source_sha256=source_hash,
+                 source_fingerprint_scope='deployed-compile-inputs-v1',jobs=jobs,allocator='jemalloc',
+                 binary=report['binaries']['xi_profile'],patches=report['patches'],
+                 build_hook_sha256=report['build_hook_sha256'],finished_at=time.time())
+    cancelled()
+    if current()!=generation or metadata.read_bytes()!=old_metadata or profile_source_fingerprint(root)!=source_hash:
+        raise ValueError('Active deployment changed during profile compilation; nothing installed')
+    if previous!={name:file_sha256(profile_path(generation,'server/'+name,True)) for name in PROCESSES}:
+        raise ValueError('An existing server binary changed during profile compilation; nothing installed')
+    target=profile_path(generation,'server/xi_profile')
+    if target.exists():raise ValueError('Profile binary appeared during compilation; nothing installed')
+    payload=profile_path(generation,'profile-repair-new.bin')
+    with (staged/'xi_profile').open('rb') as source,payload.open('wb') as output:
+        shutil.copyfileobj(source,output);output.flush();os.fsync(output.fileno())
+    if file_sha256(payload)!=receipt['binary']['sha256']:raise ValueError('Compiled profile copy failed verification')
+    updated=dict(info,binaries=dict(info['binaries'],xi_profile=receipt['binary']['sha256']),profile_repair=receipt)
+    transaction=dict(format=1,generation=generation.name,old_metadata_sha256=hashlib.sha256(old_metadata).hexdigest(),
+                     new_metadata_sha256=hashlib.sha256(json.dumps(updated,indent=2).encode()).hexdigest(),
+                     new_metadata=updated,old_binaries=previous,binary_sha256=receipt['binary']['sha256'],receipt=receipt)
+    cancelled();atomic(generation/'profile-repair-pending.json',transaction)
+    recover_profile_repair(generation)
+    status('ready','Profile service built with jemalloc and installed. Existing server programs and database retained. Start the managed server.',deployment=updated)
+
+def ensure_ports(programs=PROCESSES):
+    ports=[(13306,socket.SOCK_STREAM),(54231,socket.SOCK_STREAM),(54230,socket.SOCK_STREAM),(54001,socket.SOCK_STREAM),(54002,socket.SOCK_STREAM),(54003,socket.SOCK_STREAM),(54230,socket.SOCK_DGRAM)]
+    if 'xi_profile' in programs:ports.extend([(51220,socket.SOCK_STREAM),(51240,socket.SOCK_STREAM)])
+    for port,kind in ports:
         with socket.socket(socket.AF_INET,kind) as s:
             try:s.bind(('127.0.0.1',port))
             except OSError:raise RuntimeError('Port '+str(port)+' is in use. Stop the other server app or Termux server before starting this server.')
 
 class StartupProgress:
     """Read only this start's log bytes; an open login socket is not world readiness."""
-    def __init__(self, logs):
+    def __init__(self, logs, programs=PROCESSES):
+        self.programs=tuple(programs)
         self.logs=logs;self.ready=set();self.stages={};self.recent=[]
         self.offsets={};self.identities={};self.fragments={};self.oversized=set()
-        for name in PROCESSES:
+        for name in self.programs:
             path=logs/(name+'.log')
             try:
                 info=path.stat();self.offsets[name]=info.st_size;self.identities[name]=(info.st_dev,info.st_ino)
@@ -728,7 +866,7 @@ class StartupProgress:
 
     def _line(self, name, raw):
         line=re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]','',raw.decode('utf-8',errors='replace')).strip()
-        # The four LSB processes report this only after markLoaded, including
+        # The selected LSB processes report this only after markLoaded, including
         # xi_map after all NPC/mob scripts. Accept each process's own marker.
         role=name.removeprefix('xi_')
         if re.fullmatch(r'(?:\[[^\]\r\n]*\]\s*)*The '+role+r'-server is ready to work(?: after [0-9]+(?:\.[0-9]+)? seconds)?\.\.\.(?:\s+\(markLoaded:[0-9]+\))?',line):
@@ -743,7 +881,7 @@ class StartupProgress:
         if not self.recent or self.recent[-1]!=message:self.recent=(self.recent+[message])[-12:]
 
     def poll(self):
-        for name in PROCESSES:
+        for name in self.programs:
             path=self.logs/(name+'.log')
             try:
                 with path.open('rb') as log:
@@ -763,15 +901,15 @@ class StartupProgress:
             self.fragments[name]=b'' if name in self.oversized else tail
 
     def snapshot(self, elapsed, port_ready):
-        pending=[name for name in PROCESSES if name not in self.ready]
+        pending=[name for name in self.programs if name not in self.ready]
         focus='xi_map' if 'xi_map' in pending else next(iter(pending),None)
         stage=(self.stages.get(focus,'Waiting for '+focus.removeprefix('xi_')+' readiness') if focus else
                'Waiting for the login port' if not port_ready else 'All server scripts loaded')
-        return dict(elapsed_seconds=int(elapsed),ready_processes=[name for name in PROCESSES if name in self.ready],
+        return dict(elapsed_seconds=int(elapsed),ready_processes=[name for name in self.programs if name in self.ready],
                     pending_processes=pending,stage=stage,recent_lines=self.recent[:],login_port_reachable=port_ready)
 
 def serve():
-    generation=current();root=generation/'server';validate_binaries(root);ensure_ports()
+    generation=current();recover_profile_repair(generation);root=generation/'server';programs=required_programs(root);validate_binaries(root);ensure_ports(programs)
     meta=json.loads((generation/'deployment.json').read_text())
     mesh_assets=prepare_meshes(root,meta.get('selected_source',{}))
     if mesh_assets:
@@ -789,12 +927,12 @@ def serve():
     creds=start_database(generation,True)
     workers=[]
     try:
-        progress=StartupProgress(LOGS)
-        for name in PROCESSES:
+        progress=StartupProgress(LOGS,programs)
+        for name in programs:
             log=(LOGS/(name+'.log')).open('ab')
             p=subprocess.Popen([str(root/name)],cwd=root,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
             log.close();children.append(p);workers.append((name,p))
-        ready=False;port_ready=False;started=time.monotonic();last_report=None;last_report_at=0
+        ready=False;port_ready=False;profile_ready='xi_profile' not in programs;profile_ports=set();started=time.monotonic();last_report=None;last_report_at=0
         while True:
             cancelled()
             for name,p in workers:
@@ -809,16 +947,27 @@ def serve():
                         with socket.create_connection(('127.0.0.1',54231),timeout=.3):pass
                         port_ready=True
                     except OSError:pass
+                if not profile_ready:
+                    for port in (51220,51240):
+                        if port not in profile_ports:
+                            try:
+                                with socket.create_connection(('127.0.0.1',port),timeout=.3):pass
+                                profile_ports.add(port)
+                            except OSError:pass
+                    profile_ready=len(profile_ports)==2
                 now=time.monotonic();elapsed=now-started;report=progress.snapshot(elapsed,port_ready)
-                ready=not report['pending_processes'] and port_ready
+                if 'xi_profile' in programs:
+                    report.update(profile_ports_reachable=sorted(profile_ports),profile_ready=profile_ready)
+                    if not report['pending_processes'] and not profile_ready:report['stage']='Waiting for profile and IRC ports'
+                ready=not report['pending_processes'] and port_ready and profile_ready
                 if ready:status('running','Server ready — all scripts loaded. You can connect now.',deployment=meta,startup=report)
                 elif elapsed>STARTUP_TIMEOUT_SECONDS:
-                    waiting=', '.join(report['pending_processes']) or 'the login port'
+                    waiting=', '.join(report['pending_processes']) or ('the login port' if not port_ready else 'profile ports 51220 and 51240')
                     raise RuntimeError('Server startup was not confirmed within 30 minutes; waiting for '+waiting+'. Last stage: '+report['stage']+'. See Server operation log.')
                 else:
                     # Refresh elapsed time while a large script-loading stage is
                     # quiet, but avoid rewriting status on every supervisor tick.
-                    signature=(report['stage'],tuple(report['ready_processes']),tuple(report['recent_lines']),port_ready)
+                    signature=(report['stage'],tuple(report['ready_processes']),tuple(report['recent_lines']),port_ready,profile_ready)
                     if signature!=last_report or now-last_report_at>=2:
                         message='Starting server: '+report['stage']+' ('+str(int(elapsed))+'s). Wait for “Server ready” before connecting.'
                         status('starting',message,deployment=meta,startup=report);last_report=signature;last_report_at=now
@@ -839,10 +988,11 @@ def serve():
 def main():
     for p in (STATE,RUN,LOGS):p.mkdir(parents=True,exist_ok=True)
     req=json.loads((RUN/'request.json').read_text());action=req.get('action')
-    if action not in ('deploy','update','start','backup','rollback','inspect','restore-db','create-account','build-source','adopt-build','stage-build','check-staged','deploy-staged'):raise ValueError('Unknown server action')
+    if action not in ('deploy','update','start','backup','rollback','inspect','restore-db','create-account','build-source','adopt-build','stage-build','check-staged','deploy-staged','repair-profile'):raise ValueError('Unknown server action')
     checked_jobs(req.get('jobs',2))
     if action=='inspect':
         info=source_info(source_root(INPUT));status('inspected','Selected source expects client '+info['expected_client']+'. Meshes: '+', '.join(k+(' present' if v else ' missing') for k,v in info['meshes'].items()),source=info)
+    elif action=='repair-profile':repair_profile(req)
     elif action=='build-source':build_source(req)
     elif action=='adopt-build':adopt_build(req)
     elif action=='stage-build':stage_build(req)

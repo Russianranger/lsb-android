@@ -42,10 +42,10 @@ class BuildPipelineTests(unittest.TestCase):
         (m.STATE/'import.sql').write_bytes(b'original imported SQL')
         self.pointer=(m.STATE/'active.json').read_bytes()
 
-    def binaries(self,root):
+    def binaries(self,root,programs=None):
         return {name:dict(sha256=hashlib.sha256((root/name).read_bytes()).hexdigest(),
                          bytes=(root/name).stat().st_size,needed=['libjemalloc.so.2','libc.so.6'],allocator='libjemalloc.so.2')
-                for name in m.PROCESSES}
+                for name in (m.required_programs(root) if programs is None else programs)}
 
     def make_build(self):
         root=m.STATE/'source-build/server'
@@ -60,6 +60,26 @@ class BuildPipelineTests(unittest.TestCase):
                     binaries=self.binaries(root),content_sha256=m.tree_fingerprint(root),content_fingerprint_version=m.PAYLOAD_FINGERPRINT_VERSION)
         m.atomic(root/'android-build.json',report)
         return report
+
+    def test_profile_source_stages_checks_and_deploys_all_five_binaries(self):
+        root=m.STATE/'source-build/server'
+        (root/'src/profile').mkdir();(root/'src/profile/CMakeLists.txt').write_text('xi_add_executable(xi_profile main.cpp)')
+        (root/'xi_profile').write_bytes(b'profile jemalloc binary')
+        self.build.update(binaries=self.binaries(root),content_sha256=m.tree_fingerprint(root))
+        m.atomic(root/'android-build.json',self.build)
+        req,info=self.stage()
+        self.assertEqual(set(info['binaries']),set(m.ALL_PROCESSES))
+        m.check_staged(req);m.deploy_staged(req)
+        active=m.current();self.assertEqual((active/'server/xi_profile').read_bytes(),b'profile jemalloc binary')
+        self.assertEqual(set(json.loads((active/'deployment.json').read_text())['binaries']),set(m.ALL_PROCESSES))
+
+    def test_previous_four_program_receipt_cannot_restage_a_profile_source(self):
+        root=m.STATE/'source-build/server'
+        (root/'src/profile').mkdir();(root/'src/profile/CMakeLists.txt').write_text('xi_add_executable(xi_profile main.cpp)')
+        self.build['content_sha256']=m.tree_fingerprint(root);m.atomic(root/'android-build.json',self.build)
+        before=(root/'android-build.json').read_bytes()
+        with self.assertRaisesRegex(ValueError,'missing xi_profile'):m.stage_build(self.request())
+        self.assertEqual(before,(root/'android-build.json').read_bytes());self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
 
     def request(self,mode='fresh'):
         return dict(build_id=self.build['build_id'],database_mode=mode,database='xidb',local_zones=True)

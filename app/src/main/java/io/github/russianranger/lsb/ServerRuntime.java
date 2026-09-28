@@ -88,6 +88,13 @@ final class ServerRuntime {
         }
         try(Operation reserved=beginOperation()){return performReserved(action,action.equals("build-source"),progress,null,selection);}
     }
+    String repairProfile(String generation,SafeZip.Progress progress)throws Exception {
+        selectedId(generation,"server deployment");
+        if(ClientRuntime.get(context).alive())throw new IOException("Stop the client before repairing the profile service");
+        try(Operation reserved=beginOperation()){
+            return performReserved("repair-profile",false,progress,null,new JSONObject().put("generation",generation));
+        }
+    }
     private void idle()throws IOException {if(alive())throw new IOException("Stop the managed server before changing its deployment");}
     private final class Operation implements AutoCloseable {
         @Override public void close(){synchronized(ServerRuntime.this){if(operation==this){operation=null;active=false;}}}
@@ -105,7 +112,7 @@ final class ServerRuntime {
         String text,latest;
         try{
             StringBuilder all=new StringBuilder();String operationText="",supervisorText="";
-            for(String name:new String[]{"dependencies.log","database.log","xi_connect.log","xi_map.log","xi_world.log","xi_search.log","supervisor.log","operation.log"}){
+            for(String name:new String[]{"dependencies.log","database.log","xi_connect.log","xi_map.log","xi_world.log","xi_search.log","xi_profile.log","supervisor.log","operation.log"}){
                 String tail=ServerLogTail.read(new File(logs,name));
                 if(name.equals("operation.log"))operationText=tail;
                 if(name.equals("supervisor.log"))supervisorText=tail;
@@ -244,7 +251,7 @@ final class ServerRuntime {
     }
     private String performReserved(String action,boolean build,SafeZip.Progress progress,ServerAccountRequest account,JSONObject selection)throws Exception {
         assets();if(!installed())throw new IOException("Install the server runtime first");
-        if(Arrays.asList("deploy","update","build-source","adopt-build","stage-build","check-staged","deploy-staged").contains(action)&&!toolsCurrent())throw new IOException("Update server runtime and build tools before deploying or rebuilding the server");
+        if(Arrays.asList("deploy","update","build-source","adopt-build","stage-build","check-staged","deploy-staged","repair-profile").contains(action)&&!toolsCurrent())throw new IOException("Update server runtime and build tools before deploying or rebuilding the server");
         int jobs=context.getSharedPreferences("server",0).getInt("jobs",2);
         if(jobs<1||jobs>16)throw new IOException("Choose 1 to 16 build workers");
         JSONObject request=new JSONObject().put("action",action).put("build",build).put("jobs",jobs).put("database",context.getSharedPreferences("server",0).getString("database","xidb")).put("local_zones",context.getSharedPreferences("server",0).getBoolean("local_zones",true));
@@ -263,7 +270,7 @@ final class ServerRuntime {
         }
     }
     String operationLog()throws Exception {
-        StringBuilder text=new StringBuilder();for(String name:new String[]{"build-report.json","operation.log","dependencies.log","database.log","xi_connect.log","xi_map.log","xi_world.log","xi_search.log","supervisor.log"}){
+        StringBuilder text=new StringBuilder();for(String name:new String[]{"build-report.json","profile-repair-report.json","operation.log","dependencies.log","database.log","xi_connect.log","xi_map.log","xi_world.log","xi_search.log","xi_profile.log","supervisor.log"}){
             File file=new File(logs,name);if(!file.isFile())continue;
             try(RandomAccessFile f=new RandomAccessFile(file,"r")){int size=(int)Math.min(12000,f.length());f.seek(f.length()-size);byte[] b=new byte[size];f.readFully(b);text.append(name).append("\n").append(new String(b,java.nio.charset.StandardCharsets.UTF_8)).append("\n");}
         }
@@ -281,6 +288,7 @@ final class ServerRuntime {
         SafeZip.entry(zip,"server/deployment.json",deployment().toString(2));
         File s=new File(run,"status.json");if(s.isFile())SafeZip.entry(zip,"server/status.json",FilesEx.read(s,65536));
         File build=new File(logs,"build-report.json");if(build.isFile())SafeZip.entry(zip,"server/build-report.json",redactCredentials(FilesEx.read(build,1048576)));
+        File profile=new File(logs,"profile-repair-report.json");if(profile.isFile())SafeZip.entry(zip,"server/profile-repair-report.json",redactCredentials(FilesEx.read(profile,1048576)));
         SafeZip.entry(zip,"server/operation.log",operationLog());
         SafeZip.entry(zip,"server/build-state.json",redactCredentials(buildState().toString(2)));
     }

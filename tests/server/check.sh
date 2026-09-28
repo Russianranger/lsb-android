@@ -14,3 +14,4 @@ apt-get install -y --no-install-recommends proot default-jdk-headless
 python3 -m unittest discover -s /src/tests/server -p 'test_*.py'
 python3 /src/tests/server/mesh_integration.py
 python3 /src/tests/server/integration.py
+python3 /src/tests/server/profile_repair_integration.py

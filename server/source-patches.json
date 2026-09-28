@@ -61,5 +61,19 @@
     "path": "src/map/lua/lua_base_entity.cpp",
     "before": "uint16 CLuaBaseEntity::getEVA()\n{\n    if (auto* PEntity = static_cast<CBattleEntity*>(m_PBaseEntity))\n    {\n        return PEntity->EVA();\n    }\n\n    ShowError(\"Invalid entity type calling function (%s).\", m_PBaseEntity->getName());\n    return 0;\n}",
     "after": "uint16 CLuaBaseEntity::getEVA()\n{\n    if (auto* PEntity = dynamic_cast<CBattleEntity*>(m_PBaseEntity))\n    {\n        return PEntity->EVA();\n    }\n\n    if (m_PBaseEntity)\n    {\n        ShowError(\"Invalid entity type calling function (%s).\", m_PBaseEntity->getName());\n    }\n    else\n    {\n        ShowError(\"Null entity calling getEVA().\");\n    }\n    return 0;\n}"
+  },
+  {
+    "id": "asio-profile-accept-loop-tuple-header",
+    "group": "asio-profile-accept-loop",
+    "path": "src/profile/profile_engine.cpp",
+    "before": "#include <stdexcept>\n\nnamespace",
+    "after": "#include <stdexcept>\n#include <tuple>\n\nnamespace"
+  },
+  {
+    "id": "asio-profile-accept-loop-named-result",
+    "group": "asio-profile-accept-loop",
+    "path": "src/profile/profile_engine.cpp",
+    "before": "        auto [ec, socket] = co_await acceptor.async_accept(asio::as_tuple(asio::use_awaitable));",
+    "after": "        // Keep the accepted tuple named across the coroutine suspension.\n        auto acceptResult = co_await acceptor.async_accept(asio::as_tuple(asio::use_awaitable));\n        auto& ec = std::get<0>(acceptResult);\n        auto& socket = std::get<1>(acceptResult);"
   }
 ]

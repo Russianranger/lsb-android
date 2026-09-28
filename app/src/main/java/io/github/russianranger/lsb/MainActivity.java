@@ -551,6 +551,11 @@ public final class MainActivity extends Activity {
         else live.addView(label("Open the Build tab to fetch or import source, compile with jemalloc, prepare a database, and check the exact build before deploying.",15,TEXT));
         button(live,"Start managed server",()->startForegroundService(new Intent(this,ServerService.class))).setEnabled(sr.installed()&&active.has("generation")&&!running);
         button(live,"Stop managed server",()->startForegroundService(new Intent(this,ServerService.class).setAction("stop"))).setEnabled(running);
+        if(active.has("generation")){
+            final String generation=active.getString("generation");
+            button(live,"Repair missing profile service",()->run("Building missing profile service with jemalloc",(ctx,p)->ServerRuntime.get(ctx).repairProfile(generation,p))).setEnabled(idle&&sr.toolsCurrent());
+            live.addView(label("For newer xiloader versions: stop the client and server, then repair once if this deployment lacks its profile service. This compiles only the missing service from the deployed source with jemalloc, using the worker count selected on Build. Progress appears in Diagnostics → Server operation log. Your database and other server programs are retained.",13,MUTED));
+        }
         live.addView(label("Missing map files are downloaded before startup; this first download needs an internet connection. Progress appears here and in Server logs. Wait for Ready before connecting: mob scripts can take several minutes to load after login opens. Stop any server in Termux or the other LSB app first; they share login/map ports. Then connect to 127.0.0.1. Stop the client and server before backups or maintenance.",13,MUTED));
         supportTile();
         button(live,"Open Build tab",()->{tab="Build";draw();},true);
@@ -578,7 +583,7 @@ public final class MainActivity extends Activity {
         button(recovery,"Restore previous server + database",()->confirm("Restore previous deployment","This switches both server files and player data to the retained previous generation. Progress made after that snapshot remains in the other generation.",()->run("Switching server generation",(ctx,p)->ServerRuntime.get(ctx).perform("rollback",false,p)))).setEnabled(active.has("generation")&&idle);
         LinearLayout diagnostics=card("Server logs");
         button(diagnostics,"View server operation log",this::showLiveServerLog,true);
-        button(diagnostics,"Probe saved server address",()->run("Checking server TCP ports",(ctx,p)->{String address=store(ctx).config().host;StringBuilder result=new StringBuilder("TCP reachability only: "+address+"\n");for(int port:new int[]{54231,54230,54001})try(Socket socket=new Socket()){socket.connect(new InetSocketAddress(address,port),2500);result.append(port).append(": reachable\n");}catch(IOException e){result.append(port).append(": unavailable\n");}FilesEx.text(new File(ctx.getFilesDir(),"server-probe.txt"),result.toString());return result.toString();}));
+        button(diagnostics,"Probe saved server address",()->run("Checking server TCP ports",(ctx,p)->{String address=store(ctx).config().host;StringBuilder result=new StringBuilder("TCP reachability only: "+address+"\n");for(int port:new int[]{54231,54230,54001,51220,51240})try(Socket socket=new Socket()){socket.connect(new InetSocketAddress(address,port),2500);result.append(port).append(": reachable\n");}catch(IOException e){result.append(port).append(": unavailable\n");}FilesEx.text(new File(ctx.getFilesDir(),"server-probe.txt"),result.toString());return result.toString();}));
     }
     private static JSONObject object(JSONObject parent,String name){JSONObject child=parent.optJSONObject(name);return child==null?new JSONObject():child;}
     private static String sourceIdentity(JSONObject source){
@@ -639,7 +644,7 @@ public final class MainActivity extends Activity {
         button(source,"Import source / existing server ZIP",()->pick("source")).setEnabled(idle);
         if(report.exists())button(source,"View fetched source report",()->{try{showText("Fetched source report",FilesEx.read(report,8192));}catch(Exception e){error(e);}},true);
         LinearLayout compile=featuredCard("2 · Build this source with jemalloc");
-        compile.addView(label("Next build uses the fetched source shown in step 1. jemalloc is required and checked for all four server programs.",13,MUTED));
+        compile.addView(label("Next build uses the fetched source shown in step 1. jemalloc is required and checked for every required server program, including the profile service in newer source.",13,MUTED));
         compile.addView(label("Build workers",14,TEXT));
         Spinner workers=new Spinner(this);String[] workerLabels=new String[16];for(int i=0;i<workerLabels.length;i++)workerLabels[i]="j"+(i+1)+" · "+(i+1)+" worker"+(i==0?"":"s");
         workers.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,workerLabels));workers.setContentDescription("Build worker count");
@@ -696,7 +701,7 @@ public final class MainActivity extends Activity {
         if(!staged.optString("check_error").isEmpty())check.addView(label("Check needs attention: "+staged.optString("check_error"),13,ACCENT));
         if(staged.optBoolean("stale_database"))check.addView(label("Current player data changed after staging. Prepare a new database copy before deployment.",14,ACCENT));
         button(check,"Check staged build and database",()->run("Checking staged server and database",(ctx,p)->ServerRuntime.get(ctx).performBuild("check-staged",stagedBuildId,stagedId,"",p))).setEnabled(hasStaged&&sr.toolsCurrent()&&idle);
-        check.addView(label("Checks the staged files, required map assets, the four binaries and jemalloc, database contents, and saved source identity. Confirm the expected client version shown above matches your client and loader before connecting.",13,MUTED));
+        check.addView(label("Checks the staged files, required map assets, all required binaries and jemalloc, database contents, and saved source identity. Confirm the expected client version shown above matches your client and loader before connecting.",13,MUTED));
         LinearLayout deploy=featuredCard("5 · Deploy the checked pair");
         deploy.addView(label(hasStaged?"Deploy build: "+stagedBuildId+"\nDatabase: "+staged.optString("database","unknown")+"\nDatabase generation: "+stagedId+"\n"+databaseModeLabel(staged.optString("database_mode")):"Nothing is staged for deployment.",13,TEXT));
         button(deploy,"Deploy checked build and database",()->confirm("Replace current server and database",stagedDescription+"\n\nThis exact staged pair will replace the current server and database. Player data will become the staged counts shown above. The current pair is retained for rollback. Deployment checks this pair again and never rebuilds from newly fetched source.",()->run("Deploying checked server and database",(ctx,p)->ServerRuntime.get(ctx).performBuild("deploy-staged",stagedBuildId,stagedId,"",p)))).setEnabled(hasStaged&&"checked".equals(staged.optString("state"))&&!staged.optBoolean("stale_database")&&sr.toolsCurrent()&&idle);

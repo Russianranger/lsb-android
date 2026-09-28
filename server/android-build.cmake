@@ -1,5 +1,5 @@
 # Loaded via CMAKE_PROJECT_TOP_LEVEL_INCLUDES; change only our staged build.
-# Run after upstream has created the four server targets. This works with ZIP
+# Run after upstream has created its server targets. This works with ZIP
 # snapshots without editing upstream CMake files or relying on a fork's options.
 include_guard(GLOBAL)
 
@@ -28,7 +28,13 @@ function(lsb_android_link_jemalloc)
     if(NOT LSB_ANDROID_JEMALLOC MATCHES "[.]so([.][0-9]+)*$")
         message(FATAL_ERROR "LSB Android requires shared jemalloc (install libjemalloc-dev)")
     endif()
-    foreach(server IN ITEMS xi_connect xi_map xi_search xi_world)
+    set(lsb_android_servers xi_connect xi_map xi_search xi_world)
+    # Older source revisions predate the PlayOnline profile service. Newer
+    # loaders require it, and it must use the same allocator as the other roles.
+    if(TARGET xi_profile)
+        list(APPEND lsb_android_servers xi_profile)
+    endif()
+    foreach(server IN LISTS lsb_android_servers)
         if(NOT TARGET ${server})
             message(FATAL_ERROR "Selected source does not define required server target ${server}")
         endif()

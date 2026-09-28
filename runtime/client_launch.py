@@ -16,6 +16,7 @@ FAILURES={
     'login_invalid_reply':'The launcher received an invalid server reply. Check that the server and xiloader versions are compatible; export Diagnostics.',
     'login_server_error':'The server returned a login error. Check the server log for its reason; export Diagnostics.',
     'login_rejected':'The launcher reported a login failure. Check your server account, existing sessions and loader/server version, then retry from Client.',
+    'profile_connection_failed':'The PlayOnline profile service could not be reached. For a managed server, stop the client and server, use Server → Repair missing profile service, then start the server again. For an external server, ensure xi_profile is running.',
     'connection_failed':'The launcher could not connect. Start your server and check the server address, then retry from Client.',
     'connection_timeout':'The server did not reply to the launcher in time. Check the server log and retry from Client.',
     'authentication_handshake_failed':'The authentication connection failed. Check server and loader compatibility; export Diagnostics.',

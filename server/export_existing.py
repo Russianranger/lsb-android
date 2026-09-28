@@ -43,7 +43,7 @@ def main():
             if file.is_file():
                 if file.is_symlink() and not file.resolve().is_relative_to(root):continue
                 z.write(file,'server/'+relative.as_posix())
-        for name in ('xi_connect','xi_map','xi_search','xi_world'):
+        for name in ('xi_connect','xi_map','xi_search','xi_world','xi_profile'):
             if not (root/name).is_file():
                 matches=list((root/'build').rglob(name))
                 if len(matches)==1:z.write(matches[0],'server/'+name)
