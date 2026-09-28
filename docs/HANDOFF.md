@@ -28,11 +28,46 @@ reuse of a passed receipt without recompilation, staging, and runtime/tamper
 rejection. The real source-build integration now checks post-build payload
 fingerprinting and copied-payload equality as well as compilation.
 
+Qualified source commit: `eee599ac75e6bbf251ebbec9dff1a572002beb02`.
 All 74 server Python tests pass locally, including six new recovery/cache
-regressions. Delivery is being prepared as 0.5.48 / code 64. Do not claim signed delivery or
-new CI gate success until the results below are updated. The owner should use
-**Verify and reuse previous successful build** after installing the matching
-APK, without fetching or compiling again. The saved receipt lacks a completed
+regressions. Exact-head [baseline run 36429048972](https://github.com/Russianranger/lsb-android/actions/runs/36429048972)
+passed verify job `108950354925`: 108 Android tests, 192 runtime Python tests,
+74 server Python tests and both APK compilation/packaging checks. Real ARM64
+MariaDB job `108950196356` passed reuse, all three database preparation modes,
+player-data preservation, stale-data rejection, staging checks and atomic
+activation/rollback. Presentation and Windows launcher jobs also passed.
+Unchanged PlayOnline/Box64/FEX runtime jobs were still running when delivery was
+qualified; do not claim the whole baseline is complete.
+
+[Native source run 36429049322](https://github.com/Russianranger/lsb-android/actions/runs/36429049322),
+job `108950198337`, passed compilation/startup/jemalloc binding for all four
+binaries and the new post-build payload fingerprint/copy equality check.
+This gate remains pinned to `16281a81de58acfb315b639d9b79aaacd52a64f2`;
+the phone log itself supplies the successful latest `6d5a513` compilation evidence.
+
+**Signed 0.5.48 / code 64 APKs delivered on 2026-09-28.** Both passed v2/v3
+signature verification with the retained preview certificate, expected package
+IDs/version/code, 16 KiB alignment, equality of all 69 nonsignature CI payload
+entries, and equality of all 25 server/runtime source assets. The two variants
+share 67 identical payload entries. Each is 18,527,574 bytes.
+
+- `LSB-Android-Restore-Test-0.5.48.apk` SHA-256:
+  `b4dc1b245d37d74c8293128a228fbad261b229a34fbc7592364fa0780b8c1a4f`.
+- `LSB-Android-0.5.48.apk` SHA-256:
+  `7eb802bfd6ca2c42390e8d87477be62b040a4b6b124427dddc550da5e83688b0`.
+- Certificate SHA-256:
+  `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+
+CI artifacts (archive hashes verified before signing): normal `10971989613`,
+SHA-256 `0b76ae6d7faa7cf8b2d74c2b5b0324e1dd097de87fe2572ab8eecc6062dffd82`;
+Restore-Test `10973056689`, SHA-256
+`aa8655a7c9d0a2000351f1b51d1140e8ec7c01216fedb471314fa84cea5e4630`.
+The workspace retains `verification/delivery-verification-0.5.48.json` and
+`verification/library-delivery-0.5.48.json` with verification/save receipts.
+
+The owner uses Restore-Test and should install the matching APK over it, then use
+**Verify and reuse previous successful build**, without fetching or compiling
+again. On-device recovery and staging still await the owner's result. The saved receipt lacks a completed
 source identity, so recovery keeps the original repository unrecorded rather
 than borrowing the current fetch. The binaries expect client `30260904_1`;
 the current old deployment records `30251204_1`.
