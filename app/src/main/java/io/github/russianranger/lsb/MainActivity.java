@@ -225,7 +225,8 @@ public final class MainActivity extends Activity {
     }
     private void clientPage() throws Exception {
         ClientStore s = store(this);
-        boolean ready=ClientRuntime.get(this).preparationState().has("current");
+        JSONObject preparation=ClientRuntime.get(this).preparationState();
+        boolean ready=preparation.has("current");
         if(ready)loginCard(s);else supportTile();
         clientUpdateCard();
         initializationCard(s);
@@ -236,7 +237,7 @@ public final class MainActivity extends Activity {
         status.addView(label("Free space: " + storage(this).getUsableSpace() / 1073741824L + " GiB. Imports need room for a new full copy while retaining the active client.", 13, MUTED));
         preserve = new CheckBox(this); preserve.setText("Preserve current FFXI USER and PlayOnline usr settings on client import"); preserve.setTextColor(TEXT); preserve.setChecked(preserveOnImport); preserve.setOnCheckedChangeListener((b, checked) -> preserveOnImport = checked); status.addView(preserve);
         button(status, s.hasClient() ? "Import a complete client update ZIP" : "Import client ZIP", () -> pick("client")).setEnabled(!s.hasPendingImport());
-        button(status, "Import xiloader.exe", () -> pick("loader")).setEnabled(s.hasClient());
+        button(status, ready ? "Import and apply xiloader.exe" : "Import xiloader.exe", () -> pick("loader")).setEnabled(s.hasClient()&&!ClientRuntime.get(this).alive()&&(!ready||!preparation.has("candidate")));
 
         LinearLayout launch = card("Connection and repair");
         LaunchConfig cfg = s.config(); launch.addView(label("Server address", 14, MUTED)); host = new EditText(this); host.setSingleLine(true); host.setTextColor(TEXT); host.setText(cfg.host); host.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI); launch.addView(host);
@@ -323,11 +324,24 @@ public final class MainActivity extends Activity {
         field.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING|android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         card.addView(field);return field;
     }
+    private void loaderSelectionCard(ClientRuntime rt)throws Exception {
+        JSONObject state=rt.loaderSelectionState();
+        String imported=state.optString("imported_sha256"),active=state.optString("prepared_sha256");
+        boolean available=state.optBoolean("prepared_available"),different=state.optBoolean("differs"),pending=state.optBoolean("recovery_pending"),staged=rt.preparationState().has("candidate");
+        LinearLayout loader=card("Active xiloader");
+        loader.addView(label("Imported loader: "+(imported.isEmpty()?"Unavailable":imported.substring(0,Math.min(12,imported.length()))),14,TEXT));
+        loader.addView(label("Prepared client loader: "+(active.isEmpty()?"Unavailable":active.substring(0,Math.min(12,active.length()))),14,TEXT));
+        loader.addView(label(imported.isEmpty()?"Import an xiloader before changing the prepared client.":!available?"No prepared loader is available.":pending?"An interrupted loader change needs recovery. Apply the imported loader again before logging in.":different?"The prepared client uses a different xiloader from your import.":"The prepared client uses your imported xiloader.",15,different||pending?ACCENT:MUTED));
+        loader.addView(label("Apply the imported xiloader to the prepared client while preserving its updated game files and Windows environment. Successful login still needs to be checked.",14,MUTED));
+        if(staged)loader.addView(label("Finish or discard the staged client preparation or update before changing xiloader.",14,ACCENT));
+        button(loader,"Use imported xiloader in prepared client",()->run("Applying imported xiloader",(ctx,p)->ClientRuntime.get(ctx).applyImportedLoader(imported,p))).setEnabled(available&&!imported.isEmpty()&&(different||pending)&&!staged&&!rt.alive()&&!WorkService.busy);
+    }
     private void loginCard(ClientStore source)throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);JSONObject state=rt.preparationState();
         JSONObject stagedClient=state.optJSONObject("candidate");boolean updateStaged=stagedClient!=null&&stagedClient.has("update_of");
         LinearLayout card=featuredCard("Play FINAL FANTASY XI");runtimeStatus=label(rt.status,15,ACCENT);card.addView(runtimeStatus);
         card.addView(label("Start your Termux or managed server, then log in. Your working client and loader are kept together.",15,TEXT));
+        loaderSelectionCard(rt);
         LinearLayout graphics=card("Graphics & display");
         graphics.addView(label("FFXI display setting",14,MUTED));
         final String[] displayProfiles={"windowed720","windowed540","preserve","restore"};
@@ -723,7 +737,16 @@ public final class MainActivity extends Activity {
                         case "restore": return SessionBackup.restore(ctx,in,p);
                         case "restore-legacy": store(ctx).importClient(in, true, false, p); return store(ctx).hasPendingImport() ? "Backup extracted. Choose the PlayOnline version on the Client tab to finish restore." : "Legacy client backup restored and validated.";
                         case "prerequisite": return ClientRuntime.get(ctx).importPrerequisite(in);
-                        case "loader": store(ctx).importLoader(in, p); return "32-bit xiloader imported. Its runtime compatibility still needs a launch test.";
+                        case "loader": {
+                            ClientRuntime runtime=ClientRuntime.get(ctx);
+                            if(runtime.alive())throw new IOException("Stop the client and runtime before importing xiloader");
+                            JSONObject prepared=runtime.preparationState();
+                            if(prepared.has("current")&&prepared.has("candidate"))throw new IOException("Finish or discard the staged client preparation or update before importing xiloader");
+                            store(ctx).importLoader(in,p);
+                            JSONObject selection=runtime.loaderSelectionState();
+                            if(selection.optBoolean("prepared_available"))return runtime.applyImportedLoader(selection.getString("imported_sha256"),p);
+                            return "32-bit xiloader imported. Prepare the client before testing login.";
+                        }
                         case "server-sql": return ServerRuntime.get(ctx).importDatabase(in,p);
                         case "source": if(ServerRuntime.get(ctx).alive())throw new IOException("Stop the managed server before importing source"); return SourceImport.stage(new File(storage(ctx), "server"), in, "User-selected ZIP (revision unverified)", p);
                         default: throw new IOException("File operation was lost; please select it again");

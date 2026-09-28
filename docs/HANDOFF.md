@@ -1,3 +1,44 @@
+# 0.5.51: use the imported loader in the active updated client
+
+Phone `lsb-support(20260928-203125).zip` SHA-256
+`033fd94fec7e13146f37d954c73107bc79963607a2a43a5e3fc66d2ee3f9e408`
+confirms the 0.5.50 server fix: all four processes Ready at 20:26:38 UTC,
+304 navmeshes and 299 ximeshes present. Generation
+`dab21cb7-d044-449f-9d9f-c35c5df6d239` still uses completed jemalloc build
+`1a1d413d-40f2-4ba7-8b43-8eed50c83967`; deployment counts are three accounts
+and three characters. No database/server rebuild is needed.
+
+The imported xiloader hash is
+`aec6c0686cf3b2fe65247b818fe44f89fb18fc175e8ebd3ba3b7cf099988f504`, but both
+failed launch manifests and the active updated prepared inventory use
+`78fe8ab1dee5aaac3f866001b706d19d233996e584cf78f3a47b26a0d62cdaf8`.
+`ClientStore.importLoader` updated only the original import, while launches use
+the separate prepared generation. The updated game DLL hashes differ from the
+original import, so preparing the whole client again would undo that update.
+Both attempts passed dependency checking then recorded `login_server_error`.
+The old private-output filter discarded the remote reason; no raw reason can be
+recovered from this export. Upstream normal-login error_message handling strongly
+supports a loader protocol-version rejection, not a proven password failure.
+
+0.5.51 adds explicit targeted loader activation with imported/active hashes.
+Existing imports use **Use imported xiloader in prepared client**; subsequent
+**Import and apply xiloader.exe** imports also apply to the active preparation.
+The operation binds the selected imported hash, verifies x86/selected prepared
+binaries, blocks while runtime is active or a staged client update exists, and
+uses a small-file journal with retained old bytes and interrupted-change recovery.
+It preserves updated game data, prefix, settings and the current generation.
+Old launch/update proof moves into loader-update history. Initialization remains
+historical evidence for unchanged DLLs/prefix, with replacement-loader validation
+explicitly pending. Runtime dependencies and actual authentication are checked
+on the next launch. No successful phone login is claimed yet.
+
+Privacy-safe diagnostics classify only exact known remote rejection messages;
+unknown replies remain generic and never persist raw text. Managed-server
+errors no longer incorrectly direct the user exclusively to Termux.
+
+Version is 0.5.51 / code 67. Delivery validation is pending.
+Follow [TESTING-0.5.51.md](TESTING-0.5.51.md).
+
 # 0.5.50: fetched source map submodules and current readiness markers
 
 Phone `lsb-support (2)(10).zip` SHA-256

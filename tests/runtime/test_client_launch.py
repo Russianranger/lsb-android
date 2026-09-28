@@ -129,6 +129,60 @@ class LaunchContracts(unittest.TestCase):
         self.assertEqual(events.feed(raw)+events.finish(),b'')
         self.assertLessEqual(len(events.tail),4096)
 
+    def test_remote_version_rejection_survives_separate_reads_color_and_utf16(self):
+        for encoding in ['ascii','utf-16le','utf-16be']:
+            with self.subTest(encoding=encoding):
+                events=supervisor.PrivateEvents()
+                header='[09/28/26 15:26:00] \x1b[31mError from remote:\x1b[0m\r\n'.encode(encoding)
+                reason=('[09/28/26 15:26:00] Unsupported xiloader version 2.0.0.\r\n'
+                        '[09/28/26 15:26:00] This server requires version 2.2.x.\r\n').encode(encoding)
+                self.assertEqual(events.feed(header),b'')
+                self.assertEqual(events.snapshot(),[])
+                output=b''.join(events.feed(reason[i:i+3]) for i in range(0,len(reason),3))+events.finish()
+                self.assertEqual(output,b'login_version_mismatch\n')
+                self.assertEqual(events.snapshot(),['login_version_mismatch'])
+                self.assertEqual(client_launch.progress(events.snapshot(),1)[2],'login_version_mismatch')
+                self.assertNotIn('2.0.0',str(events.snapshot()))
+
+    def test_remote_header_only_fails_at_eof_or_bounded_wait(self):
+        events=supervisor.PrivateEvents()
+        self.assertEqual(events.feed(b'Error from remote:\n')+events.finish(),b'login_server_error\n')
+        self.assertEqual(client_launch.progress(events.snapshot(),1)[2],'login_server_error')
+        events=supervisor.PrivateEvents()
+        with patch.object(supervisor.time,'monotonic',return_value=100):
+            self.assertEqual(events.feed(b'Error from remote:\n'),b'')
+            self.assertEqual(events.snapshot(),[])
+        with patch.object(supervisor.time,'monotonic',return_value=101.1):
+            self.assertEqual(events.snapshot(),['login_server_error'])
+
+    def test_remote_reason_is_exact_bounded_and_never_retains_untrusted_text(self):
+        messages=[b'account=private-account password=private-password',
+                  b'Unsupported xiloader version 2.0.0. private-password',
+                  b'Unsupported xiloader version 999.0.0.',
+                  b'Unsupported xiloader version 2.0.0',
+                  b'Successfully logged in. private-password',b'private-password'*10000]
+        for message in messages:
+            with self.subTest(message_length=len(message)):
+                events=supervisor.PrivateEvents()
+                output=events.feed(b'Error from remote:\n'+message+b'\n')+events.finish()
+                self.assertEqual(output,b'login_server_error\n')
+                self.assertEqual(events.snapshot(),['login_server_error'])
+                self.assertEqual(events.tail,b'')
+                self.assertNotIn('private-password',str(events.diagnostics.snapshot()))
+        events=supervisor.PrivateEvents()
+        output=events.feed(b'username=Error from remote:\nUnsupported xiloader version 2.0.0.\n')+events.finish()
+        self.assertEqual(output,b'')
+        self.assertEqual(events.snapshot(),[])
+
+    def test_remote_credential_rejection_is_distinct_from_version_rejection(self):
+        events=supervisor.PrivateEvents()
+        output=events.feed(b'Error from remote:\nFailed to validate credentials\n')+events.finish()
+        self.assertEqual(output,b'login_invalid_credentials\n')
+        self.assertEqual(client_launch.progress(events.snapshot(),1)[2],'login_invalid_credentials')
+        self.assertEqual(client_launch.progress(['login_server_error','login_version_mismatch'],1)[2],
+                         'login_version_mismatch')
+        for message in client_launch.FAILURES.values():self.assertNotIn('Termux',message)
+
     def test_progress_does_not_equate_process_alive_or_already_logged_in_with_login(self):
         self.assertEqual(client_launch.progress([],0)[0],'waiting_for_login')
         self.assertIn('Still waiting',client_launch.progress([],61)[1])

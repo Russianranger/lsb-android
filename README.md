@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.50 repairs startup when fetched source archives omit map submodules.** Missing map data is fetched at pinned compatible revisions before staging or startup, with live progress; the completed jemalloc build and database are retained. The startup monitor recognizes current and legacy server readiness messages. See the [0.5.50 startup steps](docs/TESTING-0.5.50.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
+Current development: **0.5.51 applies an imported xiloader to the active prepared client without repeating the client update.** The Client tab shows imported and active loader checksums and provides a targeted replacement, with interrupted-change recovery. Login diagnostics distinguish the known server rejection for an unsupported loader version without retaining private output. See the [0.5.51 login steps](docs/TESTING-0.5.51.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
 
 The Build tab prepares an independent server/database pair using an identified successful jemalloc build. Choose a migrated copy of current player data, an imported SQL backup, or a fresh database. The active pair changes only after an explicit checked deployment and remains available for rollback. The Server tab handles start/stop, accounts, database export and rollback. A separately labelled advanced path retains imported ARM64 binaries plus SQL deployment.
 

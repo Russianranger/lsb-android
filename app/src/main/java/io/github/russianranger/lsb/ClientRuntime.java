@@ -93,6 +93,14 @@ final class ClientRuntime {
         return info;
     }
     PreparedClientStore prepared()throws IOException{return new PreparedClientStore(new File(home,"clients"));}
+    JSONObject loaderSelectionState()throws Exception {
+        return new PreparedLoaderUpdate(prepared()).selection(MainActivity.store(context));
+    }
+    synchronized String applyImportedLoader(String expectedSha256,SafeZip.Progress progress)throws Exception {
+        if(alive())throw new IOException("Stop the client and runtime before changing xiloader");
+        reapOrphans();
+        return status=new PreparedLoaderUpdate(prepared()).apply(MainActivity.store(context),expectedSha256,progress);
+    }
     JSONObject preparationState()throws Exception {
         PreparedClientStore store=prepared();JSONObject out=new JSONObject();
         for(String kind:new String[]{"current","previous","candidate"}){
@@ -138,6 +146,7 @@ final class ClientRuntime {
     }
     private JSONObject clientManifest(File gen)throws Exception {return clientManifest(gen,false);}
     private JSONObject clientManifest(File gen,boolean updateVerification)throws Exception {
+        if(PreparedLoaderUpdate.pending(gen))throw new IOException("An interrupted xiloader update needs recovery; stop the runtime and apply the imported loader again");
         Properties m=prepared().metadata(gen);File client=new File(gen,"client");
         ClientInspector.Snapshot inspected=ClientInspector.inspect(client,m.getProperty("core"),text->status=text);
         // The installer may add dependencies, but never silently replace selected game binaries.
@@ -319,6 +328,7 @@ final class ClientRuntime {
             if(!installed()||!read(new File(root,"lsb-runtime.sha256"),128).equals(RUNTIME_SHA))throw new IOException("Install the pinned runtime first");
             if(!Arrays.asList("turnip26","turnip24","software").contains(renderer))throw new IOException("Unsupported renderer");
             reapOrphans();
+            new PreparedLoaderUpdate(prepared()).recover(text->status=text);
             if(useFex){selectedFex=fex();if(!selectedFex.installed())throw new IOException("Install FEX on the Runtime tab first");}
             TarExtractor.remove(run);TarExtractor.remove(tmp);run.mkdirs();tmp.mkdirs();prefix.mkdirs();assets();
             nativePerformance.flush(2000);retainSessionHistory();

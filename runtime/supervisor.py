@@ -91,7 +91,6 @@ class PrivateEvents:
             (b'remote failed to reply within the timeout',b'connection_timeout'),
             (b'bad json reply from remote',b'login_invalid_reply'),
             (b'xi_connect didn\'t send a proper reply command',b'login_invalid_reply'),
-            (b'error from remote:',b'login_server_error'),
             (b'trust token rejected!',b'login_additional_authentication'),
             (b'please log in again and enter your otp code',b'login_additional_authentication'),
             (b'successfully logged in',b'login_message_seen'),(b'login successful',b'login_message_seen'),
@@ -101,19 +100,48 @@ class PrivateEvents:
     def __init__(self):
         from startup_diagnostics import StartupDiagnostics
         self.tail=b'';self.seen=set();self.discard=False;self.lock=threading.Lock()
+        self.remote_pending=None
         self.diagnostics=StartupDiagnostics()
     def snapshot(self):
-        with self.lock:return sorted(e.decode('ascii') for e in self.seen)
+        with self.lock:
+            # A separate pipe read can contain the remote reason. Give it a
+            # bounded chance to arrive before the launch loop stops the loader
+            # for the generic heading alone; a stalled/heading-only reply still
+            # fails without retaining any remote text.
+            if self.remote_pending is not None and time.monotonic()-self.remote_pending>=1:
+                self.seen.add(b'login_server_error')
+            return sorted(e.decode('ascii') for e in self.seen)
+    def emit(self,event):
+        with self.lock:
+            if event in self.seen:return b''
+            self.seen.add(event)
+        return event+b'\n'
+    def remote_reason(self,data):
+        # xi_connect 6d5a513 sends these exact JSON error_message texts and
+        # xiloader prints each line following "Error from remote:". Version
+        # components are uint8s. Persist only the existing fixed classification,
+        # never the remote text or even its supplied version numbers.
+        version=re.fullmatch(rb'unsupported xiloader version (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.',data)
+        if version and all(int(part)<=255 for part in version.groups()):
+            return b'login_version_mismatch'
+        if data==b'failed to validate credentials':return b'login_invalid_credentials'
+        return b'login_server_error'
     def line(self,data):
         data=re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]',b'',data).strip().lower()
         self.diagnostics.line(data)
         data=re.sub(rb'^\[\d{2}/\d{2}/\d{2,4} \d{2}:\d{2}:\d{2}\]\s*',b'',data)
+        with self.lock:
+            if self.remote_pending is not None and data:
+                self.remote_pending=None
+                remote=True
+            else:remote=False
+        if remote:return self.emit(self.remote_reason(data))
+        if data==b'error from remote:':
+            with self.lock:self.remote_pending=time.monotonic()
+            return b''
         for token,event in self.TOKENS:
             if data.startswith(token):
-                with self.lock:
-                    if event in self.seen:return b''
-                    self.seen.add(event)
-                return event+b'\n'
+                return self.emit(event)
         return b''
     def feed(self,chunk):
         out=[]
@@ -125,10 +153,19 @@ class PrivateEvents:
                 else:self.tail+=part
             if i<len(parts)-1:
                 if not self.discard:out.append(self.line(self.tail))
+                else:
+                    with self.lock:
+                        remote=self.remote_pending is not None
+                        self.remote_pending=None
+                    if remote:out.append(self.emit(b'login_server_error'))
                 self.tail=b'';self.discard=False
         return b''.join(out)
     def finish(self):
         out=b'' if self.discard else self.line(self.tail)
+        with self.lock:
+            remote=self.remote_pending is not None
+            self.remote_pending=None
+        if remote:out+=self.emit(b'login_server_error')
         self.tail=b'';self.discard=False;return out
 
 
