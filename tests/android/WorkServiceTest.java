@@ -277,4 +277,56 @@ public class WorkServiceTest {
         }finally{release.countDown();thread.join(5000);}
         assertFalse(thread.isAlive());task.get(1,TimeUnit.SECONDS);assertFalse(runtime.alive());assertFalse(new File(runtime.state,"export.sql").exists());
     }
+    @Test public void liveLogTailHandlesGrowthRotationTruncationAndIncompleteLines()throws Exception {
+        ServerRuntime runtime=new ServerRuntime(context,builder->{throw new AssertionError("No process needed");});
+        File log=new File(runtime.logs,"operation.log");
+        try{
+            assertEquals("",ServerLogTail.read(log));
+            FilesEx.text(log,"[ 10%] first\n");assertEquals("[ 10%] first",runtime.liveLog().latest);
+            try(FileWriter out=new FileWriter(log,true)){out.write("\u001b[32m[ 20%] second\u001b[0m\n\nunfinished secret");}
+            assertEquals("[ 20%] second",runtime.liveLog().latest);assertFalse(runtime.liveLog().text.contains("unfinished"));
+            LogRetention.rotate(log);assertEquals("",runtime.liveLog().latest);
+            FilesEx.text(log,"replacement\n");assertEquals("replacement",runtime.liveLog().latest);
+            FilesEx.text(log,"short\n");assertEquals("short",runtime.liveLog().latest);
+            StringBuilder large=new StringBuilder("old output\n");for(int i=0;i<ServerLogTail.MAX_BYTES*3;i++)large.append('x');
+            large.append("truncated-secret-suffix\nlast complete line\n");FilesEx.text(log,large.toString());
+            String tail=ServerLogTail.read(log);assertEquals("last complete line\n",tail);assertTrue(tail.length()<=ServerLogTail.MAX_BYTES);
+            FilesEx.text(log,"\u001b]0;hidden title\u0007visible\u0001\n");assertEquals("visible",runtime.liveLog().latest);
+            log.delete();assertEquals("",runtime.liveLog().latest);
+        }finally{FilesEx.delete(runtime.home);}
+    }
+    @Test public void liveLogRedactsBeforeDisplayAndFailsClosedWithoutReadingOtherFiles()throws Exception {
+        ServerRuntime runtime=new ServerRuntime(context,builder->{throw new AssertionError("No process needed");});
+        File credentials=new File(runtime.state,"generations/fixture/database-credentials.json"),log=new File(runtime.logs,"operation.log");
+        try{
+            FilesEx.text(credentials,"{\"password\":\"fixture-secret\"}");
+            FilesEx.text(log,"compiler fixture-secret\n");
+            FilesEx.text(new File(runtime.logs,"import.sql"),"private SQL contents\n");
+            FilesEx.text(new File(runtime.logs,"database-credentials.json"),"private credential contents\n");
+            ServerRuntime.LogSnapshot snapshot=runtime.liveLog();assertEquals("compiler [redacted]",snapshot.latest);assertFalse(snapshot.text.contains("fixture-secret"));assertFalse(snapshot.text.contains("private"));
+            FilesEx.text(credentials,"{invalid");snapshot=runtime.liveLog();assertEquals("",snapshot.latest);assertTrue(snapshot.text.contains("unavailable"));assertFalse(snapshot.text.contains("compiler"));
+            FilesEx.text(credentials,"{\"password\":\"fixture-secret\"}");log.delete();
+            java.nio.file.Files.createSymbolicLink(log.toPath(),credentials.toPath());assertEquals("",runtime.liveLog().latest);assertFalse(runtime.liveLog().text.contains("fixture-secret"));
+        }finally{FilesEx.delete(runtime.home);}
+    }
+    @Test public void liveLogClearsAtOperationStartAndKeepsFinalOutputAfterExit()throws Exception {
+        File home=new File(context.getFilesDir(),"server-runtime");AtomicInteger runs=new AtomicInteger();
+        ServerRuntime runtime=new ServerRuntime(nativeContext(),builder->{
+            File operation=new File(home,"logs/operation.log");assertFalse("Prior output must rotate before every child",operation.exists());
+            FilesEx.text(operation,"[100%] build "+runs.incrementAndGet()+"\n");return new Child(false);
+        });
+        try{
+            FilesEx.text(new File(runtime.root,"lsb-server-ready"),"ready");FilesEx.text(new File(runtime.root,"lsb-server-tools-v4"),"ready");
+            FilesEx.text(new File(runtime.logs,"operation.log"),"old compiler output\n");
+            AutoCloseable reserved=runtime.reserveSession(false,s->{});
+            assertEquals("",runtime.liveLog().latest);assertFalse(runtime.liveLog().text.contains("old compiler"));reserved.close();
+            long epoch=runtime.logEpoch();runtime.perform("build-source",true,s->{});
+            ServerRuntime.LogSnapshot result=runtime.liveLog();assertFalse(result.running);assertEquals("[100%] build 1",result.latest);assertTrue(result.epoch>epoch);
+            runtime.perform("inspect",false,s->{});assertEquals("[100%] build 2",runtime.liveLog().latest);assertFalse(runtime.liveLog().text.contains("build 1"));
+            // Dependency upgrades use the same rotation path as builds.
+            new File(runtime.root,"lsb-server-tools-v4").delete();FilesEx.text(new File(runtime.root,"usr/bin/bash"),"bash");
+            try{runtime.install(s->{});fail("Fixture does not install the tools sentinel");}catch(IOException expected){}
+            assertEquals("[100%] build 3",runtime.liveLog().latest);
+        }finally{FilesEx.delete(runtime.home);}
+    }
 }

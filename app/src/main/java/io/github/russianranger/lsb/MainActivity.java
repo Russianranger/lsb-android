@@ -17,6 +17,7 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.zip.*;
 
 public final class MainActivity extends Activity {
@@ -28,7 +29,14 @@ public final class MainActivity extends Activity {
     private static final int BG = Color.rgb(12, 20, 31), CARD = Color.rgb(24, 36, 49), TEXT = Color.rgb(244, 234, 213), MUTED = Color.rgb(163, 182, 198), ACCENT = Color.rgb(217, 184, 117);
     private String tab = "Client", pending = "";
     private LinearLayout content;
-    private TextView operation, runtimeStatus,serverStatus,serverStartup;
+    private TextView operation, runtimeStatus,serverStatus,serverStartup,latestServerOutput,serverLogBody,serverLogDialogBody;
+    private ScrollView serverLogScroll,serverLogDialogScroll;
+    private AlertDialog serverLogDialog;
+    private ServerRuntime.LogSnapshot serverLogSnapshot;
+    private ExecutorService serverLogReader;
+    private boolean resumed,serverLogReadPending;
+    private long logReadAfter,logViewGeneration;
+    private static final Object READ_ONLY_CONTROL=new Object();
     private ProgressBar progress;
     private Button cancel;
     private EditText host;
@@ -56,6 +64,7 @@ public final class MainActivity extends Activity {
                 if(tab.equals("Server")&&serverAliveUi!=ServerRuntime.get(MainActivity.this).alive())draw();
             }
             if (generation != WorkService.generation) { generation = WorkService.generation; draw(); }
+            renderServerLogs();requestServerLogs();
             handler.postDelayed(this, 600);
         }
     };
@@ -82,9 +91,10 @@ public final class MainActivity extends Activity {
         draw();
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 30);
     }
-    @Override protected void onResume() { super.onResume(); if(tab.equals("Runtime")||tab.equals("Client"))draw(); Fullscreen.apply(this);handler.post(poll); }
+    @Override protected void onResume() { super.onResume();resumed=true;logReadAfter=0; if(tab.equals("Runtime")||tab.equals("Client"))draw(); Fullscreen.apply(this);handler.removeCallbacks(poll);handler.post(poll); }
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus)Fullscreen.apply(this);}
-    @Override protected void onPause() { if(loginPassword!=null)loginPassword.setText("");clearServerPasswords();handler.removeCallbacks(poll); super.onPause(); }
+    @Override protected void onPause() { resumed=false;logViewGeneration++;if(loginPassword!=null)loginPassword.setText("");clearServerPasswords();handler.removeCallbacks(poll); super.onPause(); }
+    @Override protected void onDestroy(){if(serverLogDialog!=null)serverLogDialog.dismiss();if(serverLogReader!=null)serverLogReader.shutdownNow();super.onDestroy();}
     private void clearServerPasswords(){if(serverPassword!=null)serverPassword.setText("");if(serverPasswordConfirm!=null)serverPasswordConfirm.setText("");}
     @Override public void onSaveInstanceState(Bundle out) { out.putString("tab", tab); out.putString("pending", pending); out.putBoolean("preserve", preserveOnImport); Bundle sections=new Bundle();for(Map.Entry<String,String> entry:expandedSections.entrySet())sections.putString(entry.getKey(),entry.getValue());out.putBundle("sections",sections); super.onSaveInstanceState(out); }
     static File storage(Context ctx) throws IOException {
@@ -97,7 +107,7 @@ public final class MainActivity extends Activity {
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private void disableControls(View view){
-        if(view instanceof Button||view instanceof EditText||view instanceof Spinner||view instanceof SeekBar)view.setEnabled(false);
+        if((view instanceof Button||view instanceof EditText||view instanceof Spinner||view instanceof SeekBar)&&view.getTag()!=READ_ONLY_CONTROL)view.setEnabled(false);
         if(view instanceof ViewGroup){ViewGroup group=(ViewGroup)view;for(int i=0;i<group.getChildCount();i++)disableControls(group.getChildAt(i));}
     }
     private TextView label(String text, int size, int color) {
@@ -123,13 +133,17 @@ public final class MainActivity extends Activity {
         if(!explanation.isEmpty())parent.addView(label(explanation,13,MUTED));return box;
     }
     private Button button(LinearLayout parent, String text, Runnable action) {
+        return button(parent,text,action,false);
+    }
+    private Button button(LinearLayout parent, String text, Runnable action,boolean readOnly) {
         Button b = new Button(this); b.setText(text); b.setAllCaps(false); b.setTextColor(TEXT); b.setMinHeight(dp(48));b.setTypeface(Typeface.create("serif",Typeface.BOLD));
         b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x446ed5e8),new FantasyTiles.Panel(getResources().getDisplayMetrics().density,true),null));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, dp(4), 0, dp(4)); parent.addView(b, lp);
-        b.setOnClickListener(v -> { if (WorkService.busy) { toast("Wait for the current operation, or cancel it."); return; } try { action.run(); } catch (Exception e) { error(e); } }); return b;
+        if(readOnly)b.setTag(READ_ONLY_CONTROL);
+        b.setOnClickListener(v -> { if (WorkService.busy&&!readOnly) { toast("Wait for the current operation, or cancel it."); return; } try { action.run(); } catch (Exception e) { error(e); } }); return b;
     }
     private void draw() {
-        runtimeStatus=null;serverStatus=null;serverStartup=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;clearServerPasswords();serverPassword=null;serverPasswordConfirm=null;
+        runtimeStatus=null;serverStatus=null;serverStartup=null;serverLogBody=null;serverLogScroll=null;if(loginPassword!=null)loginPassword.setText("");loginPassword=null;clearServerPasswords();serverPassword=null;serverPasswordConfirm=null;
         LinearLayout page = column(); page.setBackgroundColor(BG); page.setPadding(dp(12), dp(6), dp(12), dp(6));
         FrameLayout hero=new FrameLayout(this);hero.setBackground(background(Color.rgb(15,35,58)));
         try(InputStream in=getAssets().open("art/"+(tab.equals("Server")?"server-background.png":"client-background.png"))){ImageView art=new ImageView(this);art.setImageDrawable(android.graphics.drawable.Drawable.createFromStream(in,null));art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));}catch(IOException ignored){}
@@ -149,6 +163,7 @@ public final class MainActivity extends Activity {
         }
         page.addView(nav);
         operation = label(WorkService.message + (WorkService.result.isEmpty() ? "" : "\n" + WorkService.result), 13, MUTED); operation.setMaxLines(5); page.addView(operation);
+        latestServerOutput=label("",12,MUTED);latestServerOutput.setTypeface(Typeface.MONOSPACE);latestServerOutput.setMaxLines(2);latestServerOutput.setVisibility(View.GONE);page.addView(latestServerOutput);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setIndeterminate(true); progress.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE); page.addView(progress);
         cancel = new Button(this); cancel.setText("Cancel operation"); cancel.setAllCaps(false); cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE); cancel.setOnClickListener(v -> { WorkService.cancel(); toast("Cancelling; waiting for the current file operation to stop."); }); page.addView(cancel);
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); content = column(); scroll.addView(content); page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -163,6 +178,7 @@ public final class MainActivity extends Activity {
         catch (Exception e) { content.addView(label("Cannot read app state: " + e.getMessage(), 16, TEXT)); }
         content.addView(tiles);
         if(WorkService.busy)disableControls(content);
+        renderServerLogs();requestServerLogs();
         Fullscreen.apply(this);
     }
     private void supportTile(){tiles.addAction("Export support ZIP","Save ZIP",()->{
@@ -575,11 +591,19 @@ public final class MainActivity extends Activity {
         button(source,"Build and apply source + database update",()->confirm("Stage a server update","First verify the existing server deployment works. This builds the selected source and runs its database migrations on a separate copy. Your current server/database pair stays available for rollback. Client and loader versions must be compatible with the selected revision.",()->run("Staging server and database update",(ctx,p)->ServerRuntime.get(ctx).perform("update",true,p)))).setEnabled(sr.toolsCurrent()&&active.has("generation")&&idle);
         source.addView(label("Fetching selects a snapshot only. Restoring an imported database always uses the currently deployed server, even if a newer source snapshot has been selected here.",13,MUTED));
         LinearLayout diagnostics=card("Server logs");
-        button(diagnostics,"View server operation log",()->{try{showText("Server log",sr.operationLog());}catch(Exception e){error(e);}});
+        button(diagnostics,"View server operation log",this::showLiveServerLog,true);
         button(diagnostics,"Probe saved server address",()->run("Checking server TCP ports",(ctx,p)->{String address=store(ctx).config().host;StringBuilder result=new StringBuilder("TCP reachability only: "+address+"\n");for(int port:new int[]{54231,54230,54001})try(Socket socket=new Socket()){socket.connect(new InetSocketAddress(address,port),2500);result.append(port).append(": reachable\n");}catch(IOException e){result.append(port).append(": unavailable\n");}FilesEx.text(new File(ctx.getFilesDir(),"server-probe.txt"),result.toString());return result.toString();}));
     }
     private void diagnosticsPage() throws IOException {
         supportTile();
+        LinearLayout live=featuredCard("Live server log");
+        live.addView(label("Updates automatically while this screen is open. Recent output is shown below; scroll up to read earlier lines.",13,MUTED));
+        serverLogBody=label("Reading server output…",12,TEXT);serverLogBody.setTypeface(Typeface.MONOSPACE);
+        serverLogScroll=new ScrollView(this);serverLogScroll.addView(serverLogBody);live.addView(serverLogScroll,new LinearLayout.LayoutParams(-1,dp(260)));
+        // The log sits inside the page scroll: keep a drag inside its own history.
+        final ScrollView logScroll=serverLogScroll;
+        View.OnTouchListener keepLogDrag=(view,event)->{ViewParent parent=logScroll.getParent();if(parent!=null)parent.requestDisallowInterceptTouchEvent(event.getActionMasked()!=MotionEvent.ACTION_UP&&event.getActionMasked()!=MotionEvent.ACTION_CANCEL);return false;};
+        serverLogScroll.setOnTouchListener(keepLogDrag);serverLogBody.setOnTouchListener(keepLogDrag);
         LinearLayout d = card("Support and validation");
         d.addView(label("Support ZIPs contain the reference profile, key-file hashes, import summary, saved server/region, and app operation/probe logs. They exclude game payloads, Wine registry hives, and account passwords.", 14, MUTED));
         button(d, "View client inventory", () -> { try { showText("Client inventory", store(this).inventory()); } catch (Exception e) { error(e); } });
@@ -654,4 +678,37 @@ public final class MainActivity extends Activity {
     private void error(Exception e) { new AlertDialog.Builder(this).setTitle("Unable to continue").setMessage(e.getMessage()).setPositiveButton("OK", null).show(); }
     private void confirm(String title, String message, Runnable action) { new AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton("Cancel", null).setPositiveButton("Continue", (d, w) -> action.run()).show(); }
     private void showText(String title, String text) { TextView view = label(text, 13, TEXT); view.setTypeface(Typeface.MONOSPACE); view.setPadding(dp(16), dp(8), dp(16), dp(8)); ScrollView scroll = new ScrollView(this); scroll.addView(view); new AlertDialog.Builder(this).setTitle(title).setView(scroll).setPositiveButton("Close", null).show(); }
+    private void showLiveServerLog(){
+        if(serverLogDialog!=null)serverLogDialog.dismiss();
+        serverLogDialogBody=label("Reading server output…",12,TEXT);serverLogDialogBody.setTypeface(Typeface.MONOSPACE);serverLogDialogBody.setPadding(dp(16),dp(8),dp(16),dp(8));
+        serverLogDialogScroll=new ScrollView(this);serverLogDialogScroll.addView(serverLogDialogBody);
+        serverLogDialog=new AlertDialog.Builder(this).setTitle("Live server operation log").setView(serverLogDialogScroll).setPositiveButton("Close",null).create();
+        serverLogDialog.setOnDismissListener(dialog->{serverLogDialog=null;serverLogDialogBody=null;serverLogDialogScroll=null;});serverLogDialog.show();
+        logReadAfter=0;renderServerLogs();requestServerLogs();
+    }
+    private void renderServerLogs(){
+        ServerRuntime runtime=ServerRuntime.get(this);
+        ServerRuntime.LogSnapshot snapshot=serverLogSnapshot;
+        if(snapshot!=null&&snapshot.epoch!=runtime.logEpoch())snapshot=null;
+        String latest=snapshot!=null&&snapshot.running&&runtime.hasLogOperation()&&WorkService.busy?snapshot.latest:"";
+        if(latestServerOutput!=null){latestServerOutput.setVisibility(latest.isEmpty()?View.GONE:View.VISIBLE);if(!latest.isEmpty())latestServerOutput.setText("Latest server output: "+latest);}
+        String text=snapshot==null?"Reading server output…":snapshot.text;
+        updateServerLogView(serverLogBody,serverLogScroll,text);updateServerLogView(serverLogDialogBody,serverLogDialogScroll,text);
+    }
+    private void updateServerLogView(TextView view,ScrollView scroll,String text){
+        if(view==null||text.contentEquals(view.getText()))return;
+        boolean follow=!scroll.canScrollVertically(1);view.setText(text);
+        if(follow)scroll.post(()->{if(resumed&&(scroll==serverLogScroll||scroll==serverLogDialogScroll))scroll.fullScroll(View.FOCUS_DOWN);});
+    }
+    private void requestServerLogs(){
+        if(!resumed||SessionBackup.active||!SessionBackup.recoveryError.isEmpty()||serverLogReadPending||SystemClock.uptimeMillis()<logReadAfter)return;
+        ServerRuntime runtime=ServerRuntime.get(this);
+        if(!(runtime.hasLogOperation()&&WorkService.busy)&&serverLogBody==null&&serverLogDialogBody==null)return;
+        if(serverLogReader==null)serverLogReader=Executors.newSingleThreadExecutor();
+        serverLogReadPending=true;logReadAfter=SystemClock.uptimeMillis()+1000;final long viewGeneration=logViewGeneration;
+        serverLogReader.execute(()->{
+            ServerRuntime.LogSnapshot snapshot=runtime.liveLog();
+            handler.post(()->{serverLogReadPending=false;if(resumed&&viewGeneration==logViewGeneration&&snapshot.epoch==runtime.logEpoch()){serverLogSnapshot=snapshot;renderServerLogs();}});
+        });
+    }
 }

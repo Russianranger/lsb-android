@@ -23,6 +23,12 @@ final class ServerRuntime {
     private volatile Process process;
     private volatile boolean active;
     private Operation operation;
+    private long logEpoch;
+    private boolean logsReady=true;
+    static final class LogSnapshot {
+        final long epoch;final boolean running;final String text,latest;
+        LogSnapshot(long epoch,boolean running,String text,String latest){this.epoch=epoch;this.running=running;this.text=text;this.latest=latest;}
+    }
     volatile String status="Import your existing server and SQL backup to begin.";
     private static final String BASE="https://cdimage.ubuntu.com/ubuntu-base/releases/26.04/release/ubuntu-base-26.04.1-base-arm64.tar.gz";
     private static final String BASE_SHA="5a1906794ced63a71a8119c3f211ef5f0bbe0a243001b4bbd41fdf80c5b219fd";
@@ -50,7 +56,33 @@ final class ServerRuntime {
         @Override public void close(){synchronized(ServerRuntime.this){if(operation==this){operation=null;active=false;}}}
     }
     private synchronized Operation beginOperation()throws IOException {
-        idle();Operation reserved=new Operation();operation=reserved;active=true;return reserved;
+        idle();Operation reserved=new Operation();operation=reserved;active=true;logEpoch++;logsReady=false;return reserved;
+    }
+    synchronized long logEpoch(){return logEpoch;}
+    synchronized boolean hasLogOperation(){return active;}
+    /** Called off the UI thread. Never return raw output if redaction fails. */
+    LogSnapshot liveLog(){
+        final long epoch;final boolean running,ready;
+        synchronized(this){epoch=logEpoch;running=active;ready=logsReady;}
+        if(!ready)return new LogSnapshot(epoch,running,running?"Waiting for server output…":"No output from the latest server operation.","");
+        String text,latest;
+        try{
+            StringBuilder all=new StringBuilder();String operationText="",supervisorText="";
+            for(String name:new String[]{"dependencies.log","database.log","xi_connect.log","xi_map.log","xi_world.log","xi_search.log","supervisor.log","operation.log"}){
+                String tail=ServerLogTail.read(new File(logs,name));
+                if(name.equals("operation.log"))operationText=tail;
+                if(name.equals("supervisor.log"))supervisorText=tail;
+                if(!tail.isEmpty())all.append(name).append('\n').append(tail).append('\n');
+            }
+            // Redact before selecting or shortening any displayed line.
+            text=redactCredentials(all.toString());
+            latest=ServerLogTail.lastLine(redactCredentials(operationText.isEmpty()?supervisorText:operationText));
+            if(text.isEmpty())text=running?"Waiting for server output…":"No server output yet.";
+        }catch(Exception error){text="Server output is temporarily unavailable; retrying safely…";latest="";}
+        synchronized(this){
+            if(epoch!=logEpoch)return new LogSnapshot(logEpoch,active,"Waiting for server output…","");
+            return new LogSnapshot(epoch,active,text,latest);
+        }
     }
     // Hold the same reservation as deploy/start for the entire filesystem snapshot.
     AutoCloseable reserveSession(boolean export,SafeZip.Progress progress)throws Exception {
@@ -126,6 +158,10 @@ final class ServerRuntime {
     }
     private void execute(List<String> guest,SafeZip.Progress progress,ServerAccountRequest account)throws Exception {
         try{
+            // Start a clean view for every child, including dependency installation.
+            // Keep the latest build evidence available after inspect/start/backup.
+            for(File file:Optional.ofNullable(logs.listFiles()).orElse(new File[0]))if(file.isFile()&&!file.getName().endsWith(".previous")&&!file.getName().equals("build-report.json"))LogRetention.rotate(file);
+            synchronized(this){logsReady=true;}
             new File(run,"stop").delete();File nativeDir=new File(context.getApplicationInfo().nativeLibraryDir);
             ProcessBuilder pb=new ProcessBuilder(command(guest));pb.environment().put("PROOT_LOADER",new File(nativeDir,"libproot-loader.so").getPath());pb.environment().put("PROOT_TMP_DIR",tmp.getPath());pb.environment().put("PROOT_NO_SECCOMP","1");pb.environment().put("LSB_SERVER_OWNER",home.getPath());pb.redirectErrorStream(true);pb.redirectOutput(new File(logs,"supervisor.log"));
             process=processStarter.start(pb);
@@ -167,9 +203,6 @@ final class ServerRuntime {
         JSONObject request=new JSONObject().put("action",action).put("build",build).put("jobs",context.getSharedPreferences("server",0).getInt("jobs",2)).put("database",context.getSharedPreferences("server",0).getString("database","xidb")).put("local_zones",context.getSharedPreferences("server",0).getBoolean("local_zones",true));
         if(action.equals("deploy")||action.equals("update"))try{request.put("client_pair",ClientRuntime.get(context).compatibilitySnapshot());}catch(Exception e){request.put("client_pair",new JSONObject().put("status","client_not_prepared"));}
         FilesEx.text(new File(run,"request.json"),request.toString());new File(run,"status.json").delete();
-        // Keep the latest build evidence available after inspect/start/backup.
-        // The backend replaces this report when a new build begins.
-        for(File file:Optional.ofNullable(logs.listFiles()).orElse(new File[0]))if(file.isFile()&&!file.getName().endsWith(".previous")&&!file.getName().equals("build-report.json"))LogRetention.rotate(file);
         execute(Arrays.asList("/usr/bin/python3","/opt/lsb-server/manager.py"),progress,account);return status;
     }
     void stop()throws IOException{FilesEx.mkdir(run);FilesEx.text(new File(run,"stop"),"stop\n");status="Stopping managed server…";}
@@ -190,8 +223,9 @@ final class ServerRuntime {
     private String redactCredentials(String result)throws Exception {
         // Credentials may appear in upstream command failures. Redact every
         // generated credential, including a failed candidate's credentials.
-        File[] generations=new File(state,"generations").listFiles();
-        if(generations!=null)for(File dir:generations){File secrets=new File(dir,"database-credentials.json");if(secrets.isFile()){JSONObject values=new JSONObject(FilesEx.read(secrets,4096));Iterator<String> keys=values.keys();while(keys.hasNext())result=result.replace(values.getString(keys.next()),"[redacted]");}}
+        File directory=new File(state,"generations");File[] generations=directory.listFiles();
+        if(directory.exists()&&generations==null)throw new IOException("Cannot check server credentials");
+        if(generations!=null)for(File dir:generations){File secrets=new File(dir,"database-credentials.json");if(secrets.isFile()){JSONObject values=new JSONObject(FilesEx.read(secrets,4096));Iterator<String> keys=values.keys();while(keys.hasNext()){String value=values.getString(keys.next());if(!value.isEmpty())result=result.replace(value,"[redacted]");}}}
         return result;
     }
     void exportLogs(ZipOutputStream zip)throws Exception {

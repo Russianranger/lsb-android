@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.45 adds an isolated server source build with verified jemalloc linkage.** It selects the Python environment required by current LandSandBoat code generation, limits phone build memory use, and records build evidence for all four ARM64 server programs. The accepted client, server and database stay in place during the build check. See the [0.5.45 test steps](docs/TESTING-0.5.45.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
+Current development: **0.5.46 adds live server operation output beneath the progress message and in Diagnostics.** The completed phone build of the selected source passed all four ARM64/jemalloc dependency checks. See the [0.5.46 test steps](docs/TESTING-0.5.46.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
 
 The Server tab imports an existing source/binary ZIP plus its logical SQL dump, deploys an independent server/database pair, creates normal player accounts, and exports or restores database backups. Imported binaries are checked for ARM64/dependency compatibility; an explicit fallback builds the same imported revision. Restores reuse the deployed server files and retain the previous pair for rollback. Source updates remain a separate later action. The user's matching server archive is still required for the first real deployment.
 

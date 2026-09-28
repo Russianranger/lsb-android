@@ -10,6 +10,8 @@ import io.github.russianranger.lsb.core.FilesEx;
 import java.io.*;
 import java.lang.reflect.Field;
 import java.util.Map;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.*;
@@ -99,5 +101,57 @@ public class ServerPageTest {
                 }finally{controller.pause().stop().destroy();Shadows.shadowOf(Looper.getMainLooper()).idle();}
             }
         }finally{WorkService.busy=false;FilesEx.delete(sr.home);report.delete();singleton.set(null,null);}
+    }
+    private static Object member(Object instance,String name)throws Exception{
+        Field field=instance.getClass().getDeclaredField(name);field.setAccessible(true);return field.get(instance);
+    }
+    private static void setMember(Object instance,String name,Object value)throws Exception{
+        Field field=instance.getClass().getDeclaredField(name);field.setAccessible(true);field.set(instance,value);
+    }
+    private static void awaitText(TextView view,String expected)throws Exception{
+        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
+        while(!view.getText().toString().contains(expected)&&System.nanoTime()<deadline){
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600));Thread.sleep(5);
+        }
+        assertTrue("Expected "+expected+" in "+view.getText(),view.getText().toString().contains(expected));
+    }
+    @Test public void compilerOutputRefreshesWhileBusyAndDiagnosticsSurvivesPauseAndCompletion()throws Exception{
+        Context context=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
+        ServerRuntime runtime=ServerRuntime.get(context);FilesEx.delete(runtime.home);
+        FilesEx.text(new File(runtime.logs,"operation.log"),"[ 10%] Compiling first.cpp\n");setMember(runtime,"active",true);
+        WorkService.busy=true;WorkService.message="Compiling the four server programs with jemalloc…";
+        org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(context,MainActivity.class).putExtra("tab","Diagnostics")).setup();
+        try{
+            MainActivity activity=controller.get();TextView latest=(TextView)member(activity,"latestServerOutput"),body=(TextView)member(activity,"serverLogBody");
+            awaitText(latest,"[ 10%]");awaitText(body,"first.cpp");assertEquals(View.VISIBLE,latest.getVisibility());
+            FilesEx.text(new File(runtime.logs,"operation.log"),"[ 20%] Compiling second.cpp\n");awaitText(latest,"[ 20%]");awaitText(body,"second.cpp");
+            controller.pause();String paused=body.getText().toString();FilesEx.text(new File(runtime.logs,"operation.log"),"[ 30%] Compiling third.cpp\n");
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));assertEquals(paused,body.getText().toString());
+            controller.resume();awaitText(body,"third.cpp");
+            // Completion retains the final tail and clears the active headline.
+            FilesEx.text(new File(runtime.logs,"operation.log"),"[100%] Built target xi_map\n");setMember(runtime,"active",false);WorkService.busy=false;
+            awaitText(body,"Built target xi_map");assertEquals(View.GONE,latest.getVisibility());
+            capture((View)member(activity,"content"),400,"server-live-log-narrow.png");
+            // A new server operation must not display the prior final line.
+            setMember(runtime,"active",true);setMember(runtime,"logEpoch",runtime.logEpoch()+1);setMember(runtime,"logsReady",false);WorkService.busy=true;
+            awaitText(body,"Waiting for server output");assertFalse(body.getText().toString().contains("xi_map"));assertEquals(View.GONE,latest.getVisibility());
+        }finally{WorkService.busy=false;setMember(runtime,"active",false);controller.pause().stop().destroy();FilesEx.delete(runtime.home);singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
+    }
+    @Test public void serverLogButtonRemainsUsableDuringWorkAndDialogFollowsWithoutJumpingHistory()throws Exception{
+        Context context=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
+        ServerRuntime runtime=ServerRuntime.get(context);FilesEx.delete(runtime.home);
+        StringBuilder lines=new StringBuilder();for(int i=0;i<150;i++)lines.append("compiler line ").append(i).append('\n');
+        FilesEx.text(new File(runtime.logs,"operation.log"),lines.toString());setMember(runtime,"active",true);WorkService.busy=true;
+        org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(context,MainActivity.class).putExtra("tab","Server")).setup();
+        try{
+            MainActivity activity=controller.get();FantasyTiles tiles=(FantasyTiles)member(activity,"tiles");text(tiles,"◇  Server logs").performClick();
+            TextView button=text(tiles,"View server operation log");assertTrue(button.isEnabled());button.performClick();
+            AlertDialog dialog=(AlertDialog)member(activity,"serverLogDialog");assertTrue(dialog.isShowing());
+            TextView body=(TextView)member(activity,"serverLogDialogBody");ScrollView scroll=(ScrollView)member(activity,"serverLogDialogScroll");awaitText(body,"compiler line 149");
+            scroll.measure(View.MeasureSpec.makeMeasureSpec(400,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(200,View.MeasureSpec.EXACTLY));scroll.layout(0,0,400,200);scroll.scrollTo(0,0);
+            assertTrue(scroll.canScrollVertically(1));
+            lines.append("[ 99%] Linking\n");FilesEx.text(new File(runtime.logs,"operation.log"),lines.toString());awaitText(body,"[ 99%]");assertEquals("Reading older output must preserve scroll position",0,scroll.getScrollY());
+            dialog.dismiss();assertNull(member(activity,"serverLogDialogBody"));
+        }finally{WorkService.busy=false;setMember(runtime,"active",false);controller.pause().stop().destroy();FilesEx.delete(runtime.home);singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }
 }

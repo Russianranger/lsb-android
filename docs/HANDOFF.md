@@ -1,3 +1,27 @@
+# 0.5.46: live server operation logs
+
+The owner submitted the completed phone compilation logs and authorized the
+previously queued live-output change. Support ZIP `lsb-support (1).zip`, SHA-256
+`b556fd353298e157a2198abf911be6c4edd9edd52c54b9269d5a1f14f1bde70a`, confirms
+0.5.45 on the AYN Thor compiled all four server binaries successfully. The
+build report has `state=passed`, `allocator=jemalloc`, two workers and all nine
+staged patches. Every ELF receipt puts `libjemalloc.so.2` first in `needed`.
+The operation log ends with all four ARM64 dependency checks passing. Build
+elapsed time was 6,481.05 seconds (1h48m1s); the complete operation finished at
+19:24:27 CDT on September 27 after 1h50m30s including preparation.
+
+Selected upstream source is `16281a81de58acfb315b639d9b79aaacd52a64f2`, expected
+client `30260904_1`. Compile-only preserved the imported source and the active
+server/database. The source report's `0/4` root binaries describes that untouched
+import, not the successful staged build. No new compilation blocker was found.
+
+Version 0.5.46 / code 62 adds a latest-output line under the operation status and
+an automatically refreshing server log in Diagnostics, available while an
+operation runs. Bounded log reads run off the UI thread, with lifecycle cleanup,
+operation reset handling and credential redaction. Server compilation settings,
+source patches and client runtime assets remain the qualified 0.5.45 versions.
+Validation and signed APK delivery are pending this change's Android checks.
+
 # 0.5.45: selected server source compilation with jemalloc
 
 The owner reports approximately 30x better Box64 repair speed and requests the
