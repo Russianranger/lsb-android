@@ -57,7 +57,7 @@ class BuildPipelineTests(unittest.TestCase):
         for name in m.PROCESSES:(root/name).write_bytes(('fresh '+name).encode())
         report=dict(state='passed',allocator='jemalloc',build_id='built-one',jobs=3,source=m.source_info(root),
                     selected_source=dict(repository='owner/server',commit='a'*40,snapshot_id='selected-one',content_sha256='b'*64),
-                    binaries=self.binaries(root),content_sha256=m.tree_fingerprint(root))
+                    binaries=self.binaries(root),content_sha256=m.tree_fingerprint(root),content_fingerprint_version=m.PAYLOAD_FINGERPRINT_VERSION)
         m.atomic(root/'android-build.json',report)
         return report
 
@@ -106,6 +106,91 @@ class BuildPipelineTests(unittest.TestCase):
         self.assertEqual(adopted['binaries'],report['binaries'])
         (root/'xi_map').write_bytes(b'corrupt')
         with self.assertRaisesRegex(ValueError,'binaries changed'):m.adopt_build({})
+
+    def add_asio_cache(self,root):
+        # The exact asio-1-38-0 checkout layout fetched by the phone's source
+        # revision: these are compiler compatibility links, not runtime assets.
+        cache=root/'.cpm-cache/asio/213145964e945b838d29d274e090666d1151b845'
+        for folder in ('asio','include','src'):(cache/folder).mkdir(parents=True)
+        (cache/'include/asio.hpp').write_text('dependency header')
+        (cache/'asio/include').symlink_to('../include',target_is_directory=True)
+        (cache/'asio/src').symlink_to('../src',target_is_directory=True)
+
+    def test_successful_compile_with_asio_cache_finalizes_and_stages_exact_build(self):
+        root=m.STATE/'source-build/server'
+        m.snapshot_source(root,m.INPUT/'selected',recover_build_binaries=False)
+        for name in m.PROCESSES:(m.INPUT/'selected'/name).unlink()
+        compiles=[]
+        def command(args,**kwargs):
+            self.commands.append(args)
+            if args[:2]==['cmake','--build']:
+                compiles.append(args)
+                self.add_asio_cache(root)
+                for name in m.PROCESSES:(root/name).write_bytes(('new jemalloc '+name).encode())
+        with mock.patch.object(m,'command',side_effect=command):
+            m.build_source(dict(jobs=2,source_identity=dict(repository='LandSandBoat/server',commit='6'*40)))
+        self.build=json.loads((root/'android-build.json').read_text())
+        self.assertEqual(self.build['state'],'passed');self.assertTrue(self.build['build_id'])
+        self.assertEqual(self.build['selected_source']['commit'],'6'*40)
+        self.assertEqual(json.loads((m.RUN/'status.json').read_text())['phase'],'build_ready')
+        self.assertEqual(self.build['content_sha256'],m.tree_fingerprint(root))
+        self.assertEqual(len(compiles),1)
+        self.assertEqual(compiles[0][compiles[0].index('--parallel')+1],'2')
+        request,info=self.stage();m.check_staged(request)
+        staged=m.STATE/'generations'/info['generation']/'server'
+        self.assertFalse((staged/'.cpm-cache').exists())
+        self.assertEqual(self.binaries(staged),self.build['binaries'])
+        self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
+
+    def test_phone_bare_passed_receipt_can_adopt_and_stage_without_recompiling(self):
+        root=m.STATE/'source-build/server';self.add_asio_cache(root)
+        report=dict(self.build)
+        for key in ('build_id','selected_source','content_sha256','content_fingerprint_version'):report.pop(key)
+        m.atomic(root/'android-build.json',report)
+        m.adopt_build({'source_identity':{'repository':'unrelated/new-fetch'}})
+        self.build=json.loads((root/'android-build.json').read_text())
+        self.assertEqual(self.build['binaries'],report['binaries'])
+        self.assertNotIn('repository',self.build['selected_source'])
+        self.assertEqual(self.build['content_fingerprint_version'],2)
+        request,info=self.stage();m.check_staged(request)
+        staged=m.STATE/'generations'/info['generation']/'server'
+        self.assertFalse((staged/'.cpm-cache').exists())
+        self.assertEqual(self.binaries(staged),report['binaries'])
+        self.assertFalse(any(args[0]=='cmake' for args in self.commands))
+        self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
+        (root/'scripts/custom.lua').write_text('changed after adoption')
+        with self.assertRaisesRegex(ValueError,'runtime files changed'):m.adopt_build({})
+
+    def test_legacy_complete_receipt_keeps_original_hash_validation(self):
+        root=m.STATE/'source-build/server';cache=root/'.cpm-cache/dependency'
+        cache.parent.mkdir();cache.write_bytes(b'original dependency')
+        report=dict(self.build,content_sha256=m.tree_fingerprint(root,version=1));report.pop('content_fingerprint_version')
+        m.atomic(root/'android-build.json',report)
+        request,info=self.stage()
+        self.assertFalse((m.STATE/'generations'/info['generation']/'server/.cpm-cache').exists())
+        self.assertEqual(info['build']['content_fingerprint_version'],2)
+        self.assertEqual(json.loads((root/'android-build.json').read_text()),report)
+        cache.write_bytes(b'changed old receipt input')
+        with self.assertRaisesRegex(ValueError,'runtime files changed'):m.stage_build(self.request())
+        self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
+
+    def test_legacy_staged_hash_is_not_rebaselined(self):
+        request,info=self.stage();generation=m.STATE/'generations'/info['generation'];root=generation/'server'
+        cache=root/'.cpm-cache/dependency';cache.parent.mkdir();cache.write_bytes(b'original dependency')
+        info.pop('staged_fingerprint_version');info['staged_content_sha256']=m.tree_fingerprint(root,version=1)
+        m.write_staged(generation,info);m.check_staged(request)
+        cache.write_bytes(b'changed after check')
+        with self.assertRaisesRegex(ValueError,'Staged source or runtime files changed'):m.deploy_staged(request)
+        self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
+
+    def test_new_receipt_ignores_only_root_cache_and_rejects_runtime_symlinks_with_path(self):
+        root=m.STATE/'source-build/server';self.add_asio_cache(root)
+        m.load_build(self.build['build_id'])
+        nested=root/'scripts/.cpm-cache';nested.mkdir();(nested/'asset').symlink_to(root/'sql/accounts.sql')
+        with self.assertRaisesRegex(ValueError,r'symlink: scripts/\.cpm-cache/asset'):m.load_build(self.build['build_id'])
+        (nested/'asset').unlink();nested.rmdir()
+        (root/'scripts/runtime-alias').symlink_to(root/'.cpm-cache',target_is_directory=True)
+        with self.assertRaisesRegex(ValueError,'symlink: scripts/runtime-alias'):m.load_build(self.build['build_id'])
 
     def test_import_and_copy_current_preserve_counts_and_record_input(self):
         for mode in ('import','copy-current'):

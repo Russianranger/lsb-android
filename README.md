@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.47 introduces a separate Build tab for fetching source, compiling with jemalloc, preparing a database, checking staging, and deploying the exact completed build.** It shows fetched, built, staged and deployed identities, supports j1–j16 workers, and displays live progress. See the [0.5.47 test steps](docs/TESTING-0.5.47.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
+Current development: **0.5.48 fixes post-build validation of generated CMake files and allows reuse of a successful jemalloc build.** The separate Build tab supports fetching source, compiling with jemalloc, preparing a database, checking staging, and deploying the exact completed build. It shows fetched, built, staged and deployed identities, supports j1–j16 workers, and displays live progress. See the [0.5.48 recovery steps](docs/TESTING-0.5.48.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
 
 The Build tab prepares an independent server/database pair using an identified successful jemalloc build. Choose a migrated copy of current player data, an imported SQL backup, or a fresh database. The active pair changes only after an explicit checked deployment and remains available for rollback. The Server tab handles start/stop, accounts, database export and rollback. A separately labelled advanced path retains imported ARM64 binaries plus SQL deployment.
 

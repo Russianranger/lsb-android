@@ -209,6 +209,16 @@ def main():
             shutil.copy2(STAGING / name, binaries / name)
             report['binaries'][name] = dict(sha256=sha256(STAGING / name), size=(STAGING / name).stat().st_size)
         report['build_state'] = 'compiled_and_linked'
+        # Compilation alone missed the phone's failure while finalizing its
+        # receipt: downloaded CPM dependencies can contain legitimate links.
+        # Exercise the same payload fingerprint and copy used by build/stage.
+        payload = backend.tree_fingerprint(STAGING)
+        deployment_copy = WORK / 'deployment-copy'
+        backend.snapshot_source(STAGING, deployment_copy, recover_build_binaries=False)
+        assert not (deployment_copy / '.cpm-cache').exists(), 'Compiler cache leaked into deployment'
+        assert backend.tree_fingerprint(deployment_copy) == payload, 'Built payload changed during staging'
+        report['deployment_payload'] = dict(sha256=payload, snapshot_matches=True,
+                                            fingerprint_version=backend.PAYLOAD_FINGERPRINT_VERSION)
         errors = {}
         for name in backend.PROCESSES:
             print(f'Checking real {name} startup and dynamic allocator binding', flush=True)

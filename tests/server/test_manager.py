@@ -117,6 +117,21 @@ class ServerTests(unittest.TestCase):
                 (source/'.venv/bin/python').symlink_to(outside)
                 (source/'runtime-alias').symlink_to(source/'.venv',target_is_directory=True)
                 with mock.patch.object(m,'command'),self.assertRaisesRegex(ValueError,'external symlink'):snapshot(source,root/'bad')
+    def test_root_cpm_cache_skipped_consistently_but_nested_runtime_cache_is_checked(self):
+        for snapshot in (m.snapshot_source,m.snapshot_deployment):
+            with self.subTest(snapshot=snapshot.__name__),tempfile.TemporaryDirectory() as d:
+                root=Path(d);m.RUN=root;source=root/'server';source.mkdir()
+                outside=root/'outside';outside.write_bytes(b'must not be copied')
+                (source/'.cpm-cache').symlink_to(outside)
+                (source/'asset').write_bytes(b'copied')
+                original=m.tree_fingerprint(source)
+                with mock.patch.object(m,'command'):snapshot(source,root/'copy')
+                self.assertFalse((root/'copy/.cpm-cache').is_symlink())
+                self.assertEqual(m.tree_fingerprint(root/'copy'),original)
+                nested=source/'scripts/.cpm-cache';nested.mkdir(parents=True)
+                (nested/'escape').symlink_to(outside)
+                with mock.patch.object(m,'command'),self.assertRaisesRegex(ValueError,r'external symlink: scripts/\.cpm-cache/escape'):snapshot(source,root/'bad')
+                self.assertEqual(outside.read_bytes(),b'must not be copied')
     def test_recovered_build_binary_cannot_follow_external_link(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d);m.RUN=root;source=root/'source';(source/'build').mkdir(parents=True)

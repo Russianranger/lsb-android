@@ -21,6 +21,7 @@ INPUT=Path('/input')
 PROCESSES=('xi_world','xi_search','xi_map','xi_connect')
 DB_PORT=13306
 STARTUP_TIMEOUT_SECONDS=30*60
+PAYLOAD_FINGERPRINT_VERSION=2
 children=[]
 secret_values=[]
 
@@ -89,17 +90,24 @@ def stop_children():
             p.wait(timeout=5)
     children.clear()
 
+def generated_build_path(root,path):
+    # Upstream CPMCache.cmake downloads dependencies here. Asio's checkout has
+    # internal compatibility symlinks (asio/include -> ../include), but none of
+    # this compiler input belongs in the deployed runtime. Match only this root
+    # entry: a similarly named runtime directory or an alias is still checked.
+    return path.parent==root and path.name=='.cpm-cache'
+
 def validate_snapshot_links(source,excluded):
     root=source.resolve()
     def walk(folder,ancestors):
         cancelled();resolved=folder.resolve()
-        if resolved in ancestors:raise ValueError('Source contains a recursive directory link')
+        if resolved in ancestors:raise ValueError('Source contains a recursive directory link: '+folder.relative_to(source).as_posix())
         ancestors=ancestors|{resolved}
         for child in folder.iterdir():
             # Match copytree's ignore rule before inspecting or following links.
-            if child.name in excluded:continue
+            if child.name in excluded or generated_build_path(source,child):continue
             cancelled()
-            if child.is_symlink() and not child.resolve().is_relative_to(root):raise ValueError('Source contains an external symlink')
+            if child.is_symlink() and not child.resolve().is_relative_to(root):raise ValueError('Source contains an external symlink: '+child.relative_to(source).as_posix())
             if child.is_dir():walk(child,ancestors)
     walk(source,set())
 
@@ -107,7 +115,7 @@ def snapshot_source(source, target, recover_build_binaries=True):
     # ZIP imports have already rejected links. Copy only internal links from a
     # managed update; never import .git hooks, old build trees or database files.
     excluded={'.git','.venv','venv','build','logs','log','mysql','node_modules'}
-    def ignore(path,names):return excluded.intersection(names)
+    def ignore(path,names):return {name for name in names if name in excluded or generated_build_path(source,Path(path)/name)}
     validate_snapshot_links(source,excluded)
     shutil.copytree(source,target,ignore=ignore,symlinks=False)
     # Existing Linux server exports may keep their executables under build/.
@@ -129,7 +137,7 @@ def snapshot_deployment(source,target):
     # Restore the SQL against the active server revision, never a newly imported
     # source tree. Keep server assets including data/, custom scripts and meshes.
     excluded={'.git','.venv','venv','build','logs','log','node_modules'}
-    def ignore(path,names):return excluded.intersection(names)
+    def ignore(path,names):return {name for name in names if name in excluded or generated_build_path(source,Path(path)/name)}
     validate_snapshot_links(source,excluded)
     def copy(source,target):
         cancelled();return shutil.copy2(source,target)
@@ -257,8 +265,9 @@ def validate_jemalloc(root):
                             bytes=path.stat().st_size,needed=needed,allocator='libjemalloc.so.2')
     return binaries
 
-def tree_fingerprint(root, include_binaries=True):
+def tree_fingerprint(root, include_binaries=True, version=PAYLOAD_FINGERPRINT_VERSION):
     """Hash copied source/runtime payload; never generated builds or log files."""
+    if type(version) is not int or version not in (1,PAYLOAD_FINGERPRINT_VERSION):raise ValueError('Unsupported build payload fingerprint version')
     excluded={'.git','.venv','venv','build','logs','log','mysql','node_modules','android-build.json'}
     digest=hashlib.sha256();count=0
     def walk(folder):
@@ -266,7 +275,8 @@ def tree_fingerprint(root, include_binaries=True):
         for path in sorted(folder.iterdir(),key=lambda p:p.name):
             cancelled()
             if path.name in excluded or (not include_binaries and path.parent==root and path.name in PROCESSES):continue
-            if path.is_symlink():raise ValueError('Build payload contains a symlink; copy the source again')
+            if version>=2 and generated_build_path(root,path):continue
+            if path.is_symlink():raise ValueError('Build payload contains a symlink: '+path.relative_to(root).as_posix())
             relative=path.relative_to(root).as_posix().encode()
             if path.is_dir():
                 digest.update(b'directory\0'+relative+b'\0');walk(path)
@@ -274,7 +284,7 @@ def tree_fingerprint(root, include_binaries=True):
                 with path.open('rb') as stream:value=hashlib.file_digest(stream,'sha256').digest()
                 digest.update(b'file\0'+relative+b'\0'+value);count+=1
                 if count%1000==0:print('Verified '+str(count)+' source files',flush=True)
-            else:raise ValueError('Build payload contains an unsupported file')
+            else:raise ValueError('Build payload contains an unsupported file: '+path.relative_to(root).as_posix())
     walk(root)
     return digest.hexdigest()
 
@@ -296,7 +306,8 @@ def build_source(req):
     identity=selected_source(req,tree_fingerprint(root,include_binaries=False))
     report=build(root,checked_jobs(req.get('jobs',2)))
     identity['expected_client']=report['source']['expected_client']
-    report.update(build_id=str(uuid.uuid4()),selected_source=identity,content_sha256=tree_fingerprint(root))
+    report.update(build_id=str(uuid.uuid4()),selected_source=identity,content_sha256=tree_fingerprint(root),
+                  content_fingerprint_version=PAYLOAD_FINGERPRINT_VERSION)
     atomic(root/'android-build.json',report);atomic(LOGS/'build-report.json',report)
     status('build_ready','Jemalloc build '+report['build_id'][:8]+' is ready. Choose its database, then check and deploy this exact build.',build=report)
 
@@ -308,10 +319,16 @@ def load_build(build_id=None):
     if build_id is not None and (not build_id or report.get('build_id')!=build_id):raise ValueError('The selected build changed. Review the latest successful build before staging it.')
     validate_binaries(root);binaries=validate_jemalloc(root)
     if binaries!=report.get('binaries'):raise ValueError('Built binaries changed after compilation; rebuild the selected source')
-    if report.get('content_sha256') and tree_fingerprint(root)!=report['content_sha256']:raise ValueError('Built source or runtime files changed after compilation; rebuild the selected source')
+    fingerprint_version=report.get('content_fingerprint_version',1)
+    if report.get('content_sha256') and tree_fingerprint(root,version=fingerprint_version)!=report['content_sha256']:raise ValueError('Built source or runtime files changed after compilation; rebuild the selected source')
     recorded=report.get('source',{});actual=source_info(root)
     if recorded.get('expected_client')!=actual['expected_client'] or recorded.get('source_hashes')!=actual['source_hashes']:
         raise ValueError('The built source no longer matches its recorded source and client version')
+    # Older complete receipts included CPM files. Validate their original scope
+    # before returning the cache-free staging hash; never rebaseline an altered
+    # receipt. The persisted receipt remains available for its original check.
+    if report.get('content_sha256') and fingerprint_version==1:
+        report=dict(report,content_sha256=tree_fingerprint(root),content_fingerprint_version=PAYLOAD_FINGERPRINT_VERSION)
     return root,report
 
 def adopt_build(req):
@@ -321,7 +338,7 @@ def adopt_build(req):
     if not report.get('build_id'):
         report.update(build_id=str(uuid.uuid4()),
                       selected_source=dict(origin='Previously built source; original repository not recorded',expected_client=report['source']['expected_client']),
-                      content_sha256=tree_fingerprint(root),adopted_at=time.time())
+                      content_sha256=tree_fingerprint(root),content_fingerprint_version=PAYLOAD_FINGERPRINT_VERSION,adopted_at=time.time())
         atomic(root/'android-build.json',report);atomic(LOGS/'build-report.json',report)
     status('build_ready','Existing successful jemalloc build verified. Its original repository identity was not recorded.',build=report)
 
@@ -393,7 +410,7 @@ def stage_build(req):
                     accounts=counts['accounts'],characters=counts['chars'],created_at=time.time(),
                     staged_from_generation=base,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),
                     binaries={n:report['binaries'][n]['sha256'] for n in PROCESSES},
-                    staged_content_sha256=tree_fingerprint(staged))
+                    staged_content_sha256=tree_fingerprint(staged),staged_fingerprint_version=PAYLOAD_FINGERPRINT_VERSION)
     finally:
         if creds is not None:stop_database(creds)
         else:stop_children()
@@ -421,7 +438,7 @@ def check_staged(req):
     write_staged(generation,info)
     status('checking_staged','Checking the staged source, jemalloc binaries and database…')
     try:
-        if tree_fingerprint(root)!=info.get('staged_content_sha256'):raise ValueError('Staged source or runtime files changed; stage the build again')
+        if tree_fingerprint(root,version=info.get('staged_fingerprint_version',1))!=info.get('staged_content_sha256'):raise ValueError('Staged source or runtime files changed; stage the build again')
         validate_binaries(root);binaries=validate_jemalloc(root)
         if binaries!=info['build']['binaries']:raise ValueError('Staged binaries do not match the exact successful jemalloc build')
         if {n:binaries[n]['sha256'] for n in PROCESSES}!=info['binaries']:raise ValueError('Staged binary receipt is inconsistent')

@@ -1,3 +1,44 @@
+# 0.5.48: recover successful builds rejected for ASIO cache symlinks
+
+The owner reported 0.5.47 Restore-Test failing after compilation with
+"Build payload contains a symlink; copy the source again". Phone support archive
+`lsb-support(20260928-131931).zip` confirms all four ARM64 binaries passed
+jemalloc/dependency checks, j2, elapsed 6,412.55 seconds. The failure occurred in
+post-build fingerprinting, after the successful binary receipt was saved.
+The current deployment was retained with two accounts and three characters;
+no staged replacement was published. Archive SHA-256:
+`7c5b13eb189df991c4e52b5795e2ac0a69e7f4a5bb83eca84a2a861e7cb0f7f3`.
+The selected acquisition was
+`LandSandBoat/server`, `base`, commit
+`6d5a5137024e21602e37032f6e55a682971329be`.
+
+That source populates root `.cpm-cache` and pins ASIO `asio-1-38-0`, which contains
+`asio/include -> ../include` and `asio/src -> ../src`. These ordinary dependency
+cache links are compilation inputs, not deployable server payload. The prior
+fingerprint included the cache and therefore rejected a successful build.
+
+The fix excludes only the source-root `.cpm-cache` consistently from source
+snapshots, deployment snapshots, link validation and payload fingerprinting.
+Server payload links remain checked, and a rejected link now reports its path.
+New receipts record fingerprint version 2. Complete older receipts are checked
+against their original scope before calculating a cache-free staging hash; older
+staged pairs continue to use their recorded fingerprint scope.
+Regressions cover the real ASIO link layout, completed-build finalization,
+reuse of a passed receipt without recompilation, staging, and runtime/tamper
+rejection. The real source-build integration now checks post-build payload
+fingerprinting and copied-payload equality as well as compilation.
+
+All 74 server Python tests pass locally, including six new recovery/cache
+regressions. Delivery is being prepared as 0.5.48 / code 64. Do not claim signed delivery or
+new CI gate success until the results below are updated. The owner should use
+**Verify and reuse previous successful build** after installing the matching
+APK, without fetching or compiling again. The saved receipt lacks a completed
+source identity, so recovery keeps the original repository unrecorded rather
+than borrowing the current fetch. The binaries expect client `30260904_1`;
+the current old deployment records `30251204_1`.
+
+See [TESTING-0.5.48.md](TESTING-0.5.48.md) for exact recovery and staging steps.
+
 # 0.5.47: explicit Build workspace
 
 The owner requested a separate Build tab with clear fetched source, jemalloc
