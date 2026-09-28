@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.49 fixes staging older databases whose signed account IDs conflict with the current source’s unsigned foreign keys.** The separate Build tab supports fetching source, compiling with jemalloc, preparing a database, checking staging, and deploying the exact completed build. It shows fetched, built, staged and deployed identities, supports j1–j16 workers, and displays live progress. See the [0.5.49 staging steps](docs/TESTING-0.5.49.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
+Current development: **0.5.50 repairs startup when fetched source archives omit map submodules.** Missing map data is fetched at pinned compatible revisions before staging or startup, with live progress; the completed jemalloc build and database are retained. The startup monitor recognizes current and legacy server readiness messages. See the [0.5.50 startup steps](docs/TESTING-0.5.50.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
 
 The Build tab prepares an independent server/database pair using an identified successful jemalloc build. Choose a migrated copy of current player data, an imported SQL backup, or a fresh database. The active pair changes only after an explicit checked deployment and remains available for rollback. The Server tab handles start/stop, accounts, database export and rollback. A separately labelled advanced path retains imported ARM64 binaries plus SQL deployment.
 
@@ -18,7 +18,7 @@ Follow [the server setup and verification guide](docs/server-first-0529.md). The
 - Full client update imports preserve existing FFXI `USER/` and PlayOnline `usr/` data by default. Only complete installations are accepted; delta patches are not supported.
 - Validated session backup/restore, previous-client rollback, and recovery from interrupted activation renames.
 - Support ZIP export with app/device state, key-file hashes, source/probe reports and operation logs. Game payloads, account passwords and Wine registry hives are excluded.
-- Server-source staging from a GitHub repository/ref (resolved to a commit before download), or offline ZIP. Missing mesh submodule contents are reported.
+- Server-source staging from a GitHub repository/ref (resolved to a commit before download), or offline ZIP. Missing map submodule contents are resolved at compatible pinned revisions during staging or startup.
 - TCP reachability checks of the saved existing server. These do not prove successful authentication or map/UDP readiness.
 
 ## Historical 0.1.3 preparation procedure

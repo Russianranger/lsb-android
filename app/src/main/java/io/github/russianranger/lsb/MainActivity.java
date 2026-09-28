@@ -537,7 +537,7 @@ public final class MainActivity extends Activity {
         else live.addView(label("Open the Build tab to fetch or import source, compile with jemalloc, prepare a database, and check the exact build before deploying.",15,TEXT));
         button(live,"Start managed server",()->startForegroundService(new Intent(this,ServerService.class))).setEnabled(sr.installed()&&active.has("generation")&&!running);
         button(live,"Stop managed server",()->startForegroundService(new Intent(this,ServerService.class).setAction("stop"))).setEnabled(running);
-        live.addView(label("Wait for Ready before connecting: mob scripts can take several minutes to load after login opens. Stop any server in Termux or the other LSB app first; they share login/map ports. Then connect to 127.0.0.1. Stop the client and server before backups or maintenance.",13,MUTED));
+        live.addView(label("Missing map files are downloaded before startup; this first download needs an internet connection. Progress appears here and in Server logs. Wait for Ready before connecting: mob scripts can take several minutes to load after login opens. Stop any server in Termux or the other LSB app first; they share login/map ports. Then connect to 127.0.0.1. Stop the client and server before backups or maintenance.",13,MUTED));
         supportTile();
         button(live,"Open Build tab",()->{tab="Build";draw();},true);
         LinearLayout accounts=card("Create account");
@@ -661,7 +661,7 @@ public final class MainActivity extends Activity {
         Runnable updateMode=()->{
             String choice=modes[mode.getSelectedItemPosition()];getSharedPreferences("server",0).edit().putString("database_mode",choice).apply();
             boolean available=choice.equals("fresh")||choice.equals("import")&&sql.optBoolean("available")||choice.equals("copy-current")&&deployed.has("generation");
-            modeExplanation.setText(!available?(choice.equals("import")?"Import an SQL backup first.":"No current deployment to copy. Choose imported SQL or a fresh database."):choice.equals("copy-current")?"Preserves player data by updating a separate copy.":choice.equals("import")?"Deployment will replace current player data with the imported backup.":"Deployment will replace current player data with this build's SQL data. Existing progress is not copied.");
+            modeExplanation.setText(!available?(choice.equals("import")?"Import an SQL backup first.":"No current deployment to copy. Choose imported SQL or a fresh database."):choice.equals("copy-current")?"Preserves player data by updating a separate copy. Downloads any missing map files before staging.":choice.equals("import")?"Deployment will replace current player data with the imported backup.":"Deployment will replace current player data with this build's SQL data. Existing progress is not copied.");
             prepare.setEnabled(built&&available&&sr.toolsCurrent()&&idle&&!WorkService.busy);
         };
         mode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> parent,View view,int position,long id){updateMode.run();}public void onNothingSelected(AdapterView<?> parent){}});updateMode.run();
@@ -670,7 +670,7 @@ public final class MainActivity extends Activity {
         check.addView(label(stagedDescription,13,TEXT));
         if(hasStaged){
             JSONObject meshes=object(staged,"meshes");
-            check.addView(label("Staged meshes: navmeshes · "+(meshes.optBoolean("navmeshes")?"present; content not verified":"missing or not recorded")+"\nximeshes · "+(meshes.optBoolean("ximeshes")?"present; content not verified":"missing or not recorded")+"\nA staging check does not confirm world navigation or gameplay.",13,MUTED));
+            check.addView(label("Staged meshes: navmeshes · "+(meshes.optBoolean("navmeshes")?"present":"missing or not recorded")+"\nximeshes · "+(meshes.optBoolean("ximeshes")?"present":"missing or not recorded")+"\nStaging checks required map file headers. World navigation still needs a gameplay test.",13,MUTED));
             JSONObject pair=object(staged,"client_pair");String expected=staged.optString("expected_client"),recorded=pair.optString("client_version");
             boolean versionsKnown=expected.matches("[0-9]{8}_[0-9]+")&&recorded.matches("[0-9]{8}_[0-9]+");
             check.addView(label("Client version recorded when staged: "+(recorded.isEmpty()?"unknown":recorded)+"\n"+(versionsKnown?(expected.equals(recorded)?"Recorded client version matches this build's expected version.":"Version mismatch: this build expects "+expected+". Update or choose a matching client before connecting."):"Client/server version match is unverified.")+"\nA matching version still needs a client and loader connection test.",13,versionsKnown&&!expected.equals(recorded)?ACCENT:MUTED));
@@ -682,7 +682,7 @@ public final class MainActivity extends Activity {
         if(!staged.optString("check_error").isEmpty())check.addView(label("Check needs attention: "+staged.optString("check_error"),13,ACCENT));
         if(staged.optBoolean("stale_database"))check.addView(label("Current player data changed after staging. Prepare a new database copy before deployment.",14,ACCENT));
         button(check,"Check staged build and database",()->run("Checking staged server and database",(ctx,p)->ServerRuntime.get(ctx).performBuild("check-staged",stagedBuildId,stagedId,"",p))).setEnabled(hasStaged&&sr.toolsCurrent()&&idle);
-        check.addView(label("Checks the staged files, the four binaries and jemalloc, database contents, and saved source identity. Confirm the expected client version shown above matches your client and loader before connecting.",13,MUTED));
+        check.addView(label("Checks the staged files, required map assets, the four binaries and jemalloc, database contents, and saved source identity. Confirm the expected client version shown above matches your client and loader before connecting.",13,MUTED));
         LinearLayout deploy=featuredCard("5 · Deploy the checked pair");
         deploy.addView(label(hasStaged?"Deploy build: "+stagedBuildId+"\nDatabase: "+staged.optString("database","unknown")+"\nDatabase generation: "+stagedId+"\n"+databaseModeLabel(staged.optString("database_mode")):"Nothing is staged for deployment.",13,TEXT));
         button(deploy,"Deploy checked build and database",()->confirm("Replace current server and database",stagedDescription+"\n\nThis exact staged pair will replace the current server and database. Player data will become the staged counts shown above. The current pair is retained for rollback. Deployment checks this pair again and never rebuilds from newly fetched source.",()->run("Deploying checked server and database",(ctx,p)->ServerRuntime.get(ctx).performBuild("deploy-staged",stagedBuildId,stagedId,"",p)))).setEnabled(hasStaged&&"checked".equals(staged.optString("state"))&&!staged.optBoolean("stale_database")&&sr.toolsCurrent()&&idle);

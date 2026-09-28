@@ -34,7 +34,7 @@ program=Path('/tmp/server-stub.c');program.write_text('''#include <signal.h>
 static volatile sig_atomic_t done;static void stop(int s){(void)s;done=1;}
 int main(int argc,char**argv){(void)argc;bfd_init();bfd* input=bfd_openr(argv[0],NULL);if(!input||!bfd_check_format(input,bfd_object)||!bfd_close(input))return 10;puts("bfd=2.45 object verified");const char* version=NULL;size_t length=sizeof(version);if(mallctl("version",&version,&length,NULL,0))return 9;printf("allocator=jemalloc %s\\n",version);fflush(stdout);signal(SIGTERM,stop);int fd=-1;if(strstr(argv[0],"xi_connect")){fd=socket(AF_INET,SOCK_STREAM,0);int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(54231);a.sin_addr.s_addr=htonl(0x7f000001);if(bind(fd,(void*)&a,sizeof(a))||listen(fd,4)||fcntl(fd,F_SETFL,O_NONBLOCK)<0)return 8;}const char* role=strrchr(argv[0],'/');role=role?role+1:argv[0];role+=3;
 if(!strcmp(role,"map")){puts("[map][info] Loading Mob scripts (LoadMOBList:662)");fflush(stdout);sleep(4);}
-printf("The %s-server is ready to work... (markLoaded:228)\\n",role);fflush(stdout);
+printf("The %s-server is ready to work after 4.12 seconds... (markLoaded:275)\\n",role);fflush(stdout);
 while(!done){if(fd>=0){int client=accept(fd,NULL,NULL);if(client>=0)close(client);}usleep(100000);}if(fd>=0)close(fd);return 0;}
 ''')
 dump=ACCOUNT_SCHEMA_SQL.encode()+b"\nINSERT INTO accounts(id,login) VALUES(1,'fixture'); CREATE TABLE chars(charid INT PRIMARY KEY,charname VARCHAR(32)); INSERT INTO chars VALUES(1,'Fixture'); CREATE TABLE zone_settings(zoneid INT,zoneip VARCHAR(32),zoneport INT); INSERT INTO zone_settings VALUES(1,'192.0.2.5',54231);\n"+b"""
@@ -225,7 +225,7 @@ assert (Path('/client')/'sentinel').read_bytes()==b'accepted client kept'
 for name in ('xi_connect','xi_map','xi_search','xi_world'):
  assert 'allocator=jemalloc ' in (logs/(name+'.log')).read_text(),name
  assert 'bfd=2.45 object verified' in (logs/(name+'.log')).read_text(),name
-print('PASS: managed database + four server processes wait for script readiness after login port opens and stop without changing client data',flush=True)
+print('PASS: managed database + four ARM64 processes recognize current timed readiness, wait for map scripts after the login port opens, and stop without changing client data',flush=True)
 
 # Exercise the complete Android session transport with a real, cleanly stopped
 # MariaDB directory. A copy models the exporting app; a distinct destination

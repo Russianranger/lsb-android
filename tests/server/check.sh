@@ -12,4 +12,5 @@ chmod +x /usr/sbin/policy-rc.d
 bash /src/server/bootstrap.sh
 apt-get install -y --no-install-recommends proot default-jdk-headless
 python3 -m unittest discover -s /src/tests/server -p 'test_*.py'
+python3 /src/tests/server/mesh_integration.py
 python3 /src/tests/server/integration.py

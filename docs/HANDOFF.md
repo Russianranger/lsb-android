@@ -1,3 +1,39 @@
+# 0.5.50: fetched source map submodules and current readiness markers
+
+Phone `lsb-support (2)(10).zip` SHA-256
+`b7095a824bdd56e98b47211b6e6522ef7350fa8ba65352d6125778e8869e87c2`
+confirms 0.5.49 staging/deployment succeeded. Checked generation
+`dab21cb7-d044-449f-9d9f-c35c5df6d239` uses the completed jemalloc build
+`1a1d413d-40f2-4ba7-8b43-8eed50c83967` and records two accounts/three characters.
+The new expected client is `30260904_1`. Map startup connects to MariaDB and
+initializes Lua, then exits 255 because `./ximeshes/` is absent or empty.
+Both map submodules were absent from GitHub's source archive. The other processes
+emit `The <role>-server is ready to work after <seconds> seconds...`, which the
+previous readiness parser did not accept.
+
+0.5.50 prepares missing declared map submodules before staged database preparation
+and before starting an existing deployment. Map downloads report live progress;
+archives are staged privately, validated, then published. The completed build
+is not modified or recompiled, and startup does not rerun database migrations.
+Staging includes prepared maps in its payload fingerprint; check validates
+required map headers without downloading or modifying that fingerprinted payload.
+The readiness monitor accepts old and timed markers for each process, and latches
+the login TCP probe after success to avoid repeated incomplete TLS handshakes.
+
+The source archive identifies `LandSandBoat/xiNavmeshes` gitlink
+`e8ca9f0419982d4da0eef8542d13f09865e6c556` and `InoUno/ximeshes` gitlink
+`906d725cb40ed4eeeaa8299bb95922dca31be2d5`. Adopted build provenance is explicitly
+unknown: do not borrow the currently fetched source identity. Recovery instead
+uses these fixed compatible pins only after the deployed source's map loader
+files match the catalog. CRLF/LF normalization is needed: upstream CMake with
+CRLF exactly matches the phone's recorded CMake hash. This does not establish
+an exact original source commit; the adopted receipt stays unknown.
+
+Qualification and signed APK delivery are pending. Do not claim delivery until
+CI and signature results are recorded. Test instructions:
+[TESTING-0.5.50.md](TESTING-0.5.50.md). Install the Restore-Test update and press
+**Start managed server** online; retain the deployed database and completed build.
+
 # 0.5.49: staged legacy account ID compatibility
 
 Phone `lsb-support (1)(9).zip` (SHA-256

@@ -59,7 +59,7 @@ final class SourceImport {
             int binaries=0;for(String name:new String[]{"xi_connect","xi_map","xi_search","xi_world"})if(new File(source,name).isFile())binaries++;
             report += "Server-root binaries: " + binaries + "/4. Deployment also checks build/ for a unique missing binary and verifies Linux ARM64 dependencies.\n";
             for (String mesh : Arrays.asList("navmeshes", "ximeshes")) {
-                File dir = new File(source, mesh); report += mesh + ": " + (dir.isDirectory() && FilesEx.children(dir).length > 0 ? "directory present (content not verified)" : "missing; GitHub source ZIPs do not include submodule contents") + "\n";
+                File dir = new File(source, mesh); report += mesh + ": " + (dir.isDirectory() && FilesEx.children(dir).length > 0 ? "directory present (content not verified)" : "missing from source ZIP; compatible pinned map files are downloaded when staging or starting") + "\n";
             }
             identity.put("format",1).put("snapshot_id",UUID.randomUUID().toString()).put("origin",origin)
                     .put("expected_client",expectedClient(source)).put("fetched_at_millis",System.currentTimeMillis());

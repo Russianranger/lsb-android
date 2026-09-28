@@ -267,8 +267,9 @@ class StartupTests(unittest.TestCase):
         self.root=Path(self.temp.name)
     def append(self,name,line):
         with (self.root/(name+'.log')).open('ab') as output:output.write(line)
-    def marker(self,name):
-        return ('[09/25/26 10:47:30:131]['+name[3:]+'][info] The '+name[3:]+'-server is ready to work... (markLoaded:228)\n').encode()
+    def marker(self,name,duration=None):
+        timing='' if duration is None else ' after '+duration+' seconds'
+        return ('[09/25/26 10:47:30:131]['+name[3:]+'][info] The '+name[3:]+'-server is ready to work'+timing+'... (markLoaded:275)\n').encode()
     def test_old_markers_do_not_confirm_new_start_and_map_must_finish(self):
         for name in m.PROCESSES:self.append(name,self.marker(name))
         progress=m.StartupProgress(self.root);progress.poll()
@@ -287,11 +288,30 @@ class StartupTests(unittest.TestCase):
     def test_partial_markers_other_roles_and_unrelated_log_text(self):
         progress=m.StartupProgress(self.root)
         self.append('xi_map',b'[map][info] Login player=private-account\n'+self.marker('xi_world'))
-        marker=b'\x1b[32m'+self.marker('xi_map').rstrip(b'\n')+b'\x1b[0m\n'
+        marker=b'\x1b[32m'+self.marker('xi_map','5.60').rstrip(b'\n')+b'\x1b[0m\n'
         self.append('xi_map',marker[:55]);progress.poll()
         self.assertEqual(progress.ready,set());self.assertEqual(progress.recent,[])
         self.append('xi_map',marker[55:]);progress.poll()
         self.assertEqual(progress.ready,{'xi_map'});self.assertEqual(progress.recent,['map: Ready'])
+    def test_timed_readiness_markers_match_every_process(self):
+        progress=m.StartupProgress(self.root)
+        for name,duration in zip(m.PROCESSES,('5.23','5.60','1200','0.00')):
+            self.append(name,self.marker(name,duration))
+        progress.poll()
+        self.assertEqual(progress.snapshot(1200,True)['ready_processes'],list(m.PROCESSES))
+        self.assertEqual(progress.snapshot(1200,True)['stage'],'All server scripts loaded')
+    def test_malformed_timing_and_unrelated_readiness_text_do_not_match(self):
+        progress=m.StartupProgress(self.root)
+        for duration in ('-1','NaN','Infinity','5.','5e2','5,60','5.60 extra'):
+            self.append('xi_map',self.marker('xi_map',duration))
+        marker=self.marker('xi_map','5.60')
+        for line in (b'quoted '+marker,marker.rstrip()+b' additional text\n',
+                     marker.replace(b'seconds...',b'second...'),
+                     marker.replace(b'markLoaded',b'unrelated'),
+                     self.marker('xi_connect','5.60')):
+            self.append('xi_map',line)
+        progress.poll()
+        self.assertEqual(progress.ready,set());self.assertEqual(progress.recent,[])
     def test_oversized_lines_are_bounded_and_truncation_clears_readiness(self):
         progress=m.StartupProgress(self.root)
         self.append('xi_map',b'x'*(256*1024)+self.marker('xi_map'))
@@ -301,6 +321,17 @@ class StartupTests(unittest.TestCase):
         (self.root/'xi_map.log').write_bytes(b'[map][info] Loading NPC scripts\n')
         progress.poll();self.assertNotIn('xi_map',progress.ready)
         self.assertEqual(progress.snapshot(3,True)['stage'],'Loading NPC scripts')
+    def test_log_replacement_clears_readiness_and_partial_marker(self):
+        progress=m.StartupProgress(self.root)
+        self.append('xi_map',self.marker('xi_map','5.60'))
+        self.append('xi_map',self.marker('xi_map','5.60')[:55]);progress.poll()
+        self.assertIn('xi_map',progress.ready)
+        (self.root/'xi_map.log').rename(self.root/'xi_map.old')
+        self.append('xi_map',b'[map][info] Loading NPC scripts\n');progress.poll()
+        self.assertNotIn('xi_map',progress.ready)
+        self.assertEqual(progress.snapshot(3,True)['stage'],'Loading NPC scripts')
+        self.append('xi_map',self.marker('xi_map','6.00'));progress.poll()
+        self.assertIn('xi_map',progress.ready)
     def test_supervisor_does_not_announce_ready_from_login_socket(self):
         generation=self.root/'generation';generation.mkdir();(generation/'deployment.json').write_text('{}')
         for name in m.PROCESSES:self.append(name,self.marker(name))
@@ -311,12 +342,13 @@ class StartupTests(unittest.TestCase):
             tick[0]+=1
             if tick[0]==1:
                 for name in m.PROCESSES:
-                    if name!='xi_map':self.append(name,self.marker(name))
+                    if name!='xi_map':self.append(name,self.marker(name,'5.60'))
                 self.append('xi_map',b'[map][info] Loading Mob scripts (LoadMOBList:662)\n')
-            if tick[0]==2:self.append('xi_map',self.marker('xi_map'))
+            if tick[0]==2:self.append('xi_map',self.marker('xi_map','600.00'))
         worker=mock.Mock(pid=99999,returncode=None);worker.poll.return_value=None
-        with mock.patch.multiple(m,LOGS=self.root),mock.patch.object(m,'current',return_value=generation),mock.patch.object(m,'validate_binaries'),mock.patch.object(m,'ensure_ports'),mock.patch.object(m,'start_database',return_value={}),mock.patch.object(m,'stop_database'),mock.patch.object(m,'cancelled',side_effect=cancelled),mock.patch.object(m,'status',side_effect=lambda phase,message,**fields:reports.append((phase,message,fields))),mock.patch.object(m.subprocess,'Popen',return_value=worker),mock.patch.object(m.socket,'create_connection'),mock.patch.object(m.os,'killpg'),mock.patch.object(m.time,'sleep',side_effect=sleep),mock.patch.object(m.time,'monotonic',side_effect=lambda:tick[0]*300),mock.patch.object(m,'children',[]):
+        with mock.patch.multiple(m,LOGS=self.root),mock.patch.object(m,'current',return_value=generation),mock.patch.object(m,'validate_binaries'),mock.patch.object(m,'ensure_ports'),mock.patch.object(m,'start_database',return_value={}),mock.patch.object(m,'stop_database'),mock.patch.object(m,'cancelled',side_effect=cancelled),mock.patch.object(m,'status',side_effect=lambda phase,message,**fields:reports.append((phase,message,fields))),mock.patch.object(m.subprocess,'Popen',return_value=worker),mock.patch.object(m.socket,'create_connection',side_effect=[OSError('not listening yet'),mock.MagicMock()]) as probe,mock.patch.object(m.os,'killpg'),mock.patch.object(m.time,'sleep',side_effect=sleep),mock.patch.object(m.time,'monotonic',side_effect=lambda:tick[0]*300),mock.patch.object(m,'children',[]):
             with self.assertRaises(InterruptedError):m.serve()
+        self.assertEqual(probe.call_count,2)  # Retry until reachable, then stop sending incomplete TLS handshakes.
         self.assertEqual([r[0] for r in reports],['starting','starting','starting','running','stopping'])
         loading=reports[-3][2]['startup']
         self.assertEqual(loading['stage'],'Loading Mob scripts');self.assertEqual(loading['pending_processes'],['xi_map'])

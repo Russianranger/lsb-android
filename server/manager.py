@@ -1,6 +1,7 @@
 """Isolated, generation-based LSB deployment. Never touches Termux or client files."""
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -65,6 +66,18 @@ def source_info(root):
             match=re.search(r"^\s*CLIENT_VER\s*=\s*['\"]([^'\"]+)['\"]",path.read_text(errors='replace'),re.M)
             if match:version=match[1]
     return dict(expected_client=version,source_hashes=files,meshes={name:(root/name).is_dir() and any((root/name).iterdir()) for name in ('navmeshes','ximeshes')})
+
+def prepare_meshes(root, identity, download=True):
+    # GitHub source archives omit submodules. Runtime data is installed only in
+    # a generation, after checking its compiled payload; never change the
+    # reusable build or infer its identity from a newly fetched source.
+    if not (root/'.gitmodules').is_file():return {}
+    spec=importlib.util.spec_from_file_location('lsb_runtime_meshes',Path(__file__).with_name('meshes.py'))
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    if not download:return module.validate(root)
+    def progress(message):
+        print(message,flush=True);status('preparing_meshes',message)
+    return module.ensure(root,identity,progress=progress,cancelled=cancelled,cache=STATE/'mesh-cache')
 
 def command(args, cwd=None, stdin=None, stdout=None, timeout=3600, env=None):
     cancelled()
@@ -394,6 +407,7 @@ def stage_build(req):
     snapshot_source(root,staged,recover_build_binaries=False)
     if tree_fingerprint(staged)!=report['content_sha256']:raise ValueError('Copied build does not match the successful build receipt')
     try:
+        mesh_assets=prepare_meshes(staged,report.get('selected_source',{}))
         status('building_database','Building a fresh database from this build’s SQL…' if mode=='fresh' else 'Importing the selected database into an isolated generation…')
         creds=initialize_database(generation,name) if mode=='fresh' else import_database(generation,dump,name)
         before=account_counts(name,creds) if mode!='fresh' else None
@@ -405,6 +419,7 @@ def stage_build(req):
         info=source_info(staged)
         if info['expected_client']!=report['source']['expected_client']:raise ValueError('Database preparation changed the build’s expected client version')
         info.update(format=2,state='staged',generation=generation.name,build_id=report['build_id'],build=report,
+                    mesh_assets=mesh_assets,
                     selected_source=report.get('selected_source',{}),database=name,database_mode=mode,
                     database_input_sha256=(file_sha256(dump) if mode!='fresh' else None),
                     accounts=counts['accounts'],characters=counts['chars'],created_at=time.time(),
@@ -443,6 +458,7 @@ def check_staged(req):
         if binaries!=info['build']['binaries']:raise ValueError('Staged binaries do not match the exact successful jemalloc build')
         if {n:binaries[n]['sha256'] for n in PROCESSES}!=info['binaries']:raise ValueError('Staged binary receipt is inconsistent')
         if source_info(root)['expected_client']!=info['expected_client']:raise ValueError('Staged source expects a different client')
+        prepare_meshes(root,info.get('selected_source',{}),download=False)
         creds=start_database(generation)
         counts=account_counts(info['database'],creds)
         if counts!={'accounts':info['accounts'],'chars':info['characters']}:raise ValueError('Staged database counts changed; stage the database again')
@@ -662,6 +678,8 @@ def deploy(req):
         for f in (previous/'server/settings').glob('*.lua'):shutil.copy2(f,root/'settings'/f.name)
     build_report=build(root,int(req.get('jobs',2))) if req.get('build',False) else None
     validate_binaries(root)
+    identity=req.get('source_identity',{})
+    mesh_assets=prepare_meshes(root,identity)
     status('importing_database','Importing SQL into a separate database generation…')
     creds=import_database(generation,dump,name)
     try:
@@ -683,7 +701,7 @@ def deploy(req):
             if after!=before:raise RuntimeError('Account or character counts changed during the update; active deployment kept')
         info=source_info(root)
         if build_report is not None:info['build']=build_report
-        info.update(format=1,generation=generation.name,database=name,accounts=before['accounts'],characters=before['chars'],created_at=time.time(),updated=updating,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in PROCESSES})
+        info.update(format=1,generation=generation.name,database=name,selected_source=identity,mesh_assets=mesh_assets,accounts=before['accounts'],characters=before['chars'],created_at=time.time(),updated=updating,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in PROCESSES})
         atomic(generation/'deployment.json',info)
     finally:stop_database(creds)
     old=json.loads((STATE/'active.json').read_text()).get('current') if (STATE/'active.json').exists() else None
@@ -713,7 +731,7 @@ class StartupProgress:
         # The four LSB processes report this only after markLoaded, including
         # xi_map after all NPC/mob scripts. Accept each process's own marker.
         role=name.removeprefix('xi_')
-        if re.search(r'(?:^|\]\s*)The '+role+r'-server is ready to work\.\.\.(?:\s|$)',line):
+        if re.fullmatch(r'(?:\[[^\]\r\n]*\]\s*)*The '+role+r'-server is ready to work(?: after [0-9]+(?:\.[0-9]+)? seconds)?\.\.\.(?:\s+\(markLoaded:[0-9]+\))?',line):
             self.ready.add(name);message=role+': Ready'
         else:
             # Only startup progress belongs in the live summary; leave arbitrary
@@ -753,9 +771,21 @@ class StartupProgress:
                     pending_processes=pending,stage=stage,recent_lines=self.recent[:],login_port_reachable=port_ready)
 
 def serve():
-    invalidate_database_stage('The active server was started after this database copy was staged. Stage its database again.')
     generation=current();root=generation/'server';validate_binaries(root);ensure_ports()
-    meta=json.loads((generation/'deployment.json').read_text());status('starting','Starting the managed server…',deployment=meta)
+    meta=json.loads((generation/'deployment.json').read_text())
+    mesh_assets=prepare_meshes(root,meta.get('selected_source',{}))
+    if mesh_assets:
+        for name,receipt in mesh_assets.items():
+            previous=meta.get('mesh_assets',{}).get(name,{})
+            if receipt.get('provenance')=='existing-assets':
+                # Retain acquisition history without claiming that subsequently
+                # edited/custom assets still equal the downloaded revision.
+                origin=previous.get('installed_from') or {key:previous[key] for key in ('repository','commit','provenance','compatibility_source') if key in previous}
+                if origin.get('commit'):receipt['installed_from']=origin
+        meta.update(mesh_assets=mesh_assets,meshes=source_info(root)['meshes'])
+        atomic(generation/'deployment.json',meta)
+    invalidate_database_stage('The active server was started after this database copy was staged. Stage its database again.')
+    status('starting','Starting the managed server…',deployment=meta)
     creds=start_database(generation,True)
     workers=[]
     try:
@@ -764,17 +794,21 @@ def serve():
             log=(LOGS/(name+'.log')).open('ab')
             p=subprocess.Popen([str(root/name)],cwd=root,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
             log.close();children.append(p);workers.append((name,p))
-        ready=False;started=time.monotonic();last_report=None;last_report_at=0
+        ready=False;port_ready=False;started=time.monotonic();last_report=None;last_report_at=0
         while True:
             cancelled()
             for name,p in workers:
                 if p.poll() is not None:raise RuntimeError(name+' exited with code '+str(p.returncode)+'. See Server logs.')
             if not ready:
-                progress.poll();port_ready=False
-                try:
-                    with socket.create_connection(('127.0.0.1',54231),timeout=.3):pass
-                    port_ready=True
-                except OSError:pass
+                progress.poll()
+                # One successful probe is enough for this start. Opening and
+                # immediately closing TLS login connections on every tick fills
+                # newer connect-server logs with handshake warnings.
+                if not port_ready:
+                    try:
+                        with socket.create_connection(('127.0.0.1',54231),timeout=.3):pass
+                        port_ready=True
+                    except OSError:pass
                 now=time.monotonic();elapsed=now-started;report=progress.snapshot(elapsed,port_ready)
                 ready=not report['pending_processes'] and port_ready
                 if ready:status('running','Server ready — all scripts loaded. You can connect now.',deployment=meta,startup=report)

@@ -70,6 +70,22 @@ class BuildPipelineTests(unittest.TestCase):
         info=json.loads((m.STATE/'staged.json').read_text())
         return dict(generation=info['generation'],build_id=info['build_id']),info
 
+    def enable_meshes(self):
+        root=m.STATE/'source-build/server'
+        (root/'.gitmodules').write_text('[submodule "ximeshes"]\npath = ximeshes\n')
+        self.build['content_sha256']=m.tree_fingerprint(root)
+        m.atomic(root/'android-build.json',self.build)
+        return root
+
+    @contextlib.contextmanager
+    def mesh_module(self,ensure=None,validate=None):
+        # Exercise the real manager wrapper, with runtime asset acquisition kept
+        # tiny and offline. Mesh header/archive safety is tested by that module.
+        module=types.SimpleNamespace(ensure=mock.Mock(side_effect=ensure),validate=mock.Mock(side_effect=validate))
+        spec=types.SimpleNamespace(loader=mock.Mock())
+        with mock.patch.object(m.importlib.util,'spec_from_file_location',return_value=spec),mock.patch.object(m.importlib.util,'module_from_spec',return_value=module):
+            yield module
+
     def test_worker_range_rejects_bool_zero_and_excess(self):
         for jobs in range(1,17):self.assertEqual(m.checked_jobs(jobs),jobs)
         for jobs in (True,False,0,-1,17,1.5,'2',None):
@@ -92,6 +108,86 @@ class BuildPipelineTests(unittest.TestCase):
         root=m.STATE/'source-build/server';(root/'scripts/custom.lua').write_text('changed after build')
         with self.assertRaisesRegex(ValueError,'runtime files changed'):m.stage_build(self.request())
         self.assertFalse((m.STATE/'staged.json').exists())
+        self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
+
+    def test_stage_meshes_are_acquired_before_staged_database_and_hashed_without_changing_build(self):
+        build_root=self.enable_meshes();receipt=(build_root/'android-build.json').read_bytes()
+        mesh_receipt={'ximeshes':{'revision':'c'*40,'files':1}}
+        def ensure(root,identity,**kwargs):
+            self.assertNotEqual(root,build_root)
+            self.assertEqual(identity,self.build['selected_source'])
+            self.assertEqual(m.tree_fingerprint(root),self.build['content_sha256'])
+            m.start_database.assert_not_called()
+            (root/'ximeshes').mkdir();(root/'ximeshes/fixture.xim').write_bytes(b'tiny map asset')
+            return mesh_receipt
+        with self.mesh_module(ensure=ensure,validate=lambda root:mesh_receipt) as module:
+            request,info=self.stage()
+            staged=m.STATE/'generations'/info['generation']/'server'
+            self.assertEqual(module.ensure.call_count,1)
+            self.assertEqual(module.ensure.call_args.kwargs['cache'],m.STATE/'mesh-cache')
+            self.assertEqual(info['mesh_assets'],mesh_receipt)
+            self.assertEqual((staged/'ximeshes/fixture.xim').read_bytes(),b'tiny map asset')
+            self.assertEqual(info['staged_content_sha256'],m.tree_fingerprint(staged))
+            self.assertNotEqual(info['staged_content_sha256'],self.build['content_sha256'])
+            self.assertEqual(info['build']['content_sha256'],self.build['content_sha256'])
+            self.assertEqual(m.tree_fingerprint(build_root),self.build['content_sha256'])
+            self.assertEqual((build_root/'android-build.json').read_bytes(),receipt)
+            self.assertFalse((build_root/'ximeshes').exists())
+            self.assertTrue(m.start_database.called)
+            m.check_staged(request)
+            module.validate.assert_called_once_with(staged)
+            self.assertEqual(module.ensure.call_count,1)  # Checking never downloads or repairs staged assets.
+        self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
+
+    def test_mesh_acquisition_cannot_run_before_completed_and_copied_build_verification(self):
+        root=self.enable_meshes();script=root/'scripts/custom.lua';original=script.read_bytes()
+        snapshot=m.snapshot_source
+        def corrupt_copy(source,target,**kwargs):
+            snapshot(source,target,**kwargs)
+            (target/'scripts/custom.lua').write_text('changed while copying')
+        with self.mesh_module() as module:
+            script.write_text('changed after compilation')
+            with self.assertRaisesRegex(ValueError,'runtime files changed'):m.stage_build(self.request())
+            script.write_bytes(original)
+            with mock.patch.object(m,'snapshot_source',side_effect=corrupt_copy):
+                with self.assertRaisesRegex(ValueError,'Copied build does not match'):m.stage_build(self.request())
+            module.ensure.assert_not_called();module.validate.assert_not_called()
+        m.start_database.assert_not_called()
+        self.assertFalse((m.STATE/'staged.json').exists())
+        self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
+
+    def test_mesh_preparation_failure_retains_active_previous_stage_and_completed_build(self):
+        self.stage();previous=(m.STATE/'staged.json').read_bytes()
+        root=self.enable_meshes();receipt=(root/'android-build.json').read_bytes()
+        for error in (ValueError('invalid map data'),InterruptedError('stopped')):
+            def ensure(staged,identity,**kwargs):
+                (staged/'ximeshes').mkdir();(staged/'ximeshes/partial.xim').write_bytes(b'incomplete')
+                raise error
+            m.start_database.reset_mock()
+            with self.subTest(error=type(error).__name__),self.mesh_module(ensure=ensure) as module:
+                with self.assertRaises(type(error)):m.stage_build(self.request())
+                module.ensure.assert_called_once();module.validate.assert_not_called()
+            m.start_database.assert_not_called()
+            self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
+            self.assertEqual((m.STATE/'staged.json').read_bytes(),previous)
+            self.assertEqual(m.tree_fingerprint(root),self.build['content_sha256'])
+            self.assertEqual((root/'android-build.json').read_bytes(),receipt)
+
+    def test_check_invalid_meshes_revokes_prior_check_without_database_or_download(self):
+        self.enable_meshes()
+        with self.mesh_module(ensure=lambda *args,**kwargs:{},validate=lambda root:{}) as module:
+            request,info=self.stage();m.check_staged(request)
+            self.assertEqual(json.loads((m.STATE/'staged.json').read_text())['state'],'checked')
+            module.ensure.reset_mock();module.validate.reset_mock()
+            module.validate.side_effect=ValueError('invalid map header')
+            m.start_database.reset_mock();self.commands.clear()
+            with self.assertRaisesRegex(ValueError,'invalid map header'):m.check_staged(request)
+            module.ensure.assert_not_called()
+            module.validate.assert_called_once_with(m.STATE/'generations'/info['generation']/'server')
+        m.start_database.assert_not_called();self.assertEqual(self.commands,[])
+        failed=json.loads((m.STATE/'staged.json').read_text())
+        self.assertEqual(failed['state'],'staged');self.assertNotIn('checked_at',failed)
+        self.assertEqual(failed['check_error'],'invalid map header')
         self.assertEqual((m.STATE/'active.json').read_bytes(),self.pointer)
 
     def test_legacy_receipt_adoption_does_not_borrow_current_source_identity(self):

@@ -248,7 +248,7 @@ final class ServerRuntime {
         int jobs=context.getSharedPreferences("server",0).getInt("jobs",2);
         if(jobs<1||jobs>16)throw new IOException("Choose 1 to 16 build workers");
         JSONObject request=new JSONObject().put("action",action).put("build",build).put("jobs",jobs).put("database",context.getSharedPreferences("server",0).getString("database","xidb")).put("local_zones",context.getSharedPreferences("server",0).getBoolean("local_zones",true));
-        if(action.equals("build-source"))request.put("source_identity",SourceImport.identity(new File(MainActivity.storage(context),"server")));
+        if(Arrays.asList("build-source","deploy","update").contains(action))request.put("source_identity",SourceImport.identity(new File(MainActivity.storage(context),"server")));
         for(Iterator<String> keys=selection.keys();keys.hasNext();){String key=keys.next();request.put(key,selection.get(key));}
         if(Arrays.asList("deploy","update","stage-build","deploy-staged").contains(action))try{request.put("client_pair",ClientRuntime.get(context).compatibilitySnapshot());}catch(Exception e){request.put("client_pair",new JSONObject().put("status","client_not_prepared"));}
         FilesEx.text(new File(run,"request.json"),request.toString());new File(run,"status.json").delete();
