@@ -38,11 +38,30 @@ def local_connect(*args,**kwargs):
 mariadb.connect=local_connect
 original_run=subprocess.run
 def checked_run(*args,**kwargs):
-    result=original_run(*args,**kwargs)
     command=args[0] if args else kwargs.get('args',[])
-    if isinstance(command,(list,tuple)) and command and Path(str(command[0])).name in ('mysql','mariadb') and result.returncode:
-        failed.append('Database import command failed')
+    is_sql=isinstance(command,(list,tuple)) and command and Path(str(command[0])).name in ('mysql','mariadb','mysqldump','mariadb-dump')
+    if is_sql:
+        # An explicit upstream -P can select TCP despite MYSQL_UNIX_PORT.
+        # This generation intentionally has no TCP listener: force its private
+        # socket for every CLI statement as well as Python connector calls.
+        if kwargs.get('shell'):raise RuntimeError('Database tool SQL commands must use direct argument lists')
+        cleaned=[command[0]];index=1
+        while index<len(command):
+            value=str(command[index])
+            if value in ('-h','--host','-P','--port','-S','--socket','--protocol'):
+                index+=2;continue
+            if value.startswith(('--host=','--port=','--socket=','--protocol=')) or (len(value)>2 and value[:2] in ('-h','-P','-S')):
+                index+=1;continue
+            cleaned.append(command[index]);index+=1
+            if value in ('-e','--execute') and index<len(command):
+                cleaned.append(command[index]);index+=1
+        command=[*cleaned,'--protocol=SOCKET','--socket='+sock]
+        if args:args=(command,*args[1:])
+        else:kwargs['args']=command
+    result=original_run(*args,**kwargs)
+    if is_sql and result.returncode:failed.append('Database import command failed')
     return result
+
 subprocess.run=checked_run
 # The CLI imports inside dbtool use mysql; its defaults file supplies the same
 # socket and restricted database user. No client-update task is invoked.

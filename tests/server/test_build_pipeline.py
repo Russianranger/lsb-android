@@ -245,4 +245,21 @@ def main():
                 with mock.patch.dict(sys.modules,{'mariadb':module}),mock.patch.object(sys,'argv',[str(script),str(root),'socket',str(config)]),mock.patch.object(subprocess,'run'),self.assertRaisesRegex(RuntimeError,'SQL error'):
                     runpy.run_path(str(script),run_name='__main__')
 
+    def test_upstream_mysql_cli_is_forced_to_private_socket(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'tools').mkdir();(root/'settings').mkdir()
+            (root/'tools/dbtool.py').write_text("""import subprocess
+def main():
+    subprocess.run(['/usr/bin/mysql','-hlocalhost','-P13306','-ulsb','xidb','-e SELECT 1'],capture_output=True,text=True)
+""")
+            config=root/'config.json';config.write_text(json.dumps(dict(database='xidb',password='secret')))
+            module=types.ModuleType('mariadb');module.connect=lambda *args,**kwargs:None
+            script=Path(__file__).resolve().parents[2]/'server/db_update.py'
+            with mock.patch.dict(sys.modules,{'mariadb':module}),mock.patch.object(sys,'argv',[str(script),str(root),'/private/staged.sock',str(config)]),mock.patch.object(subprocess,'run',return_value=subprocess.CompletedProcess([],0,'','')) as command:
+                runpy.run_path(str(script),run_name='__main__')
+            self.assertEqual(command.call_count,2)
+            for call in command.call_args_list:
+                self.assertEqual(call.args[0][-2:],['--protocol=SOCKET','--socket=/private/staged.sock'])
+                self.assertNotIn('-hlocalhost',call.args[0]);self.assertNotIn('-P13306',call.args[0])
+
 if __name__=='__main__':unittest.main()
