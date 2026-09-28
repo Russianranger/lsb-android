@@ -42,8 +42,9 @@ against reduced fixture SQL, not a mocked database tool.
 Native [source run 36368991593](https://github.com/Russianranger/lsb-android/actions/runs/36368991593),
 job `108761080188`, also passed: all four selected-source ARM64 executables
 compiled, started and bound allocation to jemalloc. Client/Box64/FEX source and
-assets were not changed. Their broad baseline reruns were still running at
-delivery preparation; do not describe the entire baseline as complete.
+assets were not changed. Presentation, FEX runtime, PlayOnline startup and Windows
+launcher jobs also passed. Box64 runtime job `108761811970` was still running at
+APK delivery; do not describe the entire baseline as complete.
 
 The new real integration test found and fixed a genuine upstream CLI transport
 problem: an explicit mysql host/port selected TCP even with MYSQL_UNIX_PORT set.
@@ -51,10 +52,29 @@ The wrapper now removes conflicting transport options and explicitly forces the
 private staging socket for mysql/mariadb and dump commands. The failed attempt
 left the active server/database intact. The qualified rerun passed all modes.
 
-**Signed APK delivery remains blocked by the disconnected development workspace.**
-The exec-server websocket failed; no shell, filesystem execution, image viewer or
-signing tools are exposed in this turn. No 0.5.47 device update has been signed or
-delivered. Do not install/deliver the disposable-certificate CI APK as an update.
+**Workspace recovered and signed APK delivery completed on 2026-09-28.**
+Both exact-head CI APKs were signed with the retained preview key and saved for
+download. Archive and CI APK hashes matched the recorded values below. Both APKs
+passed v2/v3 signature verification, expected package/version/code checks,
+16 KiB alignment, all 69 nonsignature payload-entry comparisons against CI and
+all 25 bundled server/runtime asset comparisons against the qualified source.
+The two variants have 67 identical shared payload entries. No source changes or
+additional server compilation were needed for delivery.
+
+Signed APKs (18,523,478 bytes each), version 0.5.47 / code 63:
+
+- `LSB-Android-0.5.47.apk`, package `io.github.russianranger.lsb`, SHA-256
+  `a7a34d0bba19a615aaed8e744f80c3519f165572f93f01738bf68ab0573d70e8`.
+- `LSB-Android-Restore-Test-0.5.47.apk`, package
+  `io.github.russianranger.lsb.restoretest`, SHA-256
+  `488b36340c3a950b265ce135da4b25e60b76c040fb49626548cba0ae8e7372be`.
+
+Both use certificate SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Install the matching app variant over the existing app. In Build, **Verify and
+reuse previous successful build** adopts the completed phone build without
+another compilation. On-device staging/deployment and gameplay still need the
+owner's actual data and client; the automated gates do not establish gameplay.
 
 Exact-head CI artifacts, version 0.5.47 / code 63:
 
@@ -66,18 +86,16 @@ Exact-head CI artifacts, version 0.5.47 / code 63:
   CI APK SHA-256 `ff647dd4ec44677f64035c4a2ee86fbb2aea7b869c28b077490097e98de82886`.
 - UI previews `10949045474`, archive SHA-256
   `5c84d96d625344b69974a5f5f0672b5a0106f160b06cd22b91f067721e79018e`.
-  Includes Build workspace wide/narrow images. They are generated but visual
-  inspection is pending because the workspace/image viewer is unavailable.
+  Build workspace wide/narrow images were visually inspected after reconnection;
+  source/build/staged identities, database controls and live progress are legible
+  with no observed overlap or clipped controls.
 - APK verification tools `10948976147`, archive SHA-256
   `4523227968e68584f5a89a3dbbb1245a90d082573a532ad1cf68ac19166e35f2`.
 
-Once the workspace is available, download these exact artifacts, verify archive
-and CI APK hashes, inspect the Build previews, then sign both APKs with the
-retained preview key. Verify certificate SHA-256
-`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`,
-package IDs, version/code, 16 KiB alignment and nonsignature payload equality.
-Save and deliver both signed APKs. There is no need to rerun the already passed
-source or database compilation gates. See [TESTING-0.5.47.md](TESTING-0.5.47.md).
+Delivery verification and save receipts are retained in the workspace under
+`verification/delivery-verification-0.5.47.json` and
+`verification/library-delivery-0.5.47.json`. See
+[TESTING-0.5.47.md](TESTING-0.5.47.md) for the Build workflow and device checks.
 
 # 0.5.46: live server operation logs
 
