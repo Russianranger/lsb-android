@@ -34,8 +34,10 @@ class InstallTraceTest(unittest.TestCase):
 
     def test_existing_directory_registration_does_not_duplicate_module(self):
         with tempfile.TemporaryDirectory() as d:
-            root=Path(d); self.source(root); (root/'modules/init.txt').write_text('lsb_android/ # enabled\n')
-            trace.install(root); self.assertEqual((root/'modules/init.txt').read_text(), 'lsb_android/ # enabled\n')
+            root=Path(d); self.source(root); (root/'modules/init.txt').write_text('# enabled\nlsb_android/\n')
+            trace.install(root); self.assertEqual((root/'modules/init.txt').read_text(), '# enabled\nlsb_android/\n')
+            (root/'modules/init.txt').write_text('lsb_android/ # not an enabled path in LSB\n')
+            trace.install(root); self.assertTrue((root/'modules/init.txt').read_text().endswith(trace.ENTRY+'\n'))
 
     def test_custom_files_links_and_unsupported_source_are_left_alone(self):
         with tempfile.TemporaryDirectory() as d:

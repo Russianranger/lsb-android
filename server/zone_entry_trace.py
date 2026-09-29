@@ -24,7 +24,9 @@ def install(root):
     if target.exists() and not target.read_text().startswith(MARKER):
         return 'Zone-entry trace skipped: preserving a custom module at the managed path.'
     content = init.read_text() if init.exists() else ''
-    active = [line.split('#', 1)[0].strip().rstrip('/') for line in content.splitlines()]
+    # Match LSB's loader: only full-line comments are comments; an inline '#'
+    # belongs to the path and must not suppress our valid module entry.
+    active = [line.strip().rstrip('/') for line in content.splitlines() if not line.startswith('#')]
     included = any(entry and (entry == ENTRY or ENTRY.startswith(entry + '/')) for entry in active)
     payload = Path(__file__).with_suffix('.lua').read_text()
     target.parent.mkdir(parents=True, exist_ok=True)
