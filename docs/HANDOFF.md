@@ -1,3 +1,81 @@
+# 0.5.53: Play home, guided setup and purpose-based runtime presets
+
+User confirmed successful login, zoning, NPC combat and logout on 0.5.52.
+Reviewed phone support `lsb-support (2)(20260929-011013).zip`, SHA-256
+`6d1450d06e622d72f6337d83dc2c92b91fe380c3fc2e410bf703f3065697e143`.
+The deployed profile repair used jemalloc and two workers, all five programs
+became ready, and map startup took 92.69 seconds. Evidence includes profile
+authentication, Northern San d'Oria to West Ronfaure zoning, signoff, client
+exit 0 and orderly database shutdown. Minor observations: two startup audio
+underruns, one TLS warning from a TCP readiness probe, an out-of-range NPC
+request, an unimplemented battlefield request, optional Wine/DXVK warnings,
+and a native frame failure at terminal teardown. Authentication/world flags
+and client-version reporting remain incomplete instrumentation, despite the
+successful user report. No changes were made during that read-only review.
+
+The user then authorized suggestions 1, 2 and 3 and plans a complete backup
+restore from Restore Test into a fresh ordinary installation, followed by a
+server source compile/client update pass. This release implements:
+
+- Play is the default home. One-use login credentials stay out of preferences
+  and intents. Managed Play reserves the client, starts the existing server
+  service, waits for supervisor readiness, and opens the display automatically.
+  Slow map startup, server failure, timeout and cancellation are handled.
+  The managed server remains running after logout until explicitly stopped.
+- Setup offers existing server, on-device server, or complete backup restore.
+  Progress derives from installed files and receipts. Restored preferences and
+  prepared clients are retained. Fresh local setup follows runtime, client,
+  loader, connection/region, preparation, source/build/database/check/deploy
+  and account steps. Source/build/staged identities must agree.
+- Runtime presets separate gameplay from PlayOnline checks/updates. The Thor
+  gameplay choice applies the working FEX/Turnip 26/DXVK 2.7.1, x87 fast mode,
+  native/shared-memory display, 60 Hz, 720p, two shader workers and filtered
+  PRoot settings. Box64 updater selection is independent. Restored/existing
+  settings are never silently overwritten by preset initialization.
+
+Version 0.5.53 / code 69. Production candidate
+`3140be93a957d19d1aaf7bf58023bd857d28c20c`. Server, Windows launcher and native
+runtime assets are unchanged from the successful 0.5.52 baseline. Existing
+Build workspace still uses jemalloc, chosen workers and exact build/database
+receipts. Advanced runtime checks and historical profile remain reachable.
+
+Verification job `109219646399` in push run `36509912790` passed: 126 Android
+checks (including nine Play/setup tests and actual cross-package restore),
+197 runtime unit tests, 122 server unit tests, core import/recovery checks and
+both APK compilations. Parallel PR verify `109219635592` also passed. Reviewed
+final narrow/wide first-run and restored Play screenshots. Corrected stale idle
+installation prompts and joined asynchronous stop threads in test cleanup.
+
+Full integration CI is not all green. Push Windows job `109220316301` failed a
+PlayOnline heartbeat sample assertion; parallel PR Windows job `109220263826`
+passed the same assertion and full suite. Push Box64 runtime job `109220316216`
+failed in the observed D3D8 pixel fixture with exit -11 under llvmpipe/DXVK 2.5.3.
+The fixture, runtime and native sources are unchanged. Its parallel PR run,
+FEX/PlayOnline integration and real MariaDB deployment were still running when
+these APKs were delivered. Do not describe those gates as passed or infer a
+confirmed phone regression from this CI failure. The requested UI/orchestration
+changes and archive/restore checks have their passing Android gates above.
+
+Both APKs use the existing update certificate SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Signatures, 16 KiB alignment, package IDs, version 69/0.5.53 and all 70 payload
+entries against the exact candidate CI APKs were verified. All 68 shared
+entries agree between variants; runtime/server assets agree with the source.
+Each APK is 18,556,315 bytes. Signed SHA-256:
+
+- LSB-Android-0.5.53.apk: `1e535adcb5248e98e23e0e5958cfcfb530a8ea1ce0cce133044b78d4bbf53e18`
+- LSB-Android-Restore-Test-0.5.53.apk: `2355b2087421d22f1462667ec6ec63fe02ce8c970fbaf7e50fbe3465eabaf5f4`
+
+Both APKs were saved successfully for delivery.
+
+
+Real-device document-provider restore, automatic display handoff, login/world
+entry and the compile/client update experience still require the user's pass.
+Follow [TESTING-0.5.53.md](TESTING-0.5.53.md). Retain the working Restore Test
+installation and export the complete backup outside app data before testing
+the fresh ordinary installation.
+
+
 # 0.5.52: profile service missing after successful login
 
 Phone `lsb-support (1)(10).zip` SHA-256
