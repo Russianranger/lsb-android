@@ -119,7 +119,7 @@ public class FantasyTilesTest {
             capture(tiles,"tested-shader-settings-wide.png");
             android.widget.LinearLayout page=(android.widget.LinearLayout)((android.view.ViewGroup)activity.get().findViewById(android.R.id.content)).getChildAt(0);
             // The exact navigation label is a button; the version subtitle starts similarly.
-            java.util.ArrayList<android.widget.Button> tabs=new java.util.ArrayList<>();collectTabs(page,tabs);assertEquals(6,tabs.size());
+            java.util.ArrayList<android.widget.Button> tabs=new java.util.ArrayList<>();collectTabs(page,tabs);assertEquals(7,tabs.size());
             for(android.widget.Button tab:tabs)assertTrue(tab.getBackground() instanceof android.graphics.drawable.RippleDrawable);
             page.measure(View.MeasureSpec.makeMeasureSpec(920,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(620,View.MeasureSpec.EXACTLY));page.layout(0,0,920,620);capture(page,"launcher-tabs-wide.png");
         }finally{activity.pause().stop().destroy();Files.deleteIfExists(state.toPath());prefs.edit().clear().commit();instance.set(null,null);}
@@ -147,7 +147,7 @@ public class FantasyTilesTest {
         if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++){Spinner found=findTrial(((ViewGroup)v).getChildAt(i));if(found!=null)return found;}return null;
     }
     private static void collectTabs(View v,java.util.List<android.widget.Button> result){
-        if(v instanceof android.widget.Button&&java.util.Arrays.asList("Client","Controller","Server","Runtime","Profile","Diagnostics").contains(((android.widget.Button)v).getText().toString()))result.add((android.widget.Button)v);
+        if(v instanceof android.widget.Button&&java.util.Arrays.asList("Play","Client","Controller","Server","Build","Setup","Diagnostics").contains(((android.widget.Button)v).getText().toString()))result.add((android.widget.Button)v);
         if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++)collectTabs(((ViewGroup)v).getChildAt(i),result);
     }
 }

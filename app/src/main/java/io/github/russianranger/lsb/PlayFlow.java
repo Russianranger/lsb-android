@@ -16,6 +16,7 @@ final class PlayFlow {
         void progress(String text);
     }
     static void await(Server server,Wait wait,long timeoutMillis)throws Exception {
+        if(Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("Play cancelled");
         long started=wait.now();boolean seen=server.alive();
         if(!seen)server.start();
         while(true){

@@ -117,7 +117,7 @@ public class PlaySetupTest {
         Fake server=new Fake();server.dieAt=5000;
         try{PlayFlow.await(server,server,1800000);fail();}catch(IOException expected){assertTrue(expected.getMessage().contains("did not become ready"));}assertEquals(5000,server.time);
         Fake timeout=new Fake();try{PlayFlow.await(timeout,timeout,2000);fail();}catch(IOException expected){assertTrue(expected.getMessage().contains("still loading"));}
-        Thread.currentThread().interrupt();try{PlayFlow.await(new Fake(),new Fake(),2000);fail();}catch(InterruptedIOException expected){}finally{Thread.interrupted();}
+        Fake cancelled=new Fake();Thread.currentThread().interrupt();try{PlayFlow.await(cancelled,cancelled,2000);fail();}catch(InterruptedIOException expected){assertEquals(0,cancelled.starts);}finally{Thread.interrupted();}
     }
     @Test public void waitingForServerOwnsClientAndBlocksRestoreOrOtherTransfers()throws Exception{
         client.reservePlay();assertTrue(client.alive());final boolean[] closed={false};
