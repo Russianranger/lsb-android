@@ -155,6 +155,14 @@ public class PlaySetupTest {
             Thread worker=(Thread)field(service.get(),"worker");if(worker!=null)worker.join(3000);assertFalse(client.alive());
             try{request.send(new ByteArrayOutputStream());fail("Credentials retained after cancel");}catch(IOException expected){}
             Shadows.shadowOf(Looper.getMainLooper()).idle();assertFalse(WorkService.busy);
-        }finally{set(server,"active",false);service.destroy();}
+        }finally{
+            set(server,"active",false);
+            Thread worker=(Thread)field(service.get(),"worker");if(worker!=null){worker.interrupt();worker.join(3000);assertFalse("Runtime worker did not stop",worker.isAlive());}
+            Shadows.shadowOf(Looper.getMainLooper()).idle();service.destroy();
+            // Stop requests finish on a separate thread; join it before deleting the fixture.
+            for(Thread thread:Thread.getAllStackTraces().keySet())if(thread.getName().equals("lsb-runtime-stop")||thread.getName().equals("lsb-runtime-cleanup")){
+                thread.join(3000);assertFalse("Runtime cleanup did not stop",thread.isAlive());
+            }
+        }
     }
 }
