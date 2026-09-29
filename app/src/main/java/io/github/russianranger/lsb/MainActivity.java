@@ -710,9 +710,9 @@ public final class MainActivity extends Activity {
         card.addView(label("Free runtime storage: "+rt.home.getUsableSpace()/1073741824L+" GiB. Preparation needs room for another full client and Windows copy; space is checked before copying. This may take several minutes.",14,MUTED));
         if(prepared.has("current"))card.addView(label("A validated preparation is available. A new attempt preserves it until checks pass.",14,ACCENT));
         if(candidate)card.addView(label(update?"A client update is staged. Continue it from Client update · PlayOnline.":copied?"A staged working copy is available. Retry uses its captured region and files without copying the full import again.":"The previous copy was interrupted. Preparation will replace only that incomplete candidate.",14,MUTED));
-        if(!rt.installed())card.addView(label("Install the Windows runtime on the Runtime tab first.",14,MUTED));
+        if(!rt.installed())card.addView(label("Install the Windows runtime from More → Advanced → Runtime installation first.",14,MUTED));
         button(card,repair?"Retry launcher prerequisite repair":copied?"Retry client initialization":"Prepare imported client",()->{
-            try{if(!copied&&!repair)saveConnection();startInitialization(repair?"repair-launcher":"initialize");}catch(Exception e){error(e);}
+            try{if(!copied&&!repair&&tab.equals("Client"))saveConnection();startInitialization(repair?"repair-launcher":"initialize");}catch(Exception e){error(e);}
         }).setEnabled(!update&&source.hasClient()&&!source.hasPendingImport()&&rt.installed()&&!rt.alive());
         button(card,"Open initialization display",()->startActivity(new Intent(this,RuntimeActivity.class))).setEnabled(rt.alive());
         button(card,"Stop initialization",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());

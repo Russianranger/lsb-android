@@ -24,9 +24,10 @@ public class InstallationExperienceTest {
     private static final String HASH="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private static Object field(Object target,String name)throws Exception{Field f=target.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(target);}
     private static TextView text(View v,String expected){
-        if(v instanceof TextView&&expected.equals(((TextView)v).getText().toString()))return (TextView)v;
+        if(v instanceof TextView&&(expected.equals(((TextView)v).getText().toString())||((TextView)v).getText().toString().startsWith(expected+"\n")))return (TextView)v;
         if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++){TextView found=text(((ViewGroup)v).getChildAt(i),expected);if(found!=null)return found;}return null;
     }
+    private static void layout(View v){v.measure(View.MeasureSpec.makeMeasureSpec(920,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));v.layout(0,0,920,v.getMeasuredHeight());}
     @Before public void before()throws Exception{
         context=RuntimeEnvironment.getApplication();ClientRuntime.resetAfterRestore();ServerRuntime.resetAfterRestore();OperationProgress.reset();WorkService.busy=false;SessionBackup.active=false;SessionBackup.recoveryError="";
         for(String name:new String[]{"runtime","setup","quick_login"})context.getSharedPreferences(name,0).edit().clear().commit();
@@ -52,9 +53,9 @@ public class InstallationExperienceTest {
     @Test public void clientNavigationHidesExperimentsAndMoreKeepsAdvancedReachable()throws Exception{
         org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class,new Intent(context,MainActivity.class).putExtra("tab","Client")).setup();
         try{
-            View content=(View)field(c.get(),"content");assertNotNull(text(content,"Go to Play"));assertNotNull(text(content,"◇  Currently playing with"));assertNull(text(content,"◇  Optimization trials"));assertNull(text(content,"◇  Past experiments"));
-            text(c.get().getWindow().getDecorView(),"More").performClick();content=(View)field(c.get(),"content");assertNotNull(text(content,"Guided setup"));assertNotNull(text(content,"Diagnostics and history"));
-            text(content,"Advanced settings and repairs").performClick();content=(View)field(c.get(),"content");assertNotNull(text(content,"◇  Optimization trials"));assertNotNull(text(content,"Historical GameHub reference"));
+            View content=(View)field(c.get(),"content");layout(content);assertNotNull(text(content,"Go to Play"));assertNotNull(text(content,"◇  Currently playing with"));assertNull(text(content,"◇  Optimization trials"));assertNull(text(content,"◇  Past experiments"));
+            text(c.get().getWindow().getDecorView(),"More").performClick();content=(View)field(c.get(),"content");layout(content);assertNotNull(text(content,"Guided setup"));assertNotNull(text(content,"Diagnostics and history"));
+            text(content,"Advanced settings and repairs").performClick();content=(View)field(c.get(),"content");layout(content);assertNotNull(text(content,"◇  Optimization trials"));assertNotNull(text(content,"Historical GameHub reference"));
         }finally{c.pause().stop().destroy();}
     }
     @Test public void cleanSessionSupersedesOldFailureAndProgressIsBoundedAndRestored()throws Exception{
@@ -69,7 +70,7 @@ public class InstallationExperienceTest {
     @Test public void savingCombinationUsesCompleteBackupPickerAndKeepsCurrentPointers()throws Exception{
         org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
         try{
-            View content=(View)field(c.get(),"content");text(content,"◇  Currently playing with").performClick();
+            View content=(View)field(c.get(),"content");layout(content);text(content,"◇  Currently playing with").performClick();layout(content);
             String before=FilesEx.read(new File(server.state,"active.json"),4096);
             text(content,"Save working combination").performClick();Intent pick=Shadows.shadowOf(c.get()).getNextStartedActivityForResult().intent;
             assertEquals(Intent.ACTION_CREATE_DOCUMENT,pick.getAction());assertEquals("lsb-working-combination.zip",pick.getStringExtra(Intent.EXTRA_TITLE));assertEquals(before,FilesEx.read(new File(server.state,"active.json"),4096));assertEquals(A,client.prepared().selected("current").getName());
