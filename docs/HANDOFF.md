@@ -1,3 +1,62 @@
+# 0.5.55: navigation, working combination, shared progress
+
+User confirmed the 0.5.54 pass was working and requested original proposals
+4, 5 and 6. Latest device archive `lsb-support(20260929-114245).zip`, SHA-256
+`a56ce7ae1b586751bd3ac050ad2c1475ee68bc7b0d244faa7a73f03e56b09223`:
+
+- Leidanar charid 4 entered Bastok Mines 234 at 11:23:13 UTC, completed the
+  opening event at 11:26:02, zoned to South Gustaberg 107 and back, and logged
+  out at 11:35:32.
+- Derych charid 5 was created in Windurst Woods 241 at 11:37:11. First-login
+  character creation and game-in callbacks completed; opening event 367 ended
+  at 11:40:32; logout was 11:41:29.
+- Client and child exit codes were both zero. No new map critical or SQL error.
+  A TLS readiness TCP probe produced a truncated-handshake warning at 11:20:51.
+  The original Bastok transient did not recur; its cause remains unproven.
+
+Implemented proposals:
+
+4. Primary navigation is Play, Client, Server, Build, Controller, More. More
+   holds setup, backups, Advanced and Diagnostics. Client keeps everyday
+   installation/update/display controls. Advanced holds experiments, repair
+   tools, raw launch results and the historical GameHub reference. Detected
+   client failures link to dependency repairs or Diagnostics.
+5. Currently playing with shows actual activated client generation/version,
+   loader identity, server build/generation and database; fetched/staged updates
+   are labeled separately. Save working combination writes a complete backup
+   through the existing verified session exporter and records its receipt only
+   after the output stream closes successfully. Restore selects that full ZIP
+   through the transactional session restore, including runtimes, settings and
+   saved quick login. This is an explicit user-saved recovery point, not an
+   automatic extra multi-gigabyte copy or pointer-only rollback. The receipt
+   alone cannot restore data; progress after the backup point is replaced.
+6. Shared operation presentation covers transfers, build/preparation, runtime
+   operations and server startup: current step, elapsed time, recent updates,
+   expandable details and distinct completion/cancellation/interruption.
+   Latest clean completion takes precedence over old failures. Server log tails
+   remain live. Disabled actions show prerequisite hints.
+
+Version 0.5.55 / code 71. Production source
+`fe2a28715926147bafab244ae9669d15ca3eea1e`, exact push run `36565669725`,
+verify job `109396989693` passed: 133 Android tests, 126 server tests,
+197 runtime tests, core import/preparation/archive/session recovery and both
+APK builds. Local `scripts/test.py` and whitespace checks also passed.
+Viewed working-combination narrow and launcher navigation wide previews.
+Longer runtime, PlayOnline and server deployment integration jobs were still
+running while signing; do not equate these unit/build results with a new phone
+play test. Working native runtimes and server source were not changed.
+
+See [TESTING-0.5.55.md](TESTING-0.5.55.md) for the device pass. APKs use the
+existing certificate SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+The ordinary and separate Restore Test variants retain their respective IDs.
+Both signed APKs have 72 CI payload entries unchanged, matching repository
+server/runtime assets, 16 KiB zip alignment, and matching shared payloads.
+Ordinary APK SHA-256: `c438c4c0e29d918ff5cd94f663bcaf6d523c1df8c8194c9c2eb0a80b8c3d9b3c`.
+Restore Test SHA-256: `4b92ab82121cd0562d0601028f9b1432fd0eb5f8f593734dde67742759fb13a5`.
+
+---
+
 # 0.5.54: quick login and unresolved Bastok first-entry investigation
 
 User restored content, successfully played Tarrin, then created the character
