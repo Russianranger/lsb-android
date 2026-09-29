@@ -128,13 +128,15 @@ public class SessionBackupTest {
                 write(source.files,"server-runtime/state/export.sql","complete logical database fixture");write(source.files,"server-runtime/run/status.json","{\"phase\":\"ready\",\"message\":\"Database copied and stopped\"}");
             }catch(Exception error){throw new IOException(error);}dumps[0]++;return new Child(false);
         });select(server);
-        ByteArrayOutputStream bytes=new ByteArrayOutputStream();SessionBackup.export(source,bytes,QUIET);
+        JSONObject combination=new JSONObject().put("format",1).put("client",new JSONObject().put("generation",GENERATION).put("loader_sha256","fixture-loader")).put("server",new JSONObject().put("generation",GENERATION).put("database","xidb"));
+        ByteArrayOutputStream bytes=new ByteArrayOutputStream();SessionBackup.export(source,bytes,QUIET,combination);
         assertEquals(1,dumps[0]);assertFalse(server.alive());assertFalse(SessionBackup.active);
         write(target.files,"obsolete","target-only old data");target.getSharedPreferences("runtime",0).edit().putString("obsolete","remove").commit();target.getSharedPreferences("target_only",0).edit().putBoolean("obsolete",true).commit();
         reset();String result=SessionBackup.restore(target,new ByteArrayInputStream(bytes.toByteArray()),QUIET);
         assertTrue(result.contains("restored"));assertFalse(new File(target.files,"obsolete").exists());assertTrue(target.getSharedPreferences("target_only",0).getAll().isEmpty());sameSettings(source,target);
         for(Map.Entry<String,String> item:files.entrySet()){assertEquals(item.getValue(),read(target.files,item.getKey()));assertEquals(item.getValue(),read(source.files,item.getKey()));}
         assertEquals("complete logical database fixture",read(target.files,"server-runtime/state/export.sql"));
+        JSONObject restoredCombination=InstallationSummary.saved(target).getJSONObject("combination");assertEquals(GENERATION,restoredCombination.getJSONObject("client").getString("generation"));assertEquals("fixture-loader",restoredCombination.getJSONObject("client").getString("loader_sha256"));assertEquals("xidb",restoredCombination.getJSONObject("server").getString("database"));
         assertEquals("original client fixture",read(MainActivity.storage(target),"session/current/client/ROM/0/0.DAT"));
         assertEquals("custom server script",read(MainActivity.storage(target),"server/current/scripts/mob.lua"));
         assertEquals("127.0.0.1",MainActivity.store(target).config().host);assertEquals("US",MainActivity.store(target).config().region);

@@ -39,9 +39,11 @@ public final class RuntimeService extends Service {
         final String displayProfile=intent.getStringExtra("display_profile")==null?"windowed720":intent.getStringExtra("display_profile");
         final boolean startupTrace=intent.getBooleanExtra("startup_trace",false);
         final boolean play=intent.getBooleanExtra("play_flow",false),managed=intent.getBooleanExtra("managed_server",false);
+        OperationProgress.client.begin(this,"client","launch".equals(action)?"Play":"update-client".equals(action)?"Update client with PlayOnline":"initialize".equals(action)?"Prepare client":action.replace('-',' '));
         wake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"lsb:runtime");wake.acquire(2*60*60*1000L);
         worker=new Thread(()->{
             ClientRuntime rt=ClientRuntime.get(this);
+            rt.operationFailed=false;
             try{
                 if(play){
                     if(!"launch".equals(action)||login==null)throw new java.io.IOException("Enter your account and password on Play again");
@@ -59,14 +61,14 @@ public final class RuntimeService extends Service {
                         },new PlayFlow.Wait(){
                             public long now(){return SystemClock.elapsedRealtime();}
                             public void pause()throws Exception{Thread.sleep(250);}
-                            public void progress(String text){rt.status=text;}
+                            public void progress(String text){rt.status=text;OperationProgress.client.update(text);}
                         },30*60*1000L);
                     }
                 }
                 rt.run(renderer,sound,action,login,displayProfile,startupTrace);
             }
-            catch(Exception e){rt.status=cancelled||Thread.currentThread().isInterrupted()?(play?"Play cancelled. The managed server can be stopped from Server.":"Runtime cancelled."):String.valueOf(e.getMessage());if("launch".equals(action))rt.launchError=rt.status;WorkService.append(this,"Runtime: "+e.getClass().getSimpleName()+": "+rt.status);}
-            finally{rt.releasePlay();if(login!=null)login.close();Thread.interrupted();new Handler(Looper.getMainLooper()).post(()->{if(wake!=null&&wake.isHeld())wake.release();worker=null;WorkService.generation++;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}
+            catch(Exception e){rt.operationFailed=true;rt.status=cancelled||Thread.currentThread().isInterrupted()?(play?"Play cancelled. The managed server can be stopped from Server.":"Runtime cancelled."):String.valueOf(e.getMessage());if("launch".equals(action))rt.launchError=rt.status;WorkService.append(this,"Runtime: "+e.getClass().getSimpleName()+": "+rt.status);}
+            finally{OperationProgress.client.finish(this,cancelled||Thread.currentThread().isInterrupted()?"Cancelled":!rt.launchError.isEmpty()||rt.operationFailed?"Needs attention":"Completed",rt.status);rt.releasePlay();if(login!=null)login.close();Thread.interrupted();new Handler(Looper.getMainLooper()).post(()->{if(wake!=null&&wake.isHeld())wake.release();worker=null;WorkService.generation++;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}
         },"lsb-windows");worker.start();return START_NOT_STICKY;
     }
     @Override public void onDestroy(){

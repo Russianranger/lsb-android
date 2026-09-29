@@ -33,6 +33,7 @@ public final class MainActivity extends Activity {
     private TextView operation, runtimeStatus,serverStatus,serverStartup,latestServerOutput,serverLogBody,serverLogDialogBody;
     private ScrollView serverLogScroll,serverLogDialogScroll;
     private AlertDialog serverLogDialog;
+    private AlertDialog progressDialog;private TextView progressDetails;
     private ServerRuntime.LogSnapshot serverLogSnapshot;
     private ExecutorService serverLogReader;
     private boolean resumed,serverLogReadPending;
@@ -54,8 +55,10 @@ public final class MainActivity extends Activity {
     private final Runnable poll = new Runnable() {
         @Override public void run() {
             if (operation != null) {
-                operation.setText(WorkService.message + (WorkService.result.isEmpty() ? "" : "\n" + WorkService.result));
-                progress.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE);
+                if(ClientRuntime.get(MainActivity.this).alive())OperationProgress.client.update(ClientRuntime.get(MainActivity.this).status);
+                operation.setText(OperationProgress.current().summary());
+                if(progressDetails!=null)progressDetails.setText(OperationProgress.current().details());
+                progress.setVisibility(OperationProgress.current().running ? View.VISIBLE : View.GONE);
                 cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE);
             }
             if(!SessionBackup.active&&SessionBackup.recoveryError.isEmpty()){
@@ -73,6 +76,7 @@ public final class MainActivity extends Activity {
     };
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        OperationProgress.load(this);
         if(!WorkService.busy)try{SessionBackup.recover(this);}catch(Exception e){SessionBackup.recoveryError=e.getMessage();WorkService.message="Recovery needs attention";WorkService.result=e.getMessage();}
         if(!SessionBackup.active&&SessionBackup.recoveryError.isEmpty())ClientRuntime.migrateProvenAcceleration(this);
         getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
@@ -95,10 +99,10 @@ public final class MainActivity extends Activity {
         draw();
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 30);
     }
-    @Override protected void onResume() { super.onResume();resumed=true;logReadAfter=0; if(tab.equals("Runtime")||tab.equals("Client")||tab.equals("Play")||tab.equals("Setup"))draw(); Fullscreen.apply(this);handler.removeCallbacks(poll);handler.post(poll); }
+    @Override protected void onResume() { super.onResume();resumed=true;logReadAfter=0; if(tab.equals("Runtime")||tab.equals("Client")||tab.equals("Play")||tab.equals("Setup")||tab.equals("Advanced"))draw(); Fullscreen.apply(this);handler.removeCallbacks(poll);handler.post(poll); }
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus)Fullscreen.apply(this);}
     @Override protected void onPause() { resumed=false;logViewGeneration++;if(loginPassword!=null)loginPassword.setText("");clearServerPasswords();handler.removeCallbacks(poll); super.onPause(); }
-    @Override protected void onDestroy(){if(serverLogDialog!=null)serverLogDialog.dismiss();if(serverLogReader!=null)serverLogReader.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){if(serverLogDialog!=null)serverLogDialog.dismiss();if(progressDialog!=null)progressDialog.dismiss();if(serverLogReader!=null)serverLogReader.shutdownNow();super.onDestroy();}
     private void clearServerPasswords(){if(serverPassword!=null)serverPassword.setText("");if(serverPasswordConfirm!=null)serverPasswordConfirm.setText("");}
     @Override public void onSaveInstanceState(Bundle out) { out.putBoolean("openPlayDisplay",openPlayDisplay); out.putString("tab", tab); out.putString("pending", pending); out.putBoolean("preserve", preserveOnImport); Bundle sections=new Bundle();for(Map.Entry<String,String> entry:expandedSections.entrySet())sections.putString(entry.getKey(),entry.getValue());out.putBundle("sections",sections); super.onSaveInstanceState(out); }
     static File storage(Context ctx) throws IOException {
@@ -140,11 +144,37 @@ public final class MainActivity extends Activity {
         return button(parent,text,action,false);
     }
     private Button button(LinearLayout parent, String text, Runnable action,boolean readOnly) {
-        Button b = new Button(this); b.setText(text); b.setAllCaps(false); b.setTextColor(TEXT); b.setMinHeight(dp(48));b.setTypeface(Typeface.create("serif",Typeface.BOLD));
+        HintButton b = new HintButton(); b.setText(text); b.setAllCaps(false); b.setTextColor(TEXT); b.setMinHeight(dp(48));b.setTypeface(Typeface.create("serif",Typeface.BOLD));
         b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x446ed5e8),new FantasyTiles.Panel(getResources().getDisplayMetrics().density,true),null));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, dp(4), 0, dp(4)); parent.addView(b, lp);
+        b.hint=label("",12,MUTED);b.hint.setVisibility(View.GONE);parent.addView(b.hint);
         if(readOnly)b.setTag(READ_ONLY_CONTROL);
         b.setOnClickListener(v -> { if (WorkService.busy&&!readOnly) { toast("Wait for the current operation, or cancel it."); return; } try { action.run(); } catch (Exception e) { error(e); } }); return b;
+    }
+    private final class HintButton extends Button {
+        TextView hint;
+        HintButton(){super(MainActivity.this);}
+        @Override public void setEnabled(boolean enabled){super.setEnabled(enabled);if(hint!=null){hint.setText(disabledReason(getText().toString()));hint.setVisibility(enabled?View.GONE:View.VISIBLE);}}
+    }
+    private String disabledReason(String action){
+        if(WorkService.busy)return "Wait for the current operation to finish, or cancel it.";
+        if(ClientRuntime.get(this).alive())return "Stop the client operation first.";
+        if(action.startsWith("Open ")&&action.contains("display"))return "Start the client or runtime to open its display.";
+        if(action.startsWith("Stop "))return "This service is already stopped.";
+        if(ServerRuntime.get(this).alive())return "Stop the managed server first.";
+        if(action.contains("installed"))return "Already installed.";
+        if(action.startsWith("Install runtime")&&ClientRuntime.get(this).installed())return "The runtime is already installed.";
+        if(action.contains("FEX runtime"))return ClientRuntime.get(this).fexInstalled()?"The FEX runtime is already installed.":"Install the baseline client runtime first.";
+        if(action.equals("Check staged build and database"))return "Prepare a database with a completed build first; server build tools must be installed.";
+        if(action.equals("Deploy checked build and database"))return "Prepare staging and pass its checks. If the server ran afterward, prepare its database again.";
+        if(action.contains("Prepare database"))return "Complete a server build and select the database input first.";
+        if(action.contains("Build")||action.contains("Compile"))return "Install server build tools and fetch or import the source first.";
+        if(action.startsWith("Save working"))return "Activate a prepared client before saving a working combination.";
+        if(action.contains("previous")||action.contains("rollback"))return "No validated previous copy is available.";
+        if(action.contains("prerequisite"))return "Prepare a client and select an x86 prerequisite installer first.";
+        if(action.contains("Verify")||action.contains("Activate"))return "Finish the preceding staged update step first.";
+        if(action.contains("Import")||action.contains("import"))return "Finish or discard the pending import or staged update first.";
+        return "Complete the preceding setup step and select the required files first.";
     }
     private void draw() {
         serverAliveUi=ServerRuntime.get(this).alive();clientAliveUi=ClientRuntime.get(this).alive();
@@ -159,15 +189,16 @@ public final class MainActivity extends Activity {
         TextView subtitle=label("A world of adventure, on your device",compact?11:13,Color.rgb(175,219,255));subtitle.setPadding(0,dp(3),0,0);title.addView(subtitle);
         hero.addView(title);page.addView(hero,new LinearLayout.LayoutParams(-1,dp(compact?72:100)));
         page.addView(label((getPackageName().endsWith(".restoretest")?"LSB Restore Test · separate installation":"Client & server launcher")+" · "+appVersion(this),11,MUTED));
-        LinearLayout nav = new LinearLayout(this);nav.setOrientation(LinearLayout.VERTICAL);LinearLayout navRow=null;int navIndex=0;int navColumns=getResources().getConfiguration().screenWidthDp>=600?7:4;
-        for (String name : new String[]{"Play", "Client", "Server", "Build", "Controller", "Setup", "Diagnostics"}) {
+        LinearLayout nav = new LinearLayout(this);nav.setOrientation(LinearLayout.VERTICAL);LinearLayout navRow=null;int navIndex=0;int navColumns=getResources().getConfiguration().screenWidthDp>=600?6:3;
+        for (String name : new String[]{"Play", "Client", "Server", "Build", "Controller", "More"}) {
             Button b = new Button(this); b.setText(name); b.setAllCaps(false); b.setTextSize(12);b.setTypeface(Typeface.create("serif",Typeface.BOLD)); b.setPadding(dp(4),dp(8),dp(4),dp(8)); b.setTextColor(name.equals(tab) ? ACCENT : TEXT); b.setMinHeight(dp(48));b.setSelected(name.equals(tab));
             b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x446ed5e8),new FantasyTiles.Panel(getResources().getDisplayMetrics().density,name.equals(tab)),null));
             if(navIndex++%navColumns==0){navRow=new LinearLayout(this);nav.addView(navRow);}LinearLayout.LayoutParams navCell=new LinearLayout.LayoutParams(0,-2,1);navCell.setMargins(dp(3),dp(3),dp(3),dp(3));navRow.addView(b,navCell);
             b.setOnClickListener(v -> { tab = name; draw(); });
         }
         page.addView(nav);
-        operation = label(WorkService.message + (WorkService.result.isEmpty() ? "" : "\n" + WorkService.result), 13, MUTED); operation.setMaxLines(5); page.addView(operation);
+        operation = label(OperationProgress.current().summary(), 13, MUTED); operation.setMaxLines(5);page.addView(operation);
+        operation.setContentDescription("Current operation and elapsed time. Tap for details.");operation.setOnClickListener(v->showProgressDetails());
         latestServerOutput=label("",12,MUTED);latestServerOutput.setTypeface(Typeface.MONOSPACE);latestServerOutput.setMaxLines(2);latestServerOutput.setVisibility(View.GONE);page.addView(latestServerOutput);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setIndeterminate(true); progress.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE); page.addView(progress);
         cancel = new Button(this); cancel.setText("Cancel operation"); cancel.setAllCaps(false); cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE); cancel.setOnClickListener(v -> { WorkService.cancel(); toast("Cancelling; waiting for the current file operation to stop."); }); page.addView(cancel);
@@ -179,7 +210,7 @@ public final class MainActivity extends Activity {
         }
         if(SessionBackup.active){content.addView(label("Complete session transfer in progress. Keep LSB open while files and settings are verified.",15,TEXT));return;}
         final String currentTab=tab;tiles=new FantasyTiles(this,expandedSections.getOrDefault(tab,""),value->expandedSections.put(currentTab,value));
-        try { if(tab.equals("Client")||tab.equals("Build")||tab.equals("Server"))setupBreadcrumb(); switch (tab) { case "Play": playPage(); break; case "Setup": setupPage(); break; case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Build": buildPage(); break; case "Controller": controllerPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
+        try { if(tab.equals("Client")||tab.equals("Build")||tab.equals("Server"))setupBreadcrumb(); switch (tab) { case "Play": playPage(); break; case "More": morePage();break;case "Advanced": advancedPage();break;case "Setup": setupPage(); break; case "Runtime": runtimePage(); break; case "Profile": profilePage(); break; case "Server": serverPage(); break; case "Build": buildPage(); break; case "Controller": controllerPage(); break; case "Diagnostics": diagnosticsPage(); break; default: clientPage(); } }
         catch (Exception e) { content.addView(label("Cannot read app state: " + e.getMessage(), 16, TEXT)); }
         content.addView(tiles);
         if(WorkService.busy)disableControls(content);
@@ -187,6 +218,50 @@ public final class MainActivity extends Activity {
         Fullscreen.apply(this);
     }
     private void navigate(String page,String section){tab=page;if(!section.isEmpty())expandedSections.put(page,section);draw();}
+    private void showProgressDetails(){
+        if(progressDialog!=null)progressDialog.dismiss();progressDetails=label(OperationProgress.current().details(),14,TEXT);
+        progressDetails.setPadding(dp(16),dp(12),dp(16),dp(12));ScrollView scroll=new ScrollView(this);scroll.addView(progressDetails);
+        progressDialog=new AlertDialog.Builder(this).setTitle("Current operation details").setView(scroll).setPositiveButton("Close",null).create();
+        progressDialog.setOnDismissListener(d->{progressDetails=null;progressDialog=null;});progressDialog.show();
+    }
+    private void morePage(){
+        LinearLayout more=featuredCard("Setup, recovery and diagnostics");
+        button(more,"Guided setup",()->navigate("Setup",""),true);
+        button(more,"Backups and storage",()->navigate("Client","Backup and recovery"),true);
+        button(more,"Advanced settings and repairs",()->navigate("Advanced",""),true);
+        button(more,"Diagnostics and history",()->navigate("Diagnostics",""),true);
+        supportTile();
+    }
+    private void advancedPage()throws Exception {
+        LinearLayout intro=featuredCard("Advanced settings and repairs");intro.addView(label("Runtime experiments, dependency repairs and technical details. Play uses your current saved settings.",14,MUTED));
+        button(intro,"Runtime installation and checks",()->navigate("Runtime",""),true);
+        button(intro,"Historical GameHub reference",()->navigate("Profile",""),true);
+        button(intro,"Diagnostics and history",()->navigate("Diagnostics",""),true);
+        ClientStore source=store(this);if(ClientRuntime.get(this).preparationState().has("current"))loginCard(source);
+        initializationCard(source);
+        LinearLayout legacy=card("External launcher and repair tools");
+        button(legacy,"Validate client and preview repair script",()->run("Inspecting client",(ctx,p)->{String script=store(ctx).previewRepair(profile(ctx),p);FilesEx.text(new File(ctx.getFilesDir(),"repair-preview.txt"),script);return "Repair preview ready in Diagnostics.";})).setEnabled(source.hasClient());
+        button(legacy,"Export prepared client + GameHub launcher",()->create("prepared","ffxi-prepared.zip")).setEnabled(source.hasClient());
+        button(legacy,"Export launcher update only",()->create("launcher","ffxi-launcher-update.zip")).setEnabled(source.hasClient());
+    }
+    private void installationCard()throws Exception {
+        JSONObject active=InstallationSummary.snapshot(this);LinearLayout panel=card("Currently playing with");
+        panel.addView(label(InstallationSummary.describe(active),14,TEXT));
+        JSONObject prepared=ClientRuntime.get(this).preparationState(),candidate=prepared.optJSONObject("candidate");JSONObject build=ServerRuntime.get(this).buildState();
+        if(candidate!=null)panel.addView(label("Staged client · "+InstallationSummary.shortId(candidate.optString("generation"))+" · "+candidate.optString("update_phase","preparation")+" · not active",13,ACCENT));
+        JSONObject fetched=build.optJSONObject("selected_source"),compiled=build.optJSONObject("build"),staged=build.optJSONObject("staged");
+        if(fetched!=null&&fetched.length()>0)panel.addView(label("Fetched source · "+sourceIdentity(fetched)+" · changes take effect only after deployment",13,MUTED));
+        if(compiled!=null&&compiled.has("build_id"))panel.addView(label("Built · "+InstallationSummary.shortId(compiled.optString("build_id"))+" · "+compiled.optString("state"),13,MUTED));
+        if(staged!=null&&staged.has("generation")&&!"deployed".equals(staged.optString("state")))panel.addView(label("Staged server/database · "+InstallationSummary.shortId(staged.optString("generation"))+" · "+staged.optString("state")+" · not active",13,ACCENT));
+        JSONObject saved=InstallationSummary.saved(this);
+        if(saved.has("combination"))panel.addView(label("Saved working combination · "+new java.text.SimpleDateFormat("MMM d, HH:mm",Locale.getDefault()).format(new Date(saved.optLong("saved_at")))+"\n"+InstallationSummary.describe(saved.getJSONObject("combination")),13,MUTED));
+        else panel.addView(label("No working-combination backup recorded yet. Save one after successful play, before updating.",13,MUTED));
+        boolean idle=!ClientRuntime.get(this).alive()&&!ServerRuntime.get(this).alive();
+        button(panel,"Save working combination",()->create("working-backup","lsb-working-combination.zip")).setEnabled(idle&&active.has("client"));
+        button(panel,"Restore saved working combination",this::restoreBackup).setEnabled(idle);
+        panel.addView(label("Saves a complete backup to your chosen file, including client, loader, server, database, runtimes and settings. Restore selects that ZIP and returns them together to the saved point. This can take several minutes. External servers and their databases are not included.",13,MUTED));
+        if(!idle)panel.addView(label("Stop the client and managed server to save or restore a working combination.",13,ACCENT));
+    }
     private void setupBreadcrumb()throws Exception {
         if(getSharedPreferences("setup",0).getString("mode","").isEmpty())return;
         SetupGuide.Step step=SetupGuide.next(this);
@@ -272,8 +347,8 @@ public final class MainActivity extends Activity {
         final String[] values={"box64","fex","follow"};Spinner update=new Spinner(this);update.setContentDescription("Updater purpose preset");update.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Box64 · faster Thor file checks","FEX · alternate updater","Use gameplay engine"}));panel.addView(update);
         String saved=getSharedPreferences("runtime",0).getString("updater_engine","follow");update.setSelection(Math.max(0,Arrays.asList(values).indexOf(saved)));
         button(panel,"Apply updater choice",()->{try{RuntimePresets.updater(this,values[update.getSelectedItemPosition()]);draw();}catch(Exception e){error(e);}}).setEnabled(!rt.alive());
-        button(panel,"Advanced runtime checks and installation",()->navigate("Runtime",""),true);
-        button(panel,"Graphics and compatibility settings",()->navigate("Client","Graphics & display"),true);
+        button(panel,"Advanced runtime checks and installation",()->navigate("Advanced",""),true);
+        button(panel,"Graphics and compatibility settings",()->navigate("Advanced","Graphics & display"),true);
     }
     private void playPage()throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);ServerRuntime sr=ServerRuntime.get(this);ClientStore source=store(this);
@@ -286,6 +361,8 @@ public final class MainActivity extends Activity {
         serverStatus=label(managed?serverMessage:"External server · start it before choosing Play",14,MUTED);if(managed)play.addView(serverStatus);
         play.addView(label(managed?"Server on this device · Play starts it and waits for all services before opening FFXI.":"Existing server · "+source.config().host,15,TEXT));
         play.addView(label(RuntimePresets.gameplayLabel(this),13,MUTED));
+        JSONObject activePair=InstallationSummary.snapshot(this);JSONObject activeClient=activePair.optJSONObject("client"),activeServer=activePair.optJSONObject("server");
+        if(activeClient!=null)play.addView(label("Client "+InstallationSummary.shortId(activeClient.optString("generation"))+" · Loader "+InstallationSummary.shortId(activeClient.optString("loader_sha256"))+(managed&&activeServer!=null?"\nServer "+InstallationSummary.shortId(activeServer.optString("generation"))+" · Database "+activeServer.optString("database","not deployed"):""),12,MUTED));
         if(prepared.has("current")){
             JSONObject current=prepared.getJSONObject("current");play.addView(label("Active client · "+current.optString("generation").substring(0,Math.min(8,current.optString("generation").length())),13,MUTED));
             JSONObject previous=object(current,"last_launch"),process=object(previous,"process");
@@ -325,7 +402,7 @@ public final class MainActivity extends Activity {
             button(play,"Cancel / stop client",()->{openPlayDisplay=false;startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"));},true);
         }
         if(managed&&sr.alive())button(play,"Stop managed server",()->startForegroundService(new Intent(this,ServerService.class).setAction("stop"))).setEnabled(!rt.alive());
-        runtimePresetsCard();
+        installationCard();runtimePresetsCard();
         LinearLayout connection=card("Server selection");
         button(connection,"Use managed server on this device",()->chooseSetup("local"));
         button(connection,"Use an existing or Termux server",()->chooseSetup("external"));
@@ -384,9 +461,16 @@ public final class MainActivity extends Activity {
         ClientStore s = store(this);
         JSONObject preparation=ClientRuntime.get(this).preparationState();
         boolean ready=preparation.has("current");
-        if(ready)loginCard(s);else supportTile();
+        if(ready){LinearLayout play=featuredCard("Client installation");play.addView(label("Your active client is ready. Use Play to log in and start the managed server.",15,TEXT));button(play,"Go to Play",()->navigate("Play",""),true);loaderSelectionCard(ClientRuntime.get(this));installationCard();basicGraphicsCard();}else supportTile();
         clientUpdateCard();
-        initializationCard(s);
+        if(!ready||preparation.has("candidate"))initializationCard(s);
+        String problem=ClientRuntime.get(this).launchError;
+        if(problem.isEmpty()&&!OperationProgress.client.running&&"Needs attention".equals(OperationProgress.client.outcome))problem=OperationProgress.client.step;
+        if(ready&&!problem.isEmpty()){
+            LinearLayout repair=card("Client needs attention");repair.addView(label(problem,14,ACCENT));
+            String lower=problem.toLowerCase(Locale.ROOT);boolean dependency=lower.contains("dependenc")||lower.contains("prerequisite")||lower.contains("dll")||lower.contains("xiloader");
+            button(repair,dependency?"Open loader and prerequisite repairs":"Open failure diagnostics",()->navigate(dependency?"Advanced":"Diagnostics",dependency?"Capture & diagnostics":""),true);
+        }
         if (s.hasPendingImport() && !WorkService.busy) pendingImportCard(s);
         LinearLayout status = card(s.hasClient() ? "Imported client" : "Bring your FFXI installation");
         status.addView(label(s.summary(), 15, TEXT));
@@ -396,7 +480,7 @@ public final class MainActivity extends Activity {
         button(status, s.hasClient() ? "Import a complete client update ZIP" : "Import client ZIP", () -> pick("client")).setEnabled(!s.hasPendingImport());
         button(status, ready ? "Import and apply xiloader.exe" : "Import xiloader.exe", () -> pick("loader")).setEnabled(s.hasClient()&&!ClientRuntime.get(this).alive()&&(!ready||!preparation.has("candidate")));
 
-        LinearLayout launch = card("Connection and repair");
+        LinearLayout launch = card("Connection");
         LaunchConfig cfg = s.config(); launch.addView(label("Server address", 14, MUTED)); host = new EditText(this); host.setSingleLine(true); host.setTextColor(TEXT); host.setText(cfg.host); host.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI); launch.addView(host);
         launch.addView(label("Client region", 14, MUTED)); region = new Spinner(this); region.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"US", "EU", "JP"})); region.setSelection(Arrays.asList("US", "EU", "JP").indexOf(cfg.region)); launch.addView(region);
         playOnlinePaths = s.playOnlineChoices();
@@ -410,13 +494,7 @@ public final class MainActivity extends Activity {
         if (ClientInspector.isPatchCache(cfg.polCore)) launch.addView(label("Your saved selection is a patch-cache copy. Choose a Client files entry outside patchfiles above, then save. Your imported files and backup can be kept.", 15, ACCENT));
         button(launch, "Save connection settings", () -> { try { saveConnection(); toast("Saved"); draw(); } catch (Exception e) { error(e); } });
         button(launch, "Refresh file checks", () -> run("Checking imported files", (ctx, p) -> store(ctx).validate(p).summary())).setEnabled(s.hasClient());
-        button(launch, "Validate client and preview repair script", () -> {
-            try { saveConnection(); run("Inspecting client", (ctx, p) -> { File preview = new File(ctx.getFilesDir(), "repair-preview.txt"); FilesEx.delete(preview); String script = store(ctx).previewRepair(profile(ctx), p); FilesEx.text(preview, script); return "File validation passed. Repair recipe generated; run it inside Wine to test registration. See Diagnostics → Repair script."; }); }
-            catch (Exception e) { error(e); }
-        }).setEnabled(s.hasClient());
-        button(launch, "Export prepared client + GameHub launcher", () -> { try { saveConnection(); create("prepared", "ffxi-prepared.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
-        button(launch, "Export launcher update only", () -> { try { saveConnection(); create("launcher", "ffxi-launcher-update.zip"); } catch (Exception e) { error(e); } }).setEnabled(s.hasClient());
-        launch.addView(label("Legacy external export tools remain available. They are not required for the new in-app runtime checks.", 13, MUTED));
+        button(launch,"Advanced repairs and external launcher tools",()->navigate("Advanced","External launcher and repair tools"),true);
 
         LinearLayout backup = card("Backup and recovery");
         boolean backupIdle=!ClientRuntime.get(this).alive()&&!ServerRuntime.get(this).alive();
@@ -426,6 +504,13 @@ public final class MainActivity extends Activity {
         button(backup, "Restore legacy client backup", () -> confirm("Restore legacy client backup", "Older session backups contain only the imported client and connection settings. This restores that client and keeps a rollback copy.", () -> pick("restore-legacy"))).setEnabled(backupIdle&&!s.hasPendingImport());
         button(backup, "Switch to previous client", () -> confirm("Switch client", "Validate the previous client, then swap it with the current client?", () -> run("Validating previous client", (ctx, p) -> { store(ctx).rollback(p); return "Previous client restored. The other copy remains available for rollback."; }))).setEnabled(s.hasPrevious());
         backup.addView(label("Includes app settings, imported and prepared clients, all Windows environments, both runtimes, server source and deployments, databases and a fresh SQL dump. Temporary process files are recreated. The backup contains private server credentials and account data; keep it private. Restoring needs room for the complete unpacked installation alongside any existing data.", 13, MUTED));
+    }
+    private void basicGraphicsCard(){
+        LinearLayout panel=card("Gameplay display");panel.addView(label(RuntimePresets.gameplayLabel(this),14,TEXT));
+        setting(panel,"Show DXVK game FPS","dxvk_hud",true,"");
+        CheckBox fullscreen=setting(panel,"Fullscreen app and game","fullscreen",false,"Swipe from an edge to show Android controls.");fullscreen.setOnCheckedChangeListener((b,v)->Fullscreen.set(this,v));
+        button(panel,"Choose gameplay or updater preset",()->navigate("Play","Gameplay and updater presets"),true);
+        button(panel,"Advanced graphics and compatibility",()->navigate("Advanced","Graphics & display"),true);
     }
     private void clientUpdateCard() throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);JSONObject state=rt.preparationState();
@@ -888,6 +973,9 @@ public final class MainActivity extends Activity {
         existing.addView(label("Run inside your existing server's Linux distro: python3 export-existing-lsb.py /path/to/server. It creates a server ZIP and SQL.gz.",13,MUTED));
     }
     private void diagnosticsPage() throws IOException {
+        LinearLayout latest=featuredCard("Latest operation");latest.addView(label(OperationProgress.current().summary(),14,TEXT));button(latest,"Live progress details",this::showProgressDetails,true);
+        latest.addView(label("Older failures belong to earlier operations. A clean client exit is shown as completed; it does not by itself verify world entry.",13,MUTED));
+        button(latest,"Advanced settings and repairs",()->navigate("Advanced",""),true);
         supportTile();
         LinearLayout live=featuredCard("Live server log");
         addLiveServerLog(live);
@@ -895,7 +983,7 @@ public final class MainActivity extends Activity {
         d.addView(label("Support ZIPs contain the reference profile, key-file hashes, import summary, saved server/region, and app operation/probe logs. They exclude game payloads, Wine registry hives, and account passwords.", 14, MUTED));
         button(d, "View client inventory", () -> { try { showText("Client inventory", store(this).inventory()); } catch (Exception e) { error(e); } });
         button(d, "View repair script", () -> { try { File f = new File(getFilesDir(), "repair-preview.txt"); showText("Repair recipe · not yet executed", f.exists() ? FilesEx.read(f, 32768) : "Use Client → Validate client and preview repair script first."); } catch (Exception e) { error(e); } });
-        button(d, "View operation log", () -> { try { File f = new File(getFilesDir(), "operations.log"); showText("Operation log", f.exists() ? FilesEx.read(f, 262144) : "No operations yet"); } catch (Exception e) { error(e); } });
+        button(d, "View historical operation log", () -> { try { File f = new File(getFilesDir(), "operations.log"); showText("Historical operations · includes earlier failures", f.exists() ? FilesEx.read(f, 262144) : "No operations yet"); } catch (Exception e) { error(e); } });
         LinearLayout next = card("Runtime status");
         next.addView(label("Client files: managed import available\nRegistry/COM repair: in-app staged initialization\nWindows runtime: Box64 fallback and verified FEX v3 world play\nDisplay, D3D8 and audio: open-probe checks in Runtime tab\nFFXI registration/COM: staged preparation on Client tab\nLogin: prepared-client launch on Client tab\nController: native joystick mapping\nServer: isolated source/database deployment\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
     }
@@ -933,18 +1021,25 @@ public final class MainActivity extends Activity {
                     }
                 }
             }
+            JSONObject workingCombination=kind.equals("working-backup")?InstallationSummary.snapshot(ctx):null;
             try (OutputStream out = ctx.getContentResolver().openOutputStream(uri, "wt")) {
                 if (out == null) throw new IOException("Cannot write to the selected destination");
                 switch (kind) {
                     case "server-helper": try(InputStream helper=ctx.getAssets().open("server/export_existing.py")){byte[] b=new byte[8192];int n;while((n=helper.read(b))!=-1)out.write(b,0,n);} break;
                     case "server-db": ServerRuntime.get(ctx).exportDatabase(out,p); break;
                     case "backup": SessionBackup.export(ctx,out,p); break;
+                    case "working-backup": SessionBackup.export(ctx,out,p,workingCombination);break;
                     case "prepared": case "launcher": store(ctx).exportPrepared(out, profile(ctx), windowsLauncher(ctx), kind.equals("prepared"), p); break;
                     case "profile": out.write(profile(ctx).getBytes(StandardCharsets.UTF_8)); break;
                     case "support": support(ctx, out); break;
                     default: throw new IOException("Export operation was lost; please select it again");
                 }
             } catch (Exception e) { try { DocumentsContract.deleteDocument(ctx.getContentResolver(), uri); } catch (Exception ignored) { } throw e; }
+            if(workingCombination!=null){
+                try{InstallationSummary.recordSaved(ctx,workingCombination,uri.toString());}
+                catch(Exception error){return "Working-combination backup saved, but its local summary could not be recorded. Keep the selected ZIP for recovery.";}
+                return "Working combination saved. Restore this complete ZIP to recover the client, loader, server, database and settings together.";
+            }
             return "Export completed: " + kind + ".";
             } finally { try { ctx.getContentResolver().releasePersistableUriPermission(uri, grant); } catch (SecurityException ignored) { } }
         });
@@ -987,8 +1082,9 @@ public final class MainActivity extends Activity {
         ServerRuntime runtime=ServerRuntime.get(this);
         ServerRuntime.LogSnapshot snapshot=serverLogSnapshot;
         if(snapshot!=null&&snapshot.epoch!=runtime.logEpoch())snapshot=null;
-        String latest=snapshot!=null&&snapshot.running&&runtime.hasLogOperation()&&WorkService.busy?snapshot.latest:"";
-        if(latestServerOutput!=null){latestServerOutput.setVisibility(latest.isEmpty()?View.GONE:View.VISIBLE);if(!latest.isEmpty())latestServerOutput.setText("Latest server output: "+latest);}
+        String latest=snapshot!=null&&snapshot.running&&runtime.hasLogOperation()&&(WorkService.busy||OperationProgress.server.running)?snapshot.latest:"";
+        if(latestServerOutput!=null){String line=!latest.isEmpty()?"Latest server output: "+latest:OperationProgress.current().running?"Latest update: "+OperationProgress.current().step:"";latestServerOutput.setVisibility(line.isEmpty()?View.GONE:View.VISIBLE);latestServerOutput.setText(line);}
+        if(progressDetails!=null)progressDetails.setText(OperationProgress.current().details()+(latest.isEmpty()?"":"\n\nLatest server output\n"+latest));
         String text=snapshot==null?"Reading server output…":snapshot.text;
         updateServerLogView(serverLogBody,serverLogScroll,text);updateServerLogView(serverLogDialogBody,serverLogDialogScroll,text);
     }
@@ -1014,7 +1110,7 @@ public final class MainActivity extends Activity {
     private void requestServerLogs(){
         if(!resumed||SessionBackup.active||!SessionBackup.recoveryError.isEmpty()||serverLogReadPending||SystemClock.uptimeMillis()<logReadAfter)return;
         ServerRuntime runtime=ServerRuntime.get(this);
-        if(!(runtime.hasLogOperation()&&WorkService.busy)&&serverLogBody==null&&serverLogDialogBody==null)return;
+        if(!(runtime.hasLogOperation()&&(WorkService.busy||OperationProgress.server.running))&&serverLogBody==null&&serverLogDialogBody==null)return;
         if(serverLogReader==null)serverLogReader=Executors.newSingleThreadExecutor();
         serverLogReadPending=true;logReadAfter=SystemClock.uptimeMillis()+1000;final long viewGeneration=logViewGeneration;
         serverLogReader.execute(()->{

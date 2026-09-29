@@ -59,7 +59,7 @@ public class FantasyTilesTest {
         android.content.SharedPreferences prefs=ctx.getSharedPreferences("runtime",0);
         prefs.edit().putBoolean("fex",true).putBoolean("fex_x87",true).putBoolean("dxvk_271",true).putBoolean("turnip_sysmem",false).putBoolean("dxvk_two_compilers",false).putInt("display_fps",60).commit();
         java.util.Map<String,?> before=prefs.getAll();
-        org.robolectric.android.controller.ActivityController<MainActivity> activity=Robolectric.buildActivity(MainActivity.class,new android.content.Intent(ctx,MainActivity.class).putExtra("tab","Client")).setup();
+        org.robolectric.android.controller.ActivityController<MainActivity> activity=Robolectric.buildActivity(MainActivity.class,new android.content.Intent(ctx,MainActivity.class).putExtra("tab","Advanced")).setup();
         try{
             Field f=MainActivity.class.getDeclaredField("tiles");f.setAccessible(true);FantasyTiles tiles=(FantasyTiles)f.get(activity.get());
             layout(tiles,920);assertNotNull(text(tiles,"◇  Proven fixes"));assertNotNull(text(tiles,"◇  Past experiments"));

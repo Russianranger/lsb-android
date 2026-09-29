@@ -51,6 +51,9 @@ final class SessionBackup {
     }
     private static final class OwnedProcessException extends Exception {}
     static void export(Context c,OutputStream out,SafeZip.Progress progress)throws Exception {
+        export(c,out,progress,null);
+    }
+    static void export(Context c,OutputStream out,SafeZip.Progress progress,JSONObject workingCombination)throws Exception {
         active=true;
         try {
             idle(c);recover(c);
@@ -59,6 +62,7 @@ final class SessionBackup {
                 String nested=managed.toPath().startsWith(files.toPath())?files.toPath().relativize(managed.toPath()).toString().replace(File.separatorChar,'/'):null;
                 JSONObject metadata=new JSONObject().put("format",FORMAT).put("package",c.getPackageName())
                     .put("created",System.currentTimeMillis()).put("preferences",captureSettings(c));
+                if(workingCombination!=null)metadata.put("working_combination",workingCombination);
                 SessionArchive.write(out,roots(files,managed),metadata.toString().getBytes(StandardCharsets.UTF_8),(root,path)->{
                     if(!root.equals("files"))return false;
                     if(nested!=null&&(path.equals(nested)||path.startsWith(nested+"/")))return true;
@@ -87,6 +91,10 @@ final class SessionBackup {
                     File marker=new File(stage.files(),SETTINGS);
                     if(Files.exists(marker.toPath(),LinkOption.NOFOLLOW_LINKS))throw new IOException("Backup contains a reserved restore marker");
                     FilesEx.text(marker,prefs.toString());
+                    if(metadata.has("working_combination")){
+                        File working=new File(stage.files(),"working-combination.json");if(Files.isSymbolicLink(working.toPath()))throw new IOException("Invalid working-combination receipt");
+                        FilesEx.text(working,new JSONObject().put("format",1).put("saved_at",metadata.getLong("created")).put("destination","Restored complete working-combination backup").put("combination",metadata.getJSONObject("working_combination")).toString());
+                    }
                     SafeZip.checkCancelled();progress.update("Backup verified. Activating the restored installation…");
                     // No cancellation between committing the folders and committing settings.
                     transaction.activate();committed=true;

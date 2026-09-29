@@ -17,8 +17,9 @@ public final class ServerService extends Service {
         if(WorkService.busy||ServerRuntime.get(this).alive()){stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return START_NOT_STICKY;}
         wake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"lsb:server");wake.acquire();
         worker=new Thread(()->{
-            try{ServerRuntime.get(this).perform("start",false,s->{});}
-            catch(Exception e){ServerRuntime.get(this).status=e.getMessage();WorkService.append(this,"Server: "+e.getMessage());}
+            OperationProgress.server.begin(this,"server","Start managed server");
+            try{ServerRuntime.get(this).perform("start",false,s->{if(OperationProgress.server.running){OperationProgress.server.update(s);if(ServerRuntime.get(this).ready())OperationProgress.server.finish(this,"Completed","Server ready · all services loaded");}});if(OperationProgress.server.running)OperationProgress.server.finish(this,"Stopped",ServerRuntime.get(this).status);}
+            catch(Exception e){ServerRuntime.get(this).status=e.getMessage();OperationProgress.server.finish(this,"Needs attention",e.getMessage());WorkService.append(this,"Server: "+e.getMessage());}
             finally{new Handler(Looper.getMainLooper()).post(()->{if(wake!=null&&wake.isHeld())wake.release();worker=null;WorkService.generation++;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}
         },"lsb-server");worker.start();return START_NOT_STICKY;
     }

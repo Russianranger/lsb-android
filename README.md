@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.54 adds optional quick login and first-zone-entry diagnostics.** Saved credentials are bound to the selected server, can be forgotten, survive complete session backups, and stay out of support ZIPs. The Bastok Mines first-character failure remains under investigation; this build records the missing initialization/cutscene callbacks without rebuilding the deployed server. See [testing steps](docs/TESTING-0.5.54.md) and [handoff](docs/HANDOFF.md). The existing Play, guided setup and separate gameplay/updater presets remain available.
+Current development: **0.5.55 simplifies navigation, identifies the active installation, saves a complete working combination for recovery, and unifies operation progress.** Play, Client, Server, Build and Controller remain primary; More contains Setup, Advanced and Diagnostics. See [testing steps](docs/TESTING-0.5.55.md). The 0.5.54 device pass confirmed Bastok opening/zoning, a new Windurst character, and clean logout.
 
 The Build tab prepares an independent server/database pair using an identified successful jemalloc build. Choose a migrated copy of current player data, an imported SQL backup, or a fresh database. The active pair changes only after an explicit checked deployment and remains available for rollback. The Server tab handles start/stop, accounts, database export and rollback. A separately labelled advanced path retains imported ARM64 binaries plus SQL deployment.
 

@@ -26,6 +26,7 @@ final class ClientRuntime {
     final File home,root,prefix,run,tmp,logs,backend,probes;
     volatile String status="Install the runtime, then start the Windows checks.";
     volatile String launchError="";
+    volatile boolean operationFailed;
     volatile boolean starting;
     private volatile boolean active;
     private volatile Process process;
@@ -334,7 +335,7 @@ final class ClientRuntime {
             if(reserved&&(stopRequested||Thread.currentThread().isInterrupted()))throw new InterruptedIOException("Play cancelled");
             playWaiting=false;active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();
         }}
-        launchError="";
+        launchError="";operationFailed=false;
         try{
             if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher","gamepad-config","update-client","verify-client-update").contains(action))throw new IOException("Unsupported runtime action");
             if(updating&&ServerRuntime.get(context).alive())throw new IOException("Stop the managed server before updating or verifying the client");
@@ -437,7 +438,7 @@ final class ClientRuntime {
             try(OutputStream input=process.getOutputStream()){if(action.equals("launch"))login.send(input);}
             if(stopRequested)write(new File(run,"stop"),"stop\n");status=action.equals("update-client")?"PlayOnline repair is opening in the staged copy. Use Check Files → FINAL FANTASY XI → File Repair.":initialize?"Initializing working client. Open the display for installer prompts.":clientOperation?"Checking the loader and starting the client…":"Starting Windows checks. Open the display to follow progress.";
             while(!process.waitFor(1,TimeUnit.SECONDS)){
-                if(new File(run,"status.json").isFile())try{JSONObject s=new JSONObject(read(new File(run,"status.json"),131072));status=s.optString("error",s.optString("message",s.optString("phase",status))).replace('_',' ');}catch(Exception ignored){}
+                if(new File(run,"status.json").isFile())try{JSONObject s=new JSONObject(read(new File(run,"status.json"),131072));status=s.optString("error",s.optString("message",s.optString("phase",status))).replace('_',' ');OperationProgress.client.update(status);}catch(Exception ignored){}
             }
             JSONObject finalState=state().optJSONObject("launch");
             if(initialize||action.equals("verify-client-update"))retainInitialization(candidate);
@@ -466,12 +467,13 @@ final class ClientRuntime {
                     reapOrphans();write(new File(candidate,"initialization-passed.json"),report.toString(2));prepared().promote(candidate);
                     status="Client checks passed. Prepared copy activated and ready for launch.";
                 }else if(action.equals("check-launcher"))status="Loader dependencies passed. Enter your account and choose Launch FFXI.";
-                else if(action.equals("launch"))status="Client closed normally. Export Diagnostics and report whether login and world entry worked.";
+                else if(action.equals("launch"))status="Session completed · client closed normally. Ready to play again.";
                 else status="Automatic checks passed. Confirm picture, sound and input, then relaunch.";
             }
-            else if(finalState!=null&&finalState.has("error")){status=finalState.getString("error");if(action.equals("launch"))launchError=status;}
-            else status="Runtime stopped (exit "+process.exitValue()+"). Export Diagnostics if unexpected.";
+            else if(finalState!=null&&finalState.has("error")){operationFailed=true;status=finalState.getString("error");if(action.equals("launch"))launchError=status;}
+            else {operationFailed=true;status="Runtime stopped (exit "+process.exitValue()+"). Export Diagnostics if unexpected.";}
         }catch(Exception error){
+            operationFailed=true;
             if(action.equals("launch")&&!stopRequested)launchError=String.valueOf(error.getMessage());
             if(process==null)try{
                 JSONObject failure=new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",stopRequested?"stopped":"error")

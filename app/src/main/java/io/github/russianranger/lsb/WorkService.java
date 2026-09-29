@@ -29,14 +29,15 @@ public final class WorkService extends Service {
     public static synchronized boolean submit(Context context, String title, Job job) {
         if (busy || ClientRuntime.get(context).alive()) { closeJob(job);return false; }
         pending = job; busy = true; cancellationRequested = false; message = title; result = "";
+        OperationProgress.work.begin(context,"work",title);
         try { context.startForegroundService(new Intent(context, WorkService.class)); return true; }
-        catch (RuntimeException e) { pending = null; closeJob(job);busy = false; message = "Could not start transfer: " + e.getMessage(); generation++; return false; }
+        catch (RuntimeException e) { pending = null; closeJob(job);busy = false; message = "Could not start transfer: " + e.getMessage(); OperationProgress.work.finish(context,"Failed",message);generation++; return false; }
     }
     public static void cancel() { cancellationRequested = true; Thread t = runningThread; if (t != null) t.interrupt(); }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         final Job job;
         synchronized (WorkService.class) { job = pending; pending = null; }
-        if (job == null) { busy = false; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY; }
+        if (job == null) { busy = false;if(OperationProgress.work.running)OperationProgress.work.finish(this,"Cancelled","No pending operation to resume."); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY; }
         synchronized(this){currentJob=job;}
         try {
         NotificationManager nm = getSystemService(NotificationManager.class);
@@ -51,6 +52,7 @@ public final class WorkService extends Service {
                 if (cancellationRequested) throw new InterruptedIOException("Operation cancelled");
                 result = job.run(getApplicationContext(), text -> {
                     message = text;
+                    OperationProgress.work.update(text);
                     if (System.currentTimeMillis() - lastNotice > 1200) {
                         lastNotice = System.currentTimeMillis(); nm.notify(1, notification(text));
                     }
@@ -61,6 +63,7 @@ public final class WorkService extends Service {
                 result = e.getClass().getSimpleName() + ": " + e.getMessage();
                 append(this, message + ": " + result);
             } finally {
+                OperationProgress.work.finish(getApplicationContext(),message,result);
                 closeCurrentJob();
                 runningThread = null;
                 new Handler(Looper.getMainLooper()).post(() -> {
@@ -74,6 +77,7 @@ public final class WorkService extends Service {
             closeCurrentJob();
             if(wake!=null&&wake.isHeld())wake.release();
             message="Failed";result="Could not start transfer: "+e.getMessage();append(this,result);
+            OperationProgress.work.finish(this,message,result);
             busy=false;generation++;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf(startId);
         }
         return START_NOT_STICKY;
