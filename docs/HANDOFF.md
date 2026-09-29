@@ -38,7 +38,30 @@ invalid saves preserve the existing login. One-use service transport remains.
 Complete backups include the opted-in login; support exports exclude it.
 
 Version 0.5.54 / code 70. See [TESTING-0.5.54.md](TESTING-0.5.54.md).
-Verification and delivery results will be appended after CI.
+Production candidate `ac7775734e92375cba57d3442922e6f9b4879f95` passed verify
+job `109235476625` in push run `36515052659`: 129 Android, 126 server and
+197 runtime unit tests, core import/recovery checks, and both APK builds.
+Windows integration job `109236116968` also passed. Server deployment,
+Box64/FEX and PlayOnline integration were still running at delivery; do not
+claim these passed. Inspected the narrow quick-login UI preview.
+
+The first APK packaging attempt exposed a stale 0.5.53 manifest version;
+manifest, Gradle and workflow now agree on 70 / 0.5.54. Final APKs were signed
+with the existing certificate SHA-256
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Verified signatures, package IDs, version, 16 KiB alignment, all 72 payload
+entries against exact push-CI artifacts, source runtime/server assets and
+70 shared entries between variants. Each APK is 18,560,570 bytes:
+
+- LSB-Android-0.5.54.apk SHA-256:
+  `3145cc8a10386943339e8229890ff488ac94a2f2d847b98f8d235a276f2c1fce`
+- LSB-Android-Restore-Test-0.5.54.apk SHA-256:
+  `be81943fc924899f33e38675811fbe400a19ecd174d9b7f6ff6578469b890de8`
+
+Both downloads were saved successfully. Ask for a new support ZIP after
+restarting the server on 0.5.54 and retrying the existing Leidanar character.
+The trace does not require recompiling or replacing the database. Bastok's
+underlying failure remains unresolved until that evidence is available.
 
 # 0.5.53: Play home, guided setup and purpose-based runtime presets
 
