@@ -59,8 +59,8 @@ public final class MainActivity extends Activity {
                 cancel.setVisibility(WorkService.busy ? View.VISIBLE : View.GONE);
             }
             if(!SessionBackup.active&&SessionBackup.recoveryError.isEmpty()){
-                if(runtimeStatus!=null)runtimeStatus.setText(ClientRuntime.get(MainActivity.this).status);
-                if(serverStatus!=null)serverStatus.setText(ServerRuntime.get(MainActivity.this).status);
+                if(runtimeStatus!=null&&(!tab.equals("Play")||ClientRuntime.get(MainActivity.this).alive()))runtimeStatus.setText(ClientRuntime.get(MainActivity.this).status);
+                if(serverStatus!=null&&(!tab.equals("Play")||ServerRuntime.get(MainActivity.this).alive()))serverStatus.setText(ServerRuntime.get(MainActivity.this).status);
                 if(serverStartup!=null)serverStartup.setText(ServerRuntime.get(MainActivity.this).startupLog());
                 if((tab.equals("Server")||tab.equals("Build")||tab.equals("Play")||tab.equals("Setup"))&&(serverAliveUi!=ServerRuntime.get(MainActivity.this).alive()||clientAliveUi!=ClientRuntime.get(MainActivity.this).alive()))draw();
                 if(openPlayDisplay&&ClientRuntime.get(MainActivity.this).displayAvailable()){openPlayDisplay=false;startActivity(new Intent(MainActivity.this,RuntimeActivity.class));}
@@ -279,8 +279,11 @@ public final class MainActivity extends Activity {
         ClientRuntime rt=ClientRuntime.get(this);ServerRuntime sr=ServerRuntime.get(this);ClientStore source=store(this);
         SetupGuide.Step step=SetupGuide.next(this);boolean managed=SetupGuide.local(this);JSONObject prepared=rt.preparationState();
         LinearLayout play=featuredCard("Play FINAL FANTASY XI");
-        runtimeStatus=label(rt.status,15,ACCENT);play.addView(runtimeStatus);
-        serverStatus=label(managed?sr.status:"External server · start it before choosing Play",14,MUTED);if(managed)play.addView(serverStatus);
+        String clientMessage=rt.alive()?rt.status:!rt.launchError.isEmpty()?rt.launchError:step.ready()?"Ready to play":"Setup needed · "+step.title;
+        runtimeStatus=label(clientMessage,15,ACCENT);play.addView(runtimeStatus);
+        String serverMessage=sr.status;
+        if(!sr.alive()&&serverMessage.equals("Import your existing server and SQL backup to begin."))serverMessage=sr.deployment().has("generation")?"Server stopped · Play will start it":"Server setup needed";
+        serverStatus=label(managed?serverMessage:"External server · start it before choosing Play",14,MUTED);if(managed)play.addView(serverStatus);
         play.addView(label(managed?"Server on this device · Play starts it and waits for all services before opening FFXI.":"Existing server · "+source.config().host,15,TEXT));
         play.addView(label(RuntimePresets.gameplayLabel(this),13,MUTED));
         if(prepared.has("current")){

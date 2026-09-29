@@ -77,7 +77,13 @@ public class PlaySetupTest {
         Map<String,?> before=p.getAll();SetupGuide.restored(context);RuntimePresets.initializeNewSetup(context);
         assertTrue(SetupGuide.next(context).ready());assertTrue(SetupGuide.local(context));assertEquals(before,p.getAll());
         org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
-        try{View content=(View)field(c.get(),"content");assertNotNull(text(content,"Play"));assertNull(text(content,"Continue setup"));capture(content,920,"play-restored-wide.png");capture(content,400,"play-restored-narrow.png");assertEquals(before,p.getAll());}
+        try{
+            View content=(View)field(c.get(),"content");assertNotNull(text(content,"Play"));assertNull(text(content,"Continue setup"));
+            assertNotNull(text(content,"Ready to play"));assertNotNull(text(content,"Server stopped · Play will start it"));
+            ((Runnable)field(c.get(),"poll")).run();
+            assertNotNull(text(content,"Ready to play"));assertNull(text(content,"Install the runtime, then start the Windows checks."));assertNull(text(content,"Import your existing server and SQL backup to begin."));
+            capture(content,920,"play-restored-wide.png");capture(content,400,"play-restored-narrow.png");assertEquals(before,p.getAll());
+        }
         finally{c.pause().stop().destroy();}
     }
     @Test public void gameplayAndUpdaterChoicesAreIndependentAndNeverRewritePreparedFiles()throws Exception{
