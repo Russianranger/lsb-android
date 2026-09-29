@@ -47,8 +47,12 @@ final class SetupGuide {
             if(!sr.deployment().has("generation")){
                 JSONObject build=sr.buildState(),selected=build.getJSONObject("selected_source"),compiled=build.getJSONObject("build"),staged=build.getJSONObject("staged");
                 if(selected.length()==0)return new Step("source","Choose your server source","Fetch a revision or import your server ZIP on Build. Keep it compatible with the client and loader you imported.","Fetch or import server source");
-                if(!compiled.optString("state").equals("passed"))return new Step("build","Build the selected source","Build with jemalloc and choose the number of workers on Build. Live compiler output appears on that page.","Build server with jemalloc");
-                if(!staged.has("generation"))return new Step("database","Prepare the server database","Choose a fresh database or import your SQL backup, then stage it with the completed build.","Prepare database on Build");
+                JSONObject builtSource=compiled.optJSONObject("selected_source");String snapshot=selected.optString("snapshot_id");
+                if(!compiled.optString("state").equals("passed")||!compiled.optString("allocator").equals("jemalloc")||compiled.optString("build_id").isEmpty()
+                    ||builtSource==null||snapshot.isEmpty()||!snapshot.equals(builtSource.optString("snapshot_id")))
+                    return new Step("build","Build the selected source","Build with jemalloc and choose the number of workers on Build. An older build is retained separately; this step follows your currently fetched source.","Build server with jemalloc");
+                if(!staged.has("generation")||!compiled.optString("build_id").equals(staged.optString("build_id"))||staged.optBoolean("stale_database"))
+                    return new Step("database","Prepare the server database","Choose a fresh database or import your SQL backup, then stage it with the completed build.","Prepare database on Build");
                 if(!staged.optString("state").equals("checked"))return new Step("check","Check the staged server and database","Verify the selected build and its database before deployment.","Check staging on Build");
                 return new Step("deploy","Deploy the checked server","Review the staged build and player counts, then deploy that exact pair.","Deploy checked pair on Build");
             }

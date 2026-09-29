@@ -91,11 +91,17 @@ public class PlaySetupTest {
     @Test public void localGuideResumesEachBuildReceiptAndExternalSkipsServer()throws Exception{
         readyClient();context.getSharedPreferences("setup",0).edit().putString("mode","local").commit();assertEquals("server_runtime",SetupGuide.next(context).id);
         readyServer();new File(server.state,"active.json").delete();assertEquals("source",SetupGuide.next(context).id);
-        File source=new File(MainActivity.storage(context),"server/current/source-identity.json");FilesEx.text(source,"{\"commit\":\"abc\"}");
+        File source=new File(MainActivity.storage(context),"server/current/source-identity.json");FilesEx.text(source,"{\"snapshot_id\":\"selected-source\"}");
         try{
-            assertEquals("build",SetupGuide.next(context).id);FilesEx.text(new File(server.state,"source-build/server/android-build.json"),"{\"state\":\"passed\"}");assertEquals("database",SetupGuide.next(context).id);
-            FilesEx.text(new File(server.state,"staged.json"),"{\"generation\":\""+ID+"\",\"state\":\"staged\"}");assertEquals("check",SetupGuide.next(context).id);
-            FilesEx.text(new File(server.state,"staged.json"),"{\"generation\":\""+ID+"\",\"state\":\"checked\"}");assertEquals("deploy",SetupGuide.next(context).id);
+            File receipt=new File(server.state,"source-build/server/android-build.json");
+            JSONObject compiled=new JSONObject().put("state","passed").put("build_id",ID).put("allocator","jemalloc").put("selected_source",new JSONObject().put("snapshot_id","older-source"));
+            FilesEx.text(receipt,compiled.toString());assertEquals("build",SetupGuide.next(context).id);
+            compiled.getJSONObject("selected_source").put("snapshot_id","selected-source");FilesEx.text(receipt,compiled.toString());assertEquals("database",SetupGuide.next(context).id);
+            JSONObject staged=new JSONObject().put("generation",ID).put("build_id","older-build").put("state","checked");File stage=new File(server.state,"staged.json");
+            FilesEx.text(stage,staged.toString());assertEquals("database",SetupGuide.next(context).id);
+            staged.put("build_id",ID).put("state","staged");FilesEx.text(stage,staged.toString());assertEquals("check",SetupGuide.next(context).id);
+            staged.put("state","checked");FilesEx.text(stage,staged.toString());assertEquals("deploy",SetupGuide.next(context).id);
+            staged.put("stale_database",true);FilesEx.text(stage,staged.toString());assertEquals("database",SetupGuide.next(context).id);
             context.getSharedPreferences("setup",0).edit().putString("mode","external").commit();assertTrue(SetupGuide.next(context).ready());
         }finally{FilesEx.delete(new File(MainActivity.storage(context),"server"));}
     }
