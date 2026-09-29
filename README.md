@@ -1,6 +1,6 @@
 # LSB Android
 
-Current development: **0.5.52 adds the profile service required by current xiloader.** New source builds include all required jemalloc programs. Existing deployments can compile and install the missing profile service alone from their deployed source, preserving the database and other server programs. Read the [0.5.52 recovery steps](docs/TESTING-0.5.52.md) and [handoff](docs/HANDOFF.md) for validation and delivery status.
+Current development: **0.5.53 adds Play, guided setup and separate gameplay/updater presets.** Play starts the managed server, waits for every required service, then opens FFXI. Setup recognizes complete backups and resumes from existing installed data. The tested Thor gameplay preset uses FEX; PlayOnline can independently use Box64. Restored settings are retained. See the [0.5.53 testing steps](docs/TESTING-0.5.53.md) and [handoff](docs/HANDOFF.md). The 0.5.52 profile repair is confirmed on-device through login, zoning, combat and logout.
 
 The Build tab prepares an independent server/database pair using an identified successful jemalloc build. Choose a migrated copy of current player data, an imported SQL backup, or a fresh database. The active pair changes only after an explicit checked deployment and remains available for rollback. The Server tab handles start/stop, accounts, database export and rollback. A separately labelled advanced path retains imported ARM64 binaries plus SQL deployment.
 

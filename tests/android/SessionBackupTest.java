@@ -106,7 +106,8 @@ public class SessionBackupTest {
         files.put("rt/clients/"+GENERATION+"/prefix/system.reg","prepared Windows registry");
         files.put("rt/clients/"+GENERATION+"/client/ROM/0/0.DAT","prepared client fixture");
         files.put("rt/clients/"+GENERATION+"/copy-complete","1\n");
-        files.put("server-runtime/rootfs/lsb-server-ready","installed");
+        files.put("server-runtime/rootfs/lsb-server-ready","installed");files.put("server-runtime/rootfs/lsb-server-tools-v4","installed");
+        files.put("server-runtime/state/generations/"+GENERATION+"/deployment.json","{\"generation\":\""+GENERATION+"\",\"accounts\":3}");
         files.put("server-runtime/state/active.json","{\"current\":\""+GENERATION+"\"}");
         files.put("server-runtime/state/generations/"+GENERATION+"/database/ibdata1","raw stopped database fixture");
         files.put("server-runtime/state/generations/"+GENERATION+"/database-credentials.json","{\"game\":\"fixture-private-secret\"}");
@@ -142,6 +143,7 @@ public class SessionBackupTest {
         assertEquals(Files.getPosixFilePermissions(wine),Files.getPosixFilePermissions(new File(target.files,"rt/root/bin/wine").toPath()));
         for(String path:Arrays.asList("rt/run/credentials.pipe","rt/tmp/socket","server-runtime/run/status.json","server-runtime/tmp/socket"))assertFalse(path,new File(target.files,path).exists());
         assertFalse(new File(target.files,SETTINGS).exists());assertFalse(SessionBackup.active);
+        SetupGuide.restored(target);assertTrue(SetupGuide.local(target));assertTrue(SetupGuide.next(target).ready());sameSettings(source,target);
     }
 
     @Test public void fallbackAndExternalStorageCanRestoreAcrossBothLayouts()throws Exception {

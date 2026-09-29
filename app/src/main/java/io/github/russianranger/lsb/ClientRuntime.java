@@ -35,6 +35,19 @@ final class ClientRuntime {
     private final DisplayPerformance performance;
     private final NativePerformance nativePerformance;
     private volatile Thread preparingThread;
+    private boolean playWaiting;
+    void reservePlay()throws IOException {
+        synchronized(WorkService.class){synchronized(this){
+            if(alive()||WorkService.busy||SessionBackup.active||!SessionBackup.recoveryError.isEmpty())throw new IOException("Wait for the current operation");
+            active=true;starting=true;playWaiting=true;stopRequested=false;preparingThread=Thread.currentThread();
+            status="Preparing to play…";launchError="";
+        }}
+    }
+    synchronized void releasePlay(){
+        if(playWaiting&&preparingThread==Thread.currentThread()){
+            playWaiting=false;preparingThread=null;starting=false;active=false;
+        }
+    }
     private ClientRuntime(Context c){
         context=c;home=new File(c.getFilesDir(),"rt");root=new File(home,"root");prefix=new File(home,"prefix");
         run=new File(home,"run");tmp=new File(home,"tmp");logs=new File(home,"logs");backend=new File(home,"backend");probes=new File(home,"probe");
@@ -52,6 +65,7 @@ final class ClientRuntime {
     }
     boolean installed(){return new File(root,"lsb-runtime.sha256").isFile();}
     boolean alive(){Process p=process;return active||starting||(p!=null&&p.isAlive());}
+    boolean displayAvailable(){Process p=process;return p!=null&&p.isAlive()&&displaySocket().exists();}
     String sessionKey(){return sessionId;}
     JSONObject compatibilitySnapshot()throws Exception {
         File generation=launchGeneration();JSONObject manifest=clientManifest(generation);String loader=manifest.optString("loader");
@@ -314,7 +328,12 @@ final class ClientRuntime {
             :!initialize&&!updating&&runtimePreferences.getBoolean("fex",false);
         FexRuntime selectedFex=null;
         ProotAcceleration acceleration=null;
-        synchronized(WorkService.class){synchronized(this){if(alive()||WorkService.busy)throw new IOException("Wait for the current operation");active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();}}
+        synchronized(WorkService.class){synchronized(this){
+            boolean reserved=playWaiting&&preparingThread==Thread.currentThread();
+            if((alive()&&!reserved)||WorkService.busy)throw new IOException("Wait for the current operation");
+            if(reserved&&(stopRequested||Thread.currentThread().isInterrupted()))throw new InterruptedIOException("Play cancelled");
+            playWaiting=false;active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();
+        }}
         launchError="";
         try{
             if(!Arrays.asList("probe","initialize","installer","launch","check-launcher","repair-launcher","gamepad-config","update-client","verify-client-update").contains(action))throw new IOException("Unsupported runtime action");
