@@ -86,9 +86,10 @@ public class SessionBackupTest {
             .putLong("large_value",9223372036854775707L).putFloat("sensitivity",1.25f).putStringSet("options",new HashSet<>(Arrays.asList("one","two"))).commit());
         assertTrue(c.getSharedPreferences("controller",0).edit().putString("profile","Thor").commit());
         assertTrue(c.getSharedPreferences("custom_future_settings",0).edit().putString("future","retained").commit());
+        SavedLogin.save(c,"127.0.0.1","offline-account","offline-password");
     }
     private static void sameSettings(Installation a,Installation b){
-        for(String name:Arrays.asList("runtime","controller","custom_future_settings"))assertEquals(name,a.getSharedPreferences(name,0).getAll(),b.getSharedPreferences(name,0).getAll());
+        for(String name:Arrays.asList("runtime","controller","custom_future_settings","quick_login"))assertEquals(name,a.getSharedPreferences(name,0).getAll(),b.getSharedPreferences(name,0).getAll());
     }
     @Before public void before(){reset();}
     @After public void after()throws Exception {

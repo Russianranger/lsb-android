@@ -1,3 +1,45 @@
+# 0.5.54: quick login and unresolved Bastok first-entry investigation
+
+User restored content, successfully played Tarrin, then created the character
+reported by logs as **Leidanar** (user typed Liedanar). Support archive
+`lsb-support(20260929-023013).zip` SHA-256
+`2ced77639c5e1cbf3e4ec5421700f7fe4c2e5b21ce3c8d1e6c727c6c168f8423`:
+
+- Restore completed 02:16:32 UTC. All five services became ready; map startup
+  took 137.04 seconds. Working FEX gameplay settings were retained.
+- Tarrin charid 3 entered West Ronfaure and logged out normally at 02:21:38.
+- Name Leidan was rejected as already used. Leidanar charid 4 was created at
+  02:25:00; handoff selected Bastok Mines (234), 127.0.0.1:54230 at 02:25:08.
+- Map session became active and loaded charid 4 at 02:25:16. Last map line is
+  InsertPC/IncreaseZoneCounter at 02:25:18.319. No subsequent map error,
+  watchdog, SQL failure or process exit was recorded. Client exited 0 after
+  signoff around 02:27:40–47; display remained responsive before closure.
+
+**Root cause is unresolved. Do not describe this version as a Bastok fix.**
+The connection reached the correct map. Existing evidence cannot distinguish a
+C++ zone-entry stall, Lua initialization, or opening-event/client handoff failure.
+Inspected source matches pinned upstream 6d5a5137024e21602e37032f6e55a682971329be;
+88994cd in map logs is the locally generated imported source identity.
+Do not reset the character/database or disable cutscenes without evidence.
+
+This pass adds bounded Lua callback tracing, installed into the active generation
+on startup with no binary rebuild. Existing custom module entries are preserved;
+unsupported sources/custom files are left alone. Hooks forward the original
+arguments, results and errors; diagnostics cannot block game behavior. Separate
+support `server/zone-entry.log` retains up to 128 KiB beyond ordinary map-tail
+limits. Trace registration and zone/game entry/new-character/event-finish stages
+will narrow the failure on the next device attempt.
+
+User explicitly authorized storing throwaway offline passwords. Optional quick
+login is available on Play and advanced Client launch. A single account/password
+is stored in app-private preferences, bound to a normalized server hostname.
+Editing the address clears mismatched credentials, Forget removes them, and
+invalid saves preserve the existing login. One-use service transport remains.
+Complete backups include the opted-in login; support exports exclude it.
+
+Version 0.5.54 / code 70. See [TESTING-0.5.54.md](TESTING-0.5.54.md).
+Verification and delivery results will be appended after CI.
+
 # 0.5.53: Play home, guided setup and purpose-based runtime presets
 
 User confirmed successful login, zoning, NPC combat and logout on 0.5.52.

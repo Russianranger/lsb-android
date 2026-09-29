@@ -296,15 +296,19 @@ public final class MainActivity extends Activity {
             button(play,"Continue setup",()->navigate("Setup",""),true);
         }else if(!rt.alive()){
             EditText address=null;if(!managed)address=loginField(play,"Server address",source.config().host,android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
-            EditText account=loginField(play,"Account","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-            EditText secret=loginField(play,"Password","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);loginPassword=secret;
+            String loginHost=managed?"127.0.0.1":source.config().host;boolean savedLogin=SavedLogin.matches(this,loginHost);
+            EditText account=loginField(play,"Account",SavedLogin.account(this,loginHost),android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+            EditText secret=loginField(play,"Password",SavedLogin.password(this,loginHost),android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);secret.setSaveEnabled(false);loginPassword=secret;
+            CheckBox remember=new CheckBox(this);remember.setText("Remember account and password for quick login");remember.setTextColor(TEXT);remember.setChecked(savedLogin);play.addView(remember);
             final EditText externalAddress=address;
-            play.addView(label("Login details are used once and never saved. The server stays running after logout until you stop it.",13,MUTED));
-            button(play,"Play",()->{
+            play.addView(label("Saved logins stay in this app and are included in complete session backups. The server stays running after logout until you stop it.",13,MUTED));
+            Button launch=button(play,savedLogin?"Quick login":"Play",()->{
                 LoginRequest login=null;
                 try{
                     if(rt.alive())throw new IOException("The client is already starting or running");
                     login=new LoginRequest(managed?"127.0.0.1":externalAddress.getText().toString().trim(),account.getText().toString(),secret.getText().toString());
+                    if(remember.isChecked())SavedLogin.save(this,login.host,account.getText().toString(),secret.getText().toString());
+                    else if(SavedLogin.matches(this,loginHost))SavedLogin.forget(this);
                     LaunchConfig old=source.config();source.saveConfig(new LaunchConfig(login.host,old.region,old.polCore));
                     String ticket=RuntimeService.queueLogin(login);login=null;secret.setText("");account.setText("");
                     android.content.SharedPreferences prefs=getSharedPreferences("runtime",0);
@@ -313,6 +317,8 @@ public final class MainActivity extends Activity {
                     openPlayDisplay=true;rt.launchError="";rt.status="Preparing to play…";
                 }catch(Exception e){if(login!=null)login.close();RuntimeService.clearLogin();error(e);}
             });
+            if(externalAddress!=null)watchLoginHost(externalAddress,account,secret,remember,launch,"Play");
+            if(savedLogin)button(play,"Forget saved login",()->{try{SavedLogin.forget(this);draw();}catch(Exception e){error(e);}});
         }
         if(rt.alive()){
             button(play,"Open client display",()->startActivity(new Intent(this,RuntimeActivity.class)),true).setEnabled(rt.displayAvailable());
@@ -563,14 +569,18 @@ public final class MainActivity extends Activity {
         EditText server=loginField(card,"Server address",source.config().host,android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
         LinearLayout credentials=new LinearLayout(this);LinearLayout accountColumn=column(),passwordColumn=column();
         credentials.addView(accountColumn,new LinearLayout.LayoutParams(0,-2,1));credentials.addView(passwordColumn,new LinearLayout.LayoutParams(0,-2,1));passwordColumn.setPadding(dp(12),0,0,0);card.addView(credentials);
-        EditText account=loginField(accountColumn,"Account","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        EditText secret=loginField(passwordColumn,"Password","",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);loginPassword=secret;
-        card.addView(label("Account and password are used for this launch only. They are not saved. Reported login failures stop the launcher and show a reason so you can retry here.",13,MUTED));
-        button(card,"Launch FFXI",()->{
+        String loginHost=source.config().host;boolean savedLogin=SavedLogin.matches(this,loginHost);
+        EditText account=loginField(accountColumn,"Account",SavedLogin.account(this,loginHost),android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        EditText secret=loginField(passwordColumn,"Password",SavedLogin.password(this,loginHost),android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);secret.setSaveEnabled(false);loginPassword=secret;
+        CheckBox remember=new CheckBox(this);remember.setText("Remember account and password for quick login");remember.setTextColor(TEXT);remember.setChecked(savedLogin);card.addView(remember);
+        card.addView(label("Saved logins stay in this app and are included in complete session backups. Reported login failures stop the launcher so you can retry here.",13,MUTED));
+        Button launch=button(card,savedLogin?"Quick login":"Launch FFXI",()->{
             LoginRequest login=null;
             try{
                 if(rt.alive())throw new IOException("Stop the current client first");
                 login=new LoginRequest(server.getText().toString().trim(),account.getText().toString(),secret.getText().toString());
+                if(remember.isChecked())SavedLogin.save(this,login.host,account.getText().toString(),secret.getText().toString());
+                else if(SavedLogin.matches(this,loginHost))SavedLogin.forget(this);
                 LaunchConfig old=source.config();source.saveConfig(new LaunchConfig(login.host,old.region,old.polCore));
                 String ticket=RuntimeService.queueLogin(login);login=null;secret.setText("");account.setText("");
                 rt.launchError="";
@@ -579,7 +589,9 @@ public final class MainActivity extends Activity {
                 startForegroundService(new Intent(this,RuntimeService.class).putExtra("operation","launch").putExtra("renderer",renderer).putExtra("audio",true).putExtra("login_ticket",ticket).putExtra("display_profile",displayProfile).putExtra("startup_trace",startupTrace.isChecked()));
                 startActivity(new Intent(this,RuntimeActivity.class));
             }catch(Exception e){if(login!=null)login.close();RuntimeService.clearLogin();error(e);}
-        }).setEnabled(rt.installed()&&!rt.alive());
+        });launch.setEnabled(rt.installed()&&!rt.alive());
+        watchLoginHost(server,account,secret,remember,launch,"Launch FFXI");
+        if(savedLogin)button(card,"Forget saved login",()->{try{SavedLogin.forget(this);draw();}catch(Exception e){error(e);}});
         button(card,"Open client display",()->startActivity(new Intent(this,RuntimeActivity.class))).setEnabled(rt.alive());
         button(card,"Stop client",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());
         button(diagnostics,"Check launcher dependencies",()->startInitialization("check-launcher")).setEnabled(!rt.alive());
@@ -589,6 +601,18 @@ public final class MainActivity extends Activity {
             button(diagnostics,"Select launcher prerequisite (.exe)",()->pick("prerequisite")).setEnabled(!updateStaged&&!rt.alive());
             button(diagnostics,"Repair launcher prerequisites",()->startInitialization("repair-launcher")).setEnabled(!updateStaged&&!rt.alive()&&state.optBoolean("prerequisite_selected"));
         }
+    }
+    private void watchLoginHost(EditText server,EditText account,EditText secret,CheckBox remember,Button launch,String normalLabel){
+        server.addTextChangedListener(new android.text.TextWatcher(){
+            public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            public void onTextChanged(CharSequence s,int start,int before,int count){
+                // Never carry a saved password into an edited server address.
+                String host=s.toString();boolean saved=SavedLogin.matches(MainActivity.this,host);
+                account.setText(SavedLogin.account(MainActivity.this,host));secret.setText(SavedLogin.password(MainActivity.this,host));
+                remember.setChecked(saved);launch.setText(saved?"Quick login":normalLabel);
+            }
+            public void afterTextChanged(android.text.Editable value){}
+        });
     }
     private void initializationCard(ClientStore source)throws Exception {
         ClientRuntime rt=ClientRuntime.get(this);JSONObject prepared=rt.preparationState();

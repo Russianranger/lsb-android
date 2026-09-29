@@ -910,6 +910,13 @@ class StartupProgress:
 
 def serve():
     generation=current();recover_profile_repair(generation);root=generation/'server';programs=required_programs(root);validate_binaries(root);ensure_ports(programs)
+    # Applied only to the active generation, never its reusable compiled build.
+    # Failure to install optional diagnostics must not prevent gameplay.
+    try:
+        spec=importlib.util.spec_from_file_location('lsb_zone_entry_trace',Path(__file__).with_name('zone_entry_trace.py'))
+        trace=importlib.util.module_from_spec(spec);spec.loader.exec_module(trace)
+        print(trace.install(root),flush=True)
+    except (OSError,ValueError) as error:print('Zone-entry trace installation skipped: '+type(error).__name__,flush=True)
     meta=json.loads((generation/'deployment.json').read_text())
     mesh_assets=prepare_meshes(root,meta.get('selected_source',{}))
     if mesh_assets:

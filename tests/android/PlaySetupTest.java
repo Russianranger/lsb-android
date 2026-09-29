@@ -34,20 +34,64 @@ public class PlaySetupTest {
     @Before public void before()throws Exception{
         context=RuntimeEnvironment.getApplication();WorkService.busy=false;SessionBackup.active=false;SessionBackup.recoveryError="";RuntimeService.clearLogin();
         ClientRuntime.resetAfterRestore();ServerRuntime.resetAfterRestore();
-        for(String name:new String[]{"runtime","setup","server"})context.getSharedPreferences(name,0).edit().clear().commit();
+        for(String name:new String[]{"runtime","setup","server","quick_login"})context.getSharedPreferences(name,0).edit().clear().commit();
         client=ClientRuntime.get(context);server=ServerRuntime.get(context);
         FilesEx.delete(client.home);FilesEx.delete(server.home);FilesEx.delete(new File(MainActivity.storage(context),"session"));
     }
     @After public void after()throws Exception{
         Thread.interrupted();client.releasePlay();RuntimeService.clearLogin();WorkService.busy=false;
         FilesEx.delete(client.home);FilesEx.delete(server.home);FilesEx.delete(new File(MainActivity.storage(context),"session"));
-        for(String name:new String[]{"runtime","setup","server"})context.getSharedPreferences(name,0).edit().clear().commit();
+        for(String name:new String[]{"runtime","setup","server","quick_login"})context.getSharedPreferences(name,0).edit().clear().commit();
         ClientRuntime.resetAfterRestore();ServerRuntime.resetAfterRestore();
     }
     private void readyClient()throws Exception{
         FilesEx.text(new File(client.root,"lsb-runtime.sha256"),ClientRuntime.RUNTIME_SHA);
         FilesEx.text(new File(client.home,"clients/state.properties"),"current="+ID+"\n");
         FilesEx.text(new File(client.home,"clients/"+ID+"/copy-complete"),"1\n");
+    }
+    @Test public void invalidSavedLoginCannotReplaceWorkingCredentialsOrLeakThroughRuntimeExports()throws Exception{
+        SavedLogin.save(context,"LOCALHOST","offline-account","offline-password");assertTrue(SavedLogin.matches(context,"localhost"));
+        assertFalse(SavedLogin.matches(context,"other.example"));assertEquals("",SavedLogin.password(context,"other.example"));
+        try{SavedLogin.save(context,"localhost","offline-account","");fail("invalid login accepted");}catch(IllegalArgumentException expected){}
+        assertEquals("offline-password",SavedLogin.password(context,"localhost"));
+        FilesEx.text(new File(server.logs,"zone-entry.log"),"[LSB zone entry] char=Fixture id=4 zone=234 charCreate.begin\n");
+        ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+        try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(bytes)){client.exportLogs(zip);server.exportLogs(zip);}
+        boolean trace=false;
+        try(java.util.zip.ZipInputStream zip=new java.util.zip.ZipInputStream(new ByteArrayInputStream(bytes.toByteArray()))){
+            java.util.zip.ZipEntry entry;while((entry=zip.getNextEntry())!=null){
+                ByteArrayOutputStream content=new ByteArrayOutputStream();byte[] buffer=new byte[8192];int n;
+                while((n=zip.read(buffer))!=-1)content.write(buffer,0,n);
+                String value=content.toString("UTF-8");assertFalse(value.contains("offline-password"));assertFalse(value.contains("offline-account"));
+                if(entry.getName().equals("server/zone-entry.log")){trace=true;assertTrue(value.contains("charCreate.begin"));}
+            }
+        }
+        assertTrue(trace);SavedLogin.forget(context);assertFalse(SavedLogin.matches(context,"localhost"));
+    }
+    @Test public void rememberedLoginIsMaskedAndCanBeForgottenFromPlay()throws Exception{
+        readyClient();readyServer();SetupGuide.restored(context);SavedLogin.save(context,"127.0.0.1","offline-account","offline-password");
+        org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
+        try{
+            View content=(View)field(c.get(),"content");assertNotNull(text(content,"Quick login"));
+            assertTrue(((CheckBox)text(content,"Remember account and password for quick login")).isChecked());
+            EditText password=(EditText)text(content,"offline-password");assertNotNull(password);assertFalse(password.isSaveEnabled());
+            assertTrue(password.getTransformationMethod() instanceof android.text.method.PasswordTransformationMethod);
+            capture(content,400,"play-quick-login-narrow.png");
+            text(content,"Forget saved login").performClick();
+            assertFalse(SavedLogin.matches(context,"127.0.0.1"));assertNull(text((View)field(c.get(),"content"),"offline-password"));
+        }finally{c.pause().stop().destroy();}
+    }
+    @Test public void editingServerAddressCannotCarrySavedCredentialsToAnotherHost()throws Exception{
+        readyClient();context.getSharedPreferences("setup",0).edit().putString("mode","external").commit();SavedLogin.save(context,"127.0.0.1","offline-account","offline-password");
+        org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
+        try{
+            View content=(View)field(c.get(),"content");EditText address=(EditText)text(content,"127.0.0.1");
+            address.setText("");address.setText("other.example");
+            assertNull(text(content,"offline-password"));assertNull(text(content,"offline-account"));assertNotNull(text(content,"Play"));
+            assertFalse(((CheckBox)text(content,"Remember account and password for quick login")).isChecked());
+            assertTrue(SavedLogin.matches(context,"127.0.0.1"));
+            address.setText("127.0.0.1");assertNotNull(text(content,"offline-password"));assertNotNull(text(content,"Quick login"));
+        }finally{c.pause().stop().destroy();}
     }
     private void readyServer()throws Exception{
         FilesEx.text(new File(server.root,"lsb-server-ready"),"ready");FilesEx.text(new File(server.root,"lsb-server-tools-v4"),"ready");

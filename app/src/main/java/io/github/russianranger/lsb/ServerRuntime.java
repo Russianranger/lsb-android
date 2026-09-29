@@ -285,6 +285,7 @@ final class ServerRuntime {
         return result;
     }
     void exportLogs(ZipOutputStream zip)throws Exception {
+        File entryTrace=new File(logs,"zone-entry.log");if(entryTrace.isFile())SafeZip.entry(zip,"server/zone-entry.log",redactCredentials(ServerLogTail.read(entryTrace,131072)));
         SafeZip.entry(zip,"server/deployment.json",deployment().toString(2));
         File s=new File(run,"status.json");if(s.isFile())SafeZip.entry(zip,"server/status.json",FilesEx.read(s,65536));
         File build=new File(logs,"build-report.json");if(build.isFile())SafeZip.entry(zip,"server/build-report.json",redactCredentials(FilesEx.read(build,1048576)));

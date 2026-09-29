@@ -15,7 +15,7 @@ final class SessionBackup {
     static volatile String recoveryError="";
     private static final String SETTINGS="session-restore-settings.json";
     private static final String FORMAT="lsb-complete-session-v1";
-    private static final String[] KNOWN_PREFS={"runtime","controller","compatibility","server","preparation"};
+    private static final String[] KNOWN_PREFS={"runtime","controller","compatibility","server","preparation","setup","quick_login"};
     private static SessionTransaction transaction(Context c)throws IOException {
         // getFilesDir()/storage() may recreate a root missing halfway through a swap.
         // Recovery must see that absence before normal app initialization creates it.

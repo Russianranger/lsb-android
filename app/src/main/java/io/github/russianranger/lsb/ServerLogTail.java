@@ -9,9 +9,12 @@ final class ServerLogTail {
     static final int MAX_BYTES=12000;
     private ServerLogTail(){}
     static String read(File file)throws IOException {
+        return read(file,MAX_BYTES);
+    }
+    static String read(File file,int maxBytes)throws IOException {
         if(!Files.isRegularFile(file.toPath(),LinkOption.NOFOLLOW_LINKS))return "";
         try(RandomAccessFile input=new RandomAccessFile(file,"r")){
-            long length=input.length(),offset=Math.max(0,length-MAX_BYTES);
+            long length=input.length(),offset=Math.max(0,length-maxBytes);
             byte[] bytes=new byte[(int)(length-offset)];input.seek(offset);
             int count=0,n;while(count<bytes.length&&(n=input.read(bytes,count,bytes.length-count))>0)count+=n;
             int start=0,end=count;
