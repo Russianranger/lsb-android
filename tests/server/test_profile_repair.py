@@ -56,6 +56,7 @@ class ProfileRepairTests(unittest.TestCase):
             self.assertTrue(all(not (root/name).exists() for name in m.PROCESSES))
             (root/'xi_profile').write_bytes(elf('new profile jemalloc'))
     def loader(self,args,**kwargs):
+        if args==['ccache','--print-stats']:return subprocess.CompletedProcess(args,0,'direct_cache_hit 0\ncache_miss 1\n','')
         if args[0]=='ldd':return subprocess.CompletedProcess(args,0,'libjemalloc.so.2 => /usr/lib/libjemalloc.so.2\nlibc.so.6 => /usr/lib/libc.so.6\n','')
         if args[0]=='readelf':return subprocess.CompletedProcess(args,0,'(NEEDED) [libjemalloc.so.2]\n(NEEDED) [libc.so.6]\n','')
         self.fail(str(args))
