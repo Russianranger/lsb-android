@@ -30,7 +30,11 @@ public class ClientLaunchValidationTest {
         store=new PreparedClientStore(new File(home,"prepared"));generation=store.prepare(imported,prefix,QUIET);
         FilesEx.text(new File(generation,"initialization-passed.json"),new JSONObject().put("status","passed").put("generation",generation.getName()).toString());store.promote(generation);
     }
-    @After public void after()throws Exception{FilesEx.delete(home);}
+    @After public void after()throws Exception{
+        try(java.util.stream.Stream<Path> walk=Files.walk(home.toPath())){
+            for(Path path:(Iterable<Path>)walk.sorted(Comparator.reverseOrder())::iterator)Files.delete(path);
+        }
+    }
     private JSONObject manifest()throws Exception{return ClientLaunchValidation.manifest(generation,store.metadata(generation),QUIET);}
     @Test public void fastManifestMatchesFullInspectionCriticalFiles()throws Exception{
         JSONObject quick=manifest();assertNotNull(quick);ClientInspector.Snapshot full=ClientInspector.inspect(new File(generation,"client"),store.metadata(generation).getProperty("core"),QUIET);
