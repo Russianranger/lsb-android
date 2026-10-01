@@ -1,3 +1,28 @@
+# 0.6.1: resumed qualification and original-signed test APK
+
+Continue draft PR #2 on `codex/beta-061-improvements`; implementation commit
+`c3aac1e8ba4de6663ea1d7b0e5df7c93c99a2595` is preserved. Main at `f3abab7`
+and the original-signed Beta 0.6 release are unchanged. The Windows heartbeat
+qualification passed on retry with no code changes, making full push run
+`36905461856` green. The parallel PR Box64 readback-timeout job is being retried;
+the complete Box64 suite already passed at the same implementation commit in
+the push run. Server-source compilation passed as run `36905467847`.
+
+The original private signing checkpoint was recovered from the user's saved
+`LSB-Android-preview-signing.zip`. Its certificate matches the actual Beta 0.6
+APK: `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Do not generate a replacement key or prescribe uninstalling the working app.
+The delivered 0.6.1/code 72 APK is original-signed and preserves every tested
+CI payload entry. SHA-256:
+`917f78066f9df4c3a8e98afa415206dbbee55de6ddc263388889b4b0c53f1bc8`.
+
+See [qualification](QUALIFICATION-0.6.1.md) for exact job/artifact evidence and
+[Thor instructions](TESTING-0.6.1.md) for the outstanding device pass. No
+production fixes, native refactors or milestone restarts were necessary.
+Keep PR #2 draft and do not merge until the new phone pass is ready.
+
+---
+
 # 0.5.55: navigation, working combination, shared progress
 
 User confirmed the 0.5.54 pass was working and requested original proposals
