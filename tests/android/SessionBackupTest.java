@@ -109,6 +109,7 @@ public class SessionBackupTest {
         files.put("rt/clients/"+GENERATION+"/copy-complete","1\n");
         files.put("server-runtime/rootfs/lsb-server-ready","installed");files.put("server-runtime/rootfs/lsb-server-tools-v4","installed");
         files.put("server-runtime/state/generations/"+GENERATION+"/deployment.json","{\"generation\":\""+GENERATION+"\",\"accounts\":3}");
+        files.put("server-runtime/state/checkpoints/fixture/database.sql.gz","dated SQL checkpoint fixture");
         files.put("server-runtime/state/active.json","{\"current\":\""+GENERATION+"\"}");
         files.put("server-runtime/state/generations/"+GENERATION+"/database/ibdata1","raw stopped database fixture");
         files.put("server-runtime/state/generations/"+GENERATION+"/database-credentials.json","{\"game\":\"fixture-private-secret\"}");
@@ -116,6 +117,7 @@ public class SessionBackupTest {
         for(Map.Entry<String,String> item:files.entrySet())write(source.files,item.getKey(),item.getValue());
         write(managed,"session/current/client/ROM/0/0.DAT","original client fixture");write(managed,"session/current/session.properties","host=127.0.0.1\nregion=US\n");
         write(managed,"server/current/scripts/mob.lua","custom server script");
+        write(source.files,"server-runtime/state/compiler-cache/fixture.o","reproducible cache fixture");
         write(source.files,"rt/run/credentials.pipe","transient");write(source.files,"rt/tmp/socket","transient");
         write(source.files,"server-runtime/run/status.json","{\"phase\":\"running\"}");write(source.files,"server-runtime/tmp/socket","transient");
         Path wine=new File(source.files,"rt/root/bin/wine").toPath();Files.setPosixFilePermissions(wine,EnumSet.of(PosixFilePermission.OWNER_READ,PosixFilePermission.OWNER_WRITE,PosixFilePermission.OWNER_EXECUTE));
@@ -144,7 +146,7 @@ public class SessionBackupTest {
         assertEquals(new File(MainActivity.storage(target),"session/current/client").toPath(),Files.readSymbolicLink(new File(target.files,"rt/prefix/dosdevices/d:").toPath()));
         assertTrue(Files.isSameFile(new File(target.files,"rt/root/bin/wine").toPath(),new File(target.files,"rt/root/bin/wine-hardlink").toPath()));
         assertEquals(Files.getPosixFilePermissions(wine),Files.getPosixFilePermissions(new File(target.files,"rt/root/bin/wine").toPath()));
-        for(String path:Arrays.asList("rt/run/credentials.pipe","rt/tmp/socket","server-runtime/run/status.json","server-runtime/tmp/socket"))assertFalse(path,new File(target.files,path).exists());
+        for(String path:Arrays.asList("rt/run/credentials.pipe","rt/tmp/socket","server-runtime/run/status.json","server-runtime/tmp/socket","server-runtime/state/compiler-cache/fixture.o"))assertFalse(path,new File(target.files,path).exists());
         assertFalse(new File(target.files,SETTINGS).exists());assertFalse(SessionBackup.active);
         SetupGuide.restored(target);assertTrue(SetupGuide.local(target));assertTrue(SetupGuide.next(target).ready());sameSettings(source,target);
     }

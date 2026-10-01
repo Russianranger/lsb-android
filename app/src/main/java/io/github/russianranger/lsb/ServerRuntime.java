@@ -43,6 +43,7 @@ final class ServerRuntime {
         return out.toString().trim();
     }catch(Exception e){return "";}}
     boolean installed(){return new File(root,"lsb-server-ready").isFile();}
+    boolean compilerCacheInstalled(){return new File(root,"usr/bin/ccache").isFile();}
     boolean toolsCurrent(){return new File(root,"lsb-server-tools-v4").isFile();}
     boolean hasDatabaseImport(){return new File(state,"import.sql").isFile();}
     JSONObject deployment()throws Exception {
@@ -262,6 +263,29 @@ final class ServerRuntime {
         execute(Arrays.asList("/usr/bin/python3","/opt/lsb-server/manager.py"),progress,account);return status;
     }
     void stop()throws IOException{FilesEx.mkdir(run);FilesEx.text(new File(run,"stop"),"stop\n");status="Stopping managed server…";}
+    JSONArray checkpoints()throws Exception {
+        File directory=new File(state,"checkpoints");
+        if(Files.isSymbolicLink(directory.toPath()))throw new IOException("Invalid checkpoint storage");
+        List<JSONObject> list=new ArrayList<>();File[] folders=directory.listFiles();
+        if(folders!=null)for(File folder:folders){
+            if(!folder.getName().matches("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")||Files.isSymbolicLink(folder.toPath()))continue;
+            File data=new File(folder,"database.sql.gz");
+            if(!Files.isRegularFile(data.toPath(),LinkOption.NOFOLLOW_LINKS))continue;
+            try{
+                JSONObject saved=receipt(new File(folder,"receipt.json"));
+                if(saved.optInt("format")==1&&folder.getName().equals(saved.optString("checkpoint_id"))&&data.length()==saved.optLong("bytes",-1))list.add(saved);
+            }catch(Exception ignored){}
+        }
+        list.sort((a,b)->Double.compare(b.optDouble("created_at"),a.optDouble("created_at")));
+        return new JSONArray(list);
+    }
+    String performCheckpoint(String action,String id,int keep,SafeZip.Progress progress)throws Exception {
+        if(!Arrays.asList("create-checkpoint","restore-checkpoint").contains(action))throw new IOException("Unknown checkpoint action");
+        if(!Arrays.asList(2,3,5,10).contains(keep))throw new IOException("Choose how many checkpoints to keep");
+        JSONObject selection=new JSONObject().put("checkpoint_keep",keep);
+        if(action.equals("restore-checkpoint")){selectedId(id,"database checkpoint");selection.put("checkpoint_id",id);}
+        try(Operation reserved=beginOperation()){return performReserved(action,false,progress,null,selection);}
+    }
     void exportDatabase(OutputStream out,SafeZip.Progress progress)throws Exception {
         try(Operation reserved=beginOperation()){
         performReserved("backup",false,progress,null);

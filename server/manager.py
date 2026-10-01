@@ -182,6 +182,38 @@ def checked_jobs(jobs):
     if type(jobs) is not int or not 1<=jobs<=16:raise ValueError('Use between 1 and 16 build workers')
     return jobs
 
+def compiler_cache(root):
+    executable=shutil.which('ccache')
+    if not executable:return [],None,dict(enabled=False,reason='Install the compiler cache from Build to reuse compiled objects.')
+    # Compiler contents, flags and included headers remain ccache inputs. The
+    # namespace also isolates our jemalloc hook and compatibility patch rules.
+    digest=hashlib.sha256()
+    for name in ('android-build.cmake','source-patches.json'):
+        digest.update(Path(__file__).with_name(name).read_bytes())
+    namespace='gcc15-jemalloc-'+digest.hexdigest()[:20]
+    # A supplied directory is used by the CI fixture. Android defaults to its
+    # persistent state directory, outside the disposable build workspace.
+    directory=Path(os.environ.get('CCACHE_DIR',str(STATE/'compiler-cache')))
+    if directory.is_symlink():raise ValueError('Compiler cache directory cannot be a symlink')
+    directory.mkdir(parents=True,exist_ok=True)
+    env=dict(os.environ,CCACHE_DIR=str(directory),CCACHE_MAXSIZE='2G',CCACHE_COMPILERCHECK='content',
+             CCACHE_BASEDIR=str(root),CCACHE_NOHASHDIR='true',CCACHE_NAMESPACE=namespace)
+    for name in ('CCACHE_SLOPPINESS','CCACHE_IGNOREOPTIONS','CCACHE_IGNOREHEADERS'):env.pop(name,None)
+    options=['-DCMAKE_C_COMPILER_LAUNCHER='+executable,'-DCMAKE_CXX_COMPILER_LAUNCHER='+executable]
+    return options,env,dict(enabled=True,namespace=namespace,max_size='2 GiB',directory=str(directory))
+
+def cache_stats(env):
+    if env is None:return None
+    try:
+        result=subprocess.run(['ccache','--print-stats'],capture_output=True,text=True,timeout=15,env=env)
+        if result.returncode:return None
+        values={}
+        for line in result.stdout.splitlines():
+            parts=line.split()
+            if len(parts)==2 and parts[1].isdigit():values[parts[0]]=int(parts[1])
+        return values or None
+    except (OSError,subprocess.TimeoutExpired):return None
+
 def build(root, jobs, targets=None, report_path=None):
     checked_jobs(jobs)
     programs=tuple(targets) if targets is not None else required_programs(root)
@@ -194,7 +226,10 @@ def build(root, jobs, targets=None, report_path=None):
     options=['-DCMAKE_BUILD_TYPE=Release','-DCMAKE_C_COMPILER=gcc-15','-DCMAKE_CXX_COMPILER=g++-15',
              '-DPCH_ENABLE=OFF','-DENABLE_IPO=OFF','-DPython_EXECUTABLE='+str(root/'.venv/bin/python'),
              '-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES='+str(hook)]
-    report=dict(format=1,state='building',started_at=started,source=source_info(root),
+    cache_options,cache_env,cache=compiler_cache(root)
+    options+=cache_options
+    cache['before']=cache_stats(cache_env)
+    report=dict(format=1,state='building',started_at=started,source=source_info(root),compiler_cache=cache,
                 allocator='jemalloc',jobs=jobs,programs=list(programs),cmake_options=options,
                 build_hook_sha256=hashlib.sha256(hook.read_bytes()).hexdigest())
     atomic(report_path,report)
@@ -209,9 +244,9 @@ def build(root, jobs, targets=None, report_path=None):
         # an old executable just because CMake emits the new one in build/.
         for name in programs:(root/name).unlink(missing_ok=True)
         status('building','Configuring the server with jemalloc…')
-        command(['cmake','-S',root,'-B',root/'build',*options],cwd=root)
-        status('building','Compiling '+', '.join(programs)+' with jemalloc…')
-        command(['cmake','--build',root/'build','--parallel',str(jobs),'--target',*programs],cwd=root,timeout=max(7200,21600//jobs))
+        command(['cmake','-S',root,'-B',root/'build',*options],cwd=root,env=cache_env)
+        status('building','Compiling '+', '.join(programs)+' with jemalloc'+(' · compiler cache enabled' if cache['enabled'] else ' · compiler cache not installed')+'…')
+        command(['cmake','--build',root/'build','--parallel',str(jobs),'--target',*programs],cwd=root,timeout=max(7200,21600//jobs),env=cache_env)
         for name in programs:
             if not (root/name).is_file():
                 found=[p for p in (root/'build').rglob(name) if p.is_file()]
@@ -220,6 +255,7 @@ def build(root, jobs, targets=None, report_path=None):
         status('building','Checking ARM64 binaries and jemalloc linkage…')
         validate_binaries(root,programs)
         report['binaries']=validate_jemalloc(root,programs)
+        cache['after']=cache_stats(cache_env)
         report.update(state='passed',finished_at=time.time(),elapsed_seconds=round(time.time()-started,2))
         atomic(root/'android-build.json',report)
         atomic(report_path,report)
@@ -639,12 +675,13 @@ def current():
     if not p.exists():raise ValueError('Deploy the existing server and SQL backup first')
     value=json.loads(p.read_text());return STATE/'generations'/value['current']
 
-def dump_database(generation,target):
+def dump_database(generation,target,capture_counts=False):
     meta=json.loads((generation/'deployment.json').read_text());creds=None
     temporary=target.with_name(target.name+'.'+str(uuid.uuid4())+'.part')
     try:
         try:
             creds=start_database(generation)
+            counts=account_counts(meta['database'],creds) if capture_counts else None
             with temporary.open('xb') as out:
                 os.chmod(temporary,0o600)
                 command(['mariadb-dump',cnf('root',creds['root']),'--single-transaction','--routines','--triggers','--events','--hex-blob',meta['database']],stdout=out)
@@ -653,11 +690,12 @@ def dump_database(generation,target):
             if creds is not None:stop_database(creds)
             else:stop_children()
         cancelled();temporary.replace(target)
+        return counts
     finally:temporary.unlink(missing_ok=True)
 
-def restore_database(req):
+def restore_database(req,dump=None):
     previous=current();meta=json.loads((previous/'deployment.json').read_text())
-    name=checked_name(meta['database']);dump=STATE/'import.sql'
+    name=checked_name(meta['database']);dump=STATE/'import.sql' if dump is None else dump
     if not dump.is_file():raise ValueError('Import the existing server database as SQL or SQL.gz first')
     generation=STATE/'generations'/str(uuid.uuid4());generation.mkdir(parents=True)
     root=generation/'server';creds=None
@@ -672,7 +710,7 @@ def restore_database(req):
         local_zones=meta.get('local_zones',req.get('local_zones',True))
         if local_zones:sql("UPDATE zone_settings SET zoneip='127.0.0.1',zoneport=54230;",creds['game'],'lsb',name)
         info=dict(meta)
-        info.update(generation=generation.name,accounts=counts['accounts'],characters=counts['chars'],created_at=time.time(),updated=False,local_zones=local_zones,restored_from_generation=previous.name)
+        info.update(generation=generation.name,accounts=counts['accounts'],characters=counts['chars'],created_at=time.time(),updated=False,local_zones=local_zones,restored_from_generation=previous.name,restored_checkpoint=req.get('checkpoint_id'))
         atomic(generation/'deployment.json',info)
     finally:
         if creds is not None:stop_database(creds)
@@ -680,6 +718,102 @@ def restore_database(req):
     cancelled()
     atomic(STATE/'active.json',dict(current=generation.name,previous=previous.name))
     status('ready','Database restored with the same server revision. The previous server and database are retained.',deployment=info)
+
+
+CHECKPOINT_MAX_BYTES=16*1073741824
+
+def checkpoint_root():
+    root=STATE/'checkpoints'
+    if root.is_symlink():raise ValueError('Checkpoint storage cannot be a symlink')
+    root.mkdir(parents=True,exist_ok=True)
+    return root
+
+def checkpoint_record(identifier):
+    if not isinstance(identifier,str) or not re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}',identifier):raise ValueError('Select a completed database checkpoint')
+    folder=checkpoint_root()/identifier
+    if folder.is_symlink() or not folder.is_dir():raise ValueError('Missing database checkpoint')
+    for name in ('receipt.json','database.sql.gz'):
+        path=folder/name
+        if path.is_symlink() or not path.is_file():raise ValueError('Incomplete database checkpoint')
+    if (folder/'receipt.json').stat().st_size>65536:raise ValueError('Invalid checkpoint receipt')
+    receipt=json.loads((folder/'receipt.json').read_text())
+    if receipt.get('format')!=1 or receipt.get('checkpoint_id')!=identifier:raise ValueError('Invalid checkpoint receipt')
+    if not isinstance(receipt.get('bytes'),int) or receipt['bytes']<=0 or receipt['bytes']!=(folder/'database.sql.gz').stat().st_size:raise ValueError('Checkpoint file size changed')
+    if not isinstance(receipt.get('sql_bytes'),int) or not 0<receipt['sql_bytes']<=CHECKPOINT_MAX_BYTES:raise ValueError('Invalid checkpoint SQL size')
+    if not isinstance(receipt.get('sha256'),str) or not re.fullmatch('[a-f0-9]{64}',receipt['sha256']):raise ValueError('Invalid checkpoint digest')
+    if not isinstance(receipt.get('created_at'),(int,float)) or receipt['created_at']<=0:raise ValueError('Invalid checkpoint date')
+    return folder,receipt
+
+def checkpoint_compatibility(generation,meta):
+    # SQL definitions catch schema revisions even in legacy imports without a
+    # recorded build ID. Credentials/network settings differ across restores.
+    schema=generation/'server/sql'
+    if schema.is_symlink() or not schema.is_dir():raise ValueError('Missing deployed SQL definitions')
+    return dict(database=meta['database'],expected_client=meta.get('expected_client'),build_id=meta.get('build_id'),
+                binaries=meta.get('binaries'),schema_sha256=tree_fingerprint(schema))
+
+def prune_checkpoints(keep):
+    if type(keep) is not int or keep not in (2,3,5,10):raise ValueError('Keep 2, 3, 5 or 10 database checkpoints')
+    completed=[]
+    for folder in checkpoint_root().iterdir():
+        try:_,receipt=checkpoint_record(folder.name);completed.append((receipt['created_at'],folder.name,folder))
+        except (ValueError,OSError,KeyError,json.JSONDecodeError):continue
+    for _,_,folder in sorted(completed,reverse=True)[keep:]:shutil.rmtree(folder)
+
+def create_checkpoint(req):
+    keep=req.get('checkpoint_keep',5)
+    if type(keep) is not int or keep not in (2,3,5,10):raise ValueError('Keep 2, 3, 5 or 10 database checkpoints')
+    generation=current();meta=json.loads((generation/'deployment.json').read_text())
+    identifier=str(uuid.uuid4());root=checkpoint_root();pending=root/(identifier+'.new');pending.mkdir(mode=0o700)
+    dump=pending/'database.sql'
+    try:
+        status('backing_up','Saving a database checkpoint; waiting for a clean database shutdown…')
+        counts=dump_database(generation,dump,capture_counts=True)
+        if not 0<dump.stat().st_size<=CHECKPOINT_MAX_BYTES:raise ValueError('Invalid checkpoint database size')
+        compatibility=checkpoint_compatibility(generation,meta)
+        compressed=pending/'database.sql.gz';total=dump.stat().st_size;done=0;next_update=0
+        with dump.open('rb') as src,compressed.open('xb') as raw:
+            os.chmod(compressed,0o600)
+            with gzip.GzipFile(filename='',mode='wb',fileobj=raw,mtime=0) as out:
+                while block:=src.read(1048576):
+                    cancelled();out.write(block);done+=len(block)
+                    if done>=next_update:
+                        status('compressing','Compressing database checkpoint · '+str(done//1048576)+' / '+str(total//1048576)+' MiB');next_update=done+16*1048576
+            raw.flush();os.fsync(raw.fileno())
+        receipt=dict(format=1,checkpoint_id=identifier,created_at=time.time(),generation=generation.name,
+                     compatibility=compatibility,accounts=counts['accounts'],characters=counts['chars'],
+                     bytes=compressed.stat().st_size,sql_bytes=total,sha256=file_sha256(compressed))
+        atomic(pending/'receipt.json',receipt);dump.unlink();cancelled();pending.replace(root/identifier)
+        # Old saves are removed only after a new complete checkpoint is published.
+        prune_checkpoints(keep)
+        status('ready','Database checkpoint saved. Keeping the newest '+str(keep)+' checkpoints.',checkpoint=receipt)
+        return receipt
+    finally:
+        if pending.exists():shutil.rmtree(pending)
+
+def restore_checkpoint(req):
+    folder,receipt=checkpoint_record(req.get('checkpoint_id'))
+    generation=current();meta=json.loads((generation/'deployment.json').read_text())
+    if checkpoint_compatibility(generation,meta)!=receipt.get('compatibility'):
+        raise ValueError('This checkpoint belongs to a different server build or schema. Restore its full working-combination backup, or deploy the matching build first.')
+    compressed=folder/'database.sql.gz'
+    if file_sha256(compressed)!=receipt['sha256']:raise ValueError('Checkpoint checksum failed; current database kept')
+    target=RUN/('checkpoint-'+str(uuid.uuid4())+'.sql')
+    try:
+        status('verifying','Verifying and expanding the selected database checkpoint…')
+        count=0;next_update=0
+        with gzip.open(compressed,'rb') as src,target.open('xb') as out:
+            os.chmod(target,0o600)
+            while block:=src.read(1048576):
+                cancelled();count+=len(block)
+                if count>receipt['sql_bytes'] or shutil.disk_usage(RUN).free<256*1048576:raise ValueError('Checkpoint exceeds its recorded size or there is not enough free space')
+                out.write(block)
+                if count>=next_update:status('verifying','Expanding checkpoint · '+str(count//1048576)+' / '+str(receipt['sql_bytes']//1048576)+' MiB');next_update=count+16*1048576
+            out.flush();os.fsync(out.fileno())
+        if count!=receipt['sql_bytes']:raise ValueError('Checkpoint SQL size did not match; current database kept')
+        invalidate_database_stage('Restoring a checkpoint changed the active database. Prepare its database again.')
+        cancelled();restore_database(req,dump=target)
+    finally:target.unlink(missing_ok=True)
 
 def deploy(req):
     source=source_root(INPUT);name=checked_name(req.get('database','xidb'));updating=req['action']=='update'
@@ -995,10 +1129,14 @@ def serve():
 def main():
     for p in (STATE,RUN,LOGS):p.mkdir(parents=True,exist_ok=True)
     req=json.loads((RUN/'request.json').read_text());action=req.get('action')
-    if action not in ('deploy','update','start','backup','rollback','inspect','restore-db','create-account','build-source','adopt-build','stage-build','check-staged','deploy-staged','repair-profile'):raise ValueError('Unknown server action')
+    if action not in ('deploy','update','start','backup','rollback','inspect','restore-db','create-account','build-source','adopt-build','stage-build','check-staged','deploy-staged','repair-profile','install-build-cache','create-checkpoint','restore-checkpoint'):raise ValueError('Unknown server action')
     checked_jobs(req.get('jobs',2))
     if action=='inspect':
         info=source_info(source_root(INPUT));status('inspected','Selected source expects client '+info['expected_client']+'. Meshes: '+', '.join(k+(' present' if v else ' missing') for k,v in info['meshes'].items()),source=info)
+    elif action=='install-build-cache':
+        command(['apt-get','update'],env=dict(os.environ,DEBIAN_FRONTEND='noninteractive'))
+        command(['apt-get','install','-y','--no-install-recommends','ccache'],env=dict(os.environ,DEBIAN_FRONTEND='noninteractive'))
+        status('ready','Compiler cache installed. Future builds retain up to 2 GiB of reusable objects.')
     elif action=='repair-profile':repair_profile(req)
     elif action=='build-source':build_source(req)
     elif action=='adopt-build':adopt_build(req)
@@ -1007,6 +1145,8 @@ def main():
     elif action=='deploy-staged':deploy_staged(req)
     elif action in ('deploy','update'):deploy(req)
     elif action=='restore-db':restore_database(req)
+    elif action=='create-checkpoint':create_checkpoint(req)
+    elif action=='restore-checkpoint':restore_checkpoint(req)
     elif action=='create-account':
         invalidate_database_stage('An account operation changed the active database. Stage its database again.')
         from accounts import create_account

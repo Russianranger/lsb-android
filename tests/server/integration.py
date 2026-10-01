@@ -461,3 +461,32 @@ for label,extra_sql,expected_error in (
 (state/'import.sql').write_bytes(legacy_dump)
 assert (Path('/client')/'sentinel').read_bytes()==b'accepted client kept'
 print('PASS: negative IDs, unsupported custom columns and existing foreign-key dependencies fail closed without selecting a partial stage or changing active player data/client/import bytes',flush=True)
+
+# SQL-only checkpoints retain exact player/world objects without carrying the
+# client or runtimes. Their compatibility check precedes any database import.
+checkpoint_base=selected()['current'];checkpoint_rows=player_snapshot(checkpoint_base)
+checkpoint=invoke('create-checkpoint',checkpoint_keep=2)['checkpoint']
+checkpoint_file=state/'checkpoints'/checkpoint['checkpoint_id']/'database.sql.gz'
+assert checkpoint_file.is_file() and checkpoint['characters']==2 and checkpoint['accounts']==3
+import_before=(state/'import.sql').read_bytes();pointer_before=selected();compressed_before=checkpoint_file.read_bytes()
+checkpoint_file.write_bytes(compressed_before[:-1]+bytes([compressed_before[-1]^1]))
+invoke('restore-checkpoint',False,checkpoint_id=checkpoint['checkpoint_id']);assert selected()==pointer_before
+checkpoint_file.write_bytes(compressed_before)
+query_generation(checkpoint_base,"INSERT INTO chars VALUES (990,'AfterCheckpoint');")
+checkpoint_restored=invoke('restore-checkpoint',checkpoint_id=checkpoint['checkpoint_id'])['deployment']
+assert selected()==dict(current=checkpoint_restored['generation'],previous=checkpoint_base)
+assert player_snapshot(checkpoint_restored['generation'])==checkpoint_rows
+assert query_generation(checkpoint_base,'SELECT COUNT(*) FROM chars;').strip()=='3'
+assert (state/'import.sql').read_bytes()==import_before
+assert query_generation(checkpoint_restored['generation'],"SELECT HEX(content) FROM fixture_blobs WHERE id=1; SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=DATABASE() AND ROUTINE_NAME='fixture_proc';").splitlines()==['000A0DFF275C','1']
+assert not list(run.glob('checkpoint-*.sql'))
+invoke('rollback');assert selected()['current']==checkpoint_base
+# A changed schema definition must reject this checkpoint before activation.
+schema_file=state/'generations'/checkpoint_base/'server/sql/fixture.sql';schema_before=schema_file.read_bytes();schema_file.write_bytes(schema_before+b'\n-- changed schema revision\n')
+checkpoint_pointer=selected();invoke('restore-checkpoint',False,checkpoint_id=checkpoint['checkpoint_id']);assert selected()==checkpoint_pointer
+schema_file.write_bytes(schema_before)
+newer=invoke('create-checkpoint',checkpoint_keep=2)['checkpoint'];newest=invoke('create-checkpoint',checkpoint_keep=2)['checkpoint']
+assert not checkpoint_file.exists() and len(list((state/'checkpoints').iterdir()))==2
+assert (state/'checkpoints'/newer['checkpoint_id']/'database.sql.gz').is_file()
+assert (state/'checkpoints'/newest['checkpoint_id']/'database.sql.gz').is_file()
+print('PASS: real SQL checkpoint restore preserves player/world objects, current progress remains recoverable via rollback, corrupt/mismatched checkpoints fail closed, import stays intact, and retention prunes only after successful saves',flush=True)

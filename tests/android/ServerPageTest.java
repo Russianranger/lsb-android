@@ -67,7 +67,10 @@ public class ServerPageTest {
             AlertDialog dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();assertNotNull(dialog);assertTrue(((TextView)dialog.findViewById(android.R.id.message)).getText().toString().contains("do not match"));dialog.dismiss();assertFalse(WorkService.busy);
             controller.pause();assertEquals("",password.getText().toString());assertEquals("",confirm.getText().toString());controller.resume();
             text(tiles,"◇  Database backup & restore").performClick();assertNull(text(tiles,"Restore imported database"));assertNotNull(text(tiles,"Restore previous server + database"));
-            text(tiles,"Prepare a replacement database on Build").performClick();assertEquals("Build",member(controller.get(),"tab"));assertNotNull(text((View)member(controller.get(),"content"),"Build workspace"));
+            text(tiles,"◇  Database checkpoints").performClick();assertTrue(text(tiles,"Save database checkpoint").isEnabled());assertFalse(text(tiles,"Restore selected database checkpoint").isEnabled());
+            Spinner retention=(Spinner)described(tiles,"Database checkpoint retention");assertEquals(4,retention.getCount());assertEquals(2,retention.getSelectedItemPosition());
+            capture(tiles,920,"database-checkpoints-wide.png");capture(tiles,400,"database-checkpoints-narrow.png");
+            text(tiles,"◇  Database backup & restore").performClick();text(tiles,"Prepare a replacement database on Build").performClick();assertEquals("Build",member(controller.get(),"tab"));assertNotNull(text((View)member(controller.get(),"content"),"Build workspace"));
             assertEquals(before,prefs.getAll());
         }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);prefs.edit().clear().commit();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }

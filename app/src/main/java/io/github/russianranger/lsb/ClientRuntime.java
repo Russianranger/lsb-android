@@ -159,6 +159,16 @@ final class ClientRuntime {
             return "x86 prerequisite installer selected. Use the appropriate repair action to run it in a separate staged environment.";
         }finally{temp.delete();}
     }
+    JSONObject launchManifest(File gen)throws Exception {
+        if(PreparedLoaderUpdate.pending(gen))throw new IOException("An interrupted xiloader update needs recovery; stop the runtime and apply the imported loader again");
+        JSONObject fast=ClientLaunchValidation.manifest(gen,prepared().metadata(gen),text->status=text);
+        return fast==null?clientManifest(gen):fast;
+    }
+    synchronized String inspectActiveClient()throws Exception {
+        if(alive())throw new IOException("Stop the client before inspecting its installation");
+        JSONObject manifest=clientManifest(launchGeneration());
+        return "Full client inspection passed for "+manifest.getString("generation")+". Critical binaries are checked again on each launch.";
+    }
     private JSONObject clientManifest(File gen)throws Exception {return clientManifest(gen,false);}
     private JSONObject clientManifest(File gen,boolean updateVerification)throws Exception {
         if(PreparedLoaderUpdate.pending(gen))throw new IOException("An interrupted xiloader update needs recovery; stop the runtime and apply the imported loader again");
@@ -397,7 +407,7 @@ final class ClientRuntime {
             interrupted();if(stopRequested)throw new InterruptedIOException("Initialization stopped");
             if(clientOperation){
                 if(action.equals("update-client"))write(new File(run,"client-update-manifest.json"),clientUpdateManifest(candidate).toString(2));
-                else write(new File(run,"client-manifest.json"),clientManifest(candidate,action.equals("verify-client-update")).toString(2));
+                else write(new File(run,"client-manifest.json"),(Arrays.asList("launch","check-launcher","gamepad-config").contains(action)?launchManifest(candidate):clientManifest(candidate,action.equals("verify-client-update"))).toString(2));
                 if(action.equals("installer")||action.equals("repair-launcher"))Files.copy(new File(home,"prerequisite.exe").toPath(),new File(run,"prerequisite.exe").toPath());
             }
             new File(root,"client").mkdirs();
