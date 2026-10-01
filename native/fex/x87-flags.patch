@@ -1,0 +1,20 @@
+--- a/FEXCore/Source/Interface/IR/Passes/x87StackOptimizationPass.cpp
++++ b/FEXCore/Source/Interface/IR/Passes/x87StackOptimizationPass.cpp
+@@ -500,12 +500,16 @@
+ }
+ 
+ inline Ref X87StackOptimization::SilenceNaN(Ref Value) {
++  // This late IR expansion must preserve the guest condition flags.
++  Ref SavedNZCV = IREmit->_LoadNZCV();
+   Ref GPRValue = IREmit->_VExtractToGPR(OpSize::i64Bit, OpSize::i64Bit, Value, 0);
+ 
+   IREmit->_FCmp(OpSize::i64Bit, Value, Value); // Comparison with itself should set VS if nan
+   Ref QuietNaNGPR = IREmit->_Or(OpSize::i64Bit, GPRValue, IREmit->_Constant(0x0008000000000000ULL));
+   Ref SilencedValue = IREmit->_VCastFromGPR(OpSize::i64Bit, OpSize::i64Bit, QuietNaNGPR);
+-  return IREmit->_NZCVSelectV(OpSize::i64Bit, CondClass::VS, SilencedValue, Value);
++  Ref Result = IREmit->_NZCVSelectV(OpSize::i64Bit, CondClass::VS, SilencedValue, Value);
++  IREmit->_StoreNZCV(SavedNZCV);
++  return Result;
+ }
+ 
+ inline std::optional<X87StackOptimization::StackMemberInfo> X87StackOptimization::MigrateToSlowPath_IfInvalid(uint8_t Offset) {

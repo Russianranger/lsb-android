@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "name": "AYN Thor · reported working GameHub Lite FFXI",
+  "evidence": "User screenshots Screenshot_20260913-212823/212831/212840/212848.png",
+  "device": {"model": "AYN Thor Max", "android": 13, "cpu": "Snapdragon 8 Gen 2", "gpu": "Adreno 740", "ramGiB": 16},
+  "gamehubVersion": {"value": "5.3.3", "source": "previous user context; not displayed in these screenshots"},
+  "runtime": {
+    "compatibilityLayer": "proton10.0-arm64x-2",
+    "cpuTranslator": "Fex-20251029",
+    "translationParams": "Game Presets",
+    "translationPresetDetails": null,
+    "gpuDriver": "turnip_v26.0.0_R2",
+    "dxvk": "dxvk-v2.7.1-1-async",
+    "vkd3d": "vkd3d-proton-2.14.1",
+    "audio": "Pulse",
+    "cpuCoreLimit": 6,
+    "dinput": "Prefer Native",
+    "skipAudioVideoDecode": false
+  },
+  "components": [
+    {"id": "cjkfonts", "gamehubPackageVersion": "1.0.0"},
+    {"id": "gdiplus", "gamehubPackageVersion": "1.0.0"},
+    {"id": "dx8vb", "gamehubPackageVersion": "1.0.0"},
+    {"id": "dotnet462", "gamehubPackageVersion": "1.0.0"},
+    {"id": "dotnetcoredesktop8", "gamehubPackageVersion": "1.0.0"},
+    {"id": "win7", "gamehubPackageVersion": "1.0.0"},
+    {"id": "mono", "gamehubPackageVersion": "1.0.0"},
+    {"id": "vcredist2022", "gamehubPackageVersion": "1.0.0"},
+    {"id": "base", "gamehubPackageVersion": "1.0.1"}
+  ],
+  "bootloader": {"reportedVersion": "xiloader v2.0", "exactCommandRecovered": false},
+  "status": "Reference only. These binaries are not bundled, downloaded, installed, or verified by this app.",
+  "notes": [
+    "Component versions are GameHub package labels, not verified upstream DLL versions.",
+    "Installed components are preserved as evidence; individual necessity and installation order are not established.",
+    "Resolution, translator preset internals, DLL hashes, and initialization command were not shown.",
+    "A newer Wine/Proton/FEX component with a similar name is not an equivalent runtime."
+  ]
+}

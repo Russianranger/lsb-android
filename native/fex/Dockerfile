@@ -1,0 +1,93 @@
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl git build-essential cmake ninja-build python3 xz-utils \
+    flex bison pkg-config autoconf automake libtool \
+    libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxfixes-dev \
+    libxcursor-dev libxinerama-dev libxxf86vm-dev libfreetype-dev libfontconfig-dev \
+    libasound2-dev libpulse-dev libdbus-1-dev libudev-dev libsdl2-dev \
+    libgnutls28-dev libvulkan-dev libgl-dev libunwind-dev \
+ && rm -rf /var/lib/apt/lists/*
+ARG LLVM=20250910
+RUN curl -fL --retry 3 -o /tmp/llvm.tar.xz https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM}/llvm-mingw-${LLVM}-ucrt-ubuntu-22.04-aarch64.tar.xz \
+ && echo '175f344e3db2e11b3d53f4f828ae7b5f0073a4d239b9600fa023ef4b90eb5a7e /tmp/llvm.tar.xz' | sha256sum -c - \
+ && mkdir /opt/llvm && tar -xJf /tmp/llvm.tar.xz --strip-components=1 -C /opt/llvm && rm /tmp/llvm.tar.xz
+ENV PATH=/opt/llvm/bin:$PATH
+WORKDIR /src
+# Stable, immutable upstream source identities, independent of GameHub's fork.
+RUN git clone --depth 1 --branch wine-10.0 https://github.com/wine-mirror/wine.git wine \
+ && test "$(git -C wine rev-parse HEAD)" = b073859675060c9211fcbccfd90e4e87520dc2c2
+RUN git clone --depth 1 --branch FEX-2510 https://github.com/FEX-Emu/FEX.git fex \
+ && test "$(git -C fex rev-parse HEAD)" = 320c5f18475b0c8a7e99c51a5fdc5b5e35b147ab \
+ && git -C fex submodule update --init --depth 1 External/vixl Source/Common/cpp-optparse External/jemalloc External/fmt External/xxhash External/robin-map External/range-v3
+RUN cmake -S fex -B fex-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_TOOLCHAIN_FILE=/src/fex/Data/CMake/toolchain_mingw.cmake \
+    -DMINGW_TRIPLE=aarch64-w64-mingw32 -DENABLE_LTO=False -DENABLE_ASSERTIONS=False \
+    -DENABLE_JEMALLOC_GLIBC_ALLOC=False -DBUILD_TESTING=False -DTUNE_ARCH=generic -DTUNE_CPU=none \
+ && cmake --build fex-build --parallel 4
+# Retain the accepted bounded process-exit grace period. No render/audio patches.
+RUN python3 - <<'PY'
+from pathlib import Path
+p=Path('wine/server/process.c');s=p.read_text();old='process->sigkill_delay >= TICKS_PER_SEC / 2'
+assert s.count(old)==1;p.write_text(s.replace(old,'process->sigkill_delay >= TICKS_PER_SEC * 8'))
+p=Path('wine/loader/wine.inf.in');s=p.read_text()
+assert s.count('"xtajit.dll"')==1
+p.write_text(s.replace('"xtajit.dll"','"libwow64fex.dll"'))
+PY
+RUN mkdir wine-build && cd wine-build && ../wine/configure --prefix=/opt/wine \
+    --enable-archs=aarch64,i386 --disable-tests --without-oss --without-gstreamer \
+    --without-cups --without-sane --without-gphoto --without-pcap --without-kerberos \
+    --without-wayland CFLAGS='-O2' \
+ && make -j4 && make install DESTDIR=/stage
+# Backport Wine upstream d53a9ba0: FEX imports this post-10.0 entry point.
+# Rebuild/install only ntdll after the cached base build; the added prototype
+# does not change any existing caller's ABI.
+COPY native/fex/wow64-suspend.patch /tmp/wow64-suspend.patch
+RUN git -C wine apply /tmp/wow64-suspend.patch \
+ && make -C wine-build -j4 dlls/ntdll/all \
+ && make -C wine-build dlls/ntdll/install-lib DESTDIR=/stage
+RUN cp fex-build/Bin/libwow64fex.dll /stage/opt/wine/lib/wine/aarch64-windows/ \
+ && mkdir -p /stage/opt/wine/share/lsb-sources \
+ && cp wine/COPYING.LIB /stage/opt/wine/share/lsb-sources/Wine-LICENSE \
+ && cp fex/LICENSE /stage/opt/wine/share/lsb-sources/FEX-LICENSE
+RUN python3 - <<'PYNOTICE'
+from pathlib import Path
+import shutil
+root=Path('/src/fex')
+for p in root.rglob('*'):
+    if '.git' not in p.parts and p.is_file() and p.name.lower().startswith(('license','copying')):
+        dest=Path('/stage/opt/wine/share/lsb-sources/FEX-notices')/p.relative_to(root)
+        dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,dest)
+PYNOTICE
+RUN llvm-readobj --coff-imports /stage/opt/wine/lib/wine/aarch64-windows/libwow64fex.dll > /stage/opt/wine/share/lsb-sources/fex-imports.txt
+COPY native/fex/verify-imports.py /verify-imports.py
+RUN python3 /verify-imports.py
+# Rebuild only the translator after cached Wine and baseline FEX are complete.
+# Keep the original solely for the independent before/after regression check.
+RUN cp /stage/opt/wine/lib/wine/aarch64-windows/libwow64fex.dll /baseline-wow64fex.dll
+COPY native/fex/cpu-features.patch /cpu-features.patch
+RUN git -C fex apply /cpu-features.patch \
+ && cmake --build fex-build --target wow64fex --parallel 4 \
+ && cp fex-build/Bin/libwow64fex.dll /stage/opt/wine/lib/wine/aarch64-windows/ \
+ && cp /cpu-features.patch /stage/opt/wine/share/lsb-sources/ \
+ && python3 /verify-imports.py
+COPY tests/windows/cpu-dispatch.c /cpu-dispatch.c
+RUN i686-w64-mingw32-clang -std=c11 -O2 -Wall -Wextra -Werror -msse2 -static \
+    -Wl,--no-insert-timestamp /cpu-dispatch.c -o /cpu-dispatch.exe
+COPY native/fex/check-cpu-dispatch.py /check-cpu-dispatch.py
+RUN python3 /check-cpu-dispatch.py
+# Preserve the already-qualified CPU-feature fix. Isolate the x87 flags change.
+RUN cp /stage/opt/wine/lib/wine/aarch64-windows/libwow64fex.dll /pre-flags-wow64fex.dll
+COPY native/fex/x87-flags.patch /x87-flags.patch
+RUN git -C fex apply /x87-flags.patch \
+ && cmake --build fex-build --target wow64fex --parallel 4 \
+ && cp fex-build/Bin/libwow64fex.dll /stage/opt/wine/lib/wine/aarch64-windows/ \
+ && cp /x87-flags.patch /stage/opt/wine/share/lsb-sources/ \
+ && python3 /verify-imports.py
+COPY tests/windows/x87-flags.c /x87-flags.c
+RUN i686-w64-mingw32-clang -std=c11 -O2 -Wall -Wextra -Werror -static \
+    -Wl,--no-insert-timestamp /x87-flags.c -o /x87-flags.exe
+COPY native/fex/check-x87-flags.py /check-x87-flags.py
+RUN python3 /check-x87-flags.py
+COPY native/fex/pack.py /pack.py
+CMD ["python3", "/pack.py"]

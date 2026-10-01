@@ -1,0 +1,207 @@
+# Staged client updates and storage management
+
+The owner confirmed that 0.5.35 full-session restore works. Keep the regular app
+and LSB Restore Test installed separately. Version 0.5.42 updates each in place;
+never uninstall the regular app to install an update.
+
+## Manage copies stored in the app
+
+Open **Client → Backup and recovery → Manage backups and storage**. The browser
+lists app-held installations and retained copies, their sizes, and whether they
+can be deleted. Browse names and sizes before selecting an eligible copy for
+deletion. The confirmation identifies the selected copy; deleting a retained
+previous generation removes that rollback option. Active installations and
+unfinished restore transactions are protected. Stop both runtimes before deletion.
+
+Complete-session exports stream directly to the destination selected in Android's
+file picker. They are not duplicated as an internal ZIP. Exports in Downloads or
+on an external drive stay in that folder; manage those files through Android's
+Files app. The in-app browser manages retained app data rather than scanning
+arbitrary device folders.
+
+## First PlayOnline update test
+
+1. Install both 0.5.42 APK updates and use **LSB Restore Test** for this test.
+   Keep the original app's server stopped. Stop the test app's client/server too.
+2. Open **Client → Client update · PlayOnline → Prepare update and open
+   PlayOnline**. Confirm creation of a separate full client and Windows copy.
+   Keep enough free space for the copy plus the update download.
+3. In PlayOnline, select **Check Files → FINAL FANTASY XI → Check Files**.
+   When it finds the deliberately missing repair trigger, choose **File Repair →
+   Yes**. Wait until PlayOnline reports completion. Download progress is shown in
+   PlayOnline's display. If PlayOnline updates itself and closes, reopen it using
+   **Open or resume PlayOnline update**.
+4. Choose **Exit Viewer** after repair completes. In LSB, select **Verify completed
+   update**. The staged files, registration and loader dependencies are checked.
+   Closing PlayOnline by itself does not activate the copy or prove an update
+   completed. Stopping or interrupting an update leaves it available to resume.
+5. Use **Activate verified update** only when you are ready to switch the test
+   app. The old prepared client and matching Windows environment remain available
+   through **Restore previous prepared client**. The original app stays separate.
+6. Record the updated client version and export a support ZIP. A newer client
+   may reject the old server revision or require a matching xiloader. The next
+   milestone is testing a pinned latest server build and its database tool in
+   Restore Test after the update workflow is confirmed. No server update is
+   automatic here.
+
+The updater moves only the staged copy's `ROM/0/0.dat` aside; the original stays
+in the active installation and another saved copy stays outside the staged game
+folder. Resuming does not remove a newly downloaded replacement. Verification
+requires the replacement file to exist. Data and settings in the active copy
+remain unchanged until explicit activation.
+
+PlayOnline uses the Box64 environment used for client preparation. The saved
+FEX/gameplay renderer selection is retained. Retail credentials are entered only
+in PlayOnline if required; LSB's private-server account fields are not passed to
+it. The installation must already qualify for PlayOnline's official file-check
+workflow. If FINAL FANTASY XI is absent from its dropdown, complete the official
+retail setup/login requirement first; this feature does not fabricate that state.
+
+## Primary references
+
+- [LandSandBoat client setup, Later Updates](https://github.com/LandSandBoat/lsb-wiki/blob/main/Client-Setup-Windows.md#3-later-updates)
+  documents `ROM/0/0.dat`, PlayOnline Check Files and prior retail connection.
+- [Square Enix Windows installation](https://www.playonline.com/ff11us/download/media/install_win.html)
+  provides the official PlayOnline/FFXI installer.
+- [Wine wineserver manual source](https://github.com/wine-mirror/wine/blob/master/server/wineserver.man.in)
+  documents prefix-scoped waiting for Windows process completion.
+
+Automated fixtures verify staging, recovery protection, repair-trigger isolation,
+resumption and explicit activation gates. Actual Square Enix download completion
+and PlayOnline interaction require this phone test with the owner's installation.
+
+## Retrying a viewer that showed black and exited
+
+Version 0.5.37 keeps the existing update candidate. In Restore Test, use **Open or
+resume PlayOnline update**; do not discard the candidate or restore the session
+again. The update process disables Wine's optional Indeo video codec when using
+this runtime's disabled GStreamer support. This follows Wine bug 56462's failure
+mechanism: the codec used a delayed call into an unavailable decoder. The
+workaround applies only to the update process, without changing the active
+client, Windows registry, gameplay renderer, or server.
+
+Before opening the viewer, the updater loads its normal imported DLLs in a
+separate process and records their Windows error codes. A dedicated viewer runner
+records the full Windows exit code and whether a visible window appeared, without
+reading window titles. Wine/DXVK output is reduced to fixed diagnostic categories;
+account text and raw process output are discarded. A visible window or a clean
+exit still does not prove File Repair completed. Detached viewer/updater processes
+are allowed to finish before cleanup, including after an abnormal first exit.
+
+If it still exits, export a fresh support ZIP. The update report now includes the
+DLL check, full process result and startup diagnostics instead of just exit 1.
+
+- [Wine bug 56462 and its upstream resolution](https://list.winehq.org/hyperkitty/list/wine-bugs@list.winehq.org/thread/YEO7G4Z53QPOJWXWFWNIBJHHNTHGHI7G/)
+- [Upstream codec import fix](https://github.com/wine-mirror/wine/commit/c0779ad492b2b0f6f4b0bdb1a7d20dc5674dcf97)
+
+## Retrying Unknown error 0x80040154
+
+Version 0.5.38 registers PlayOnline's application and regional contents modules
+in the staged Windows environment before opening the viewer. These are separate
+from the core component already used by the game launcher. Their DLL registration
+and class factories are checked, and any failure is recorded with a component
+name and numeric error code.
+
+Install the matching APK update without uninstalling. In **LSB Restore Test**,
+select **Client → Client update · PlayOnline → Open or resume PlayOnline update**.
+The retained client copy is reused; another restore, import or runtime download
+is not needed. After the viewer opens, continue the official Check Files/File
+Repair steps above. If another error appears, export a fresh support ZIP.
+
+See [component registration evidence](playonline-com-0538.md) for the official
+installer mapping, reproduced failure and verification limits.
+
+## Retrying POL-0019 / slow update startup
+
+Version 0.5.39 supplies the updater's Linux environment with the DNS servers
+from Android's active network and a private localhost hosts file. The pinned
+runtime archive contains empty resolver/hosts files; Android app downloads and
+local-server gameplay did not exercise this missing external-name resolution.
+The files are bound for the update session without replacing the installed
+runtime, active gameplay prefix or server configuration.
+
+A bounded guest IPv4 name check runs before Wine starts. It records whether
+PlayOnline's public server names resolve; it does not claim the patch service
+is available. If neither check resolves, the app stops early with a specific
+network message. Reopening the updater refreshes the network settings. No
+public DNS fallback is selected. This uses the active link's DNS endpoints;
+Android Private DNS/DoT is not implemented inside the guest.
+
+Preparation now shows six numbered component steps and records their elapsed
+times. The .38 phone report showed about 102.5 seconds before viewer launch,
+then 25.5 seconds before a visible window. Android decode/draw was sub-millisecond,
+so it did not establish a display-transfer bottleneck. These measurements do
+not prove a renderer or translator fix, and no such settings were changed.
+
+Install the matching .39 APK over each app, then use **Restore Test → Client →
+Client update · PlayOnline → Open or resume PlayOnline update**. The existing
+staged copy is reused. Continue the viewer update, then Check Files/File Repair.
+If POL-0019 or a long wait remains, export a new support ZIP so the network and
+step timing reports can identify the remaining failure.
+
+## Retrying POL-1168 / unable to verify version information
+
+Version 0.5.40 checks PlayOnline's regional 32-bit `Interface` key's `1000` value
+in the staged Windows environment. It restores a missing value only when
+one known candidate fully validates the staged viewer's `patch.ver` length,
+checksum, padding and version format. Existing values of every type are
+preserved. The check does not rewrite `patch.ver` or change the active client.
+Diagnostics record only fixed state and candidate labels, validated version
+text and bounded numeric error codes; they do not include raw registry values.
+
+Install each matching .40 APK without uninstalling. In **LSB Restore Test**, use
+**Client → Client update · PlayOnline → Open or resume PlayOnline update** to
+reuse the existing candidate. No new import, restore or runtime download is
+needed. Continue the official update and Check Files/File Repair steps above.
+
+Automated tests cover this metadata failure mode, but the exact viewer metadata
+from the phone was absent from the support ZIP. The phone test must confirm
+whether POL-1168 clears and the official repair completes. If the error remains,
+export a fresh support ZIP; its `viewer_version_config` report identifies whether
+the value was preserved, restored, unavailable or did not match a known format.
+
+## Retrying a blank panel after the viewer update
+
+Version 0.5.41 combines the six component checks into one process to reduce
+repeated startup work. The official viewer still needs to finish updating and
+restart before its main menu offers Check Files. Reuse the existing candidate
+with **Open or resume PlayOnline update**.
+
+If the center stays blank, tap **☰ → Refresh display** once and allow up to
+15 seconds. If controls remain absent, export a new support ZIP. It now records
+window responsiveness, bounded update-file metadata and the refresh result.
+The blank panel's cause is not yet confirmed; these checks distinguish the
+remaining possibilities. See [evidence and limits](playonline-panel-0541.md).
+
+
+## Slow file checking (0.5.42)
+
+The updater now has a separate **Updater runtime** selector. **Follow game
+runtime** uses FEX when it is installed and selected for gameplay; otherwise
+it uses Box64. Explicit FEX selection requires the installed FEX runtime.
+**Box64 compatibility** retains the previous updater path for comparison.
+Changing this selector does not change the gameplay setting. FEX copies the
+stopped staged Windows environment into its own per-generation prefix and
+resumes that prefix on later launches. It never converts the working game's
+prefix or copies native ARM64 Windows files back into a Box64 prefix.
+
+This first comparison changes the Wine/CPU engine only. The updater keeps its
+existing DXVK 2.5.3 and display transport; syscall filtering remains disabled.
+Do not apply unrelated gameplay graphics trials to this comparison.
+
+Before the viewer opens, a bounded synthetic test measures native and Windows
+file operations, case-insensitive path lookup, timers and a CPU workload. It
+uses disposable session files only, never scans or changes client content.
+The runtime also records bounded numeric process counters through the viewer's
+restart, so the hour-long repair is no longer represented by its exited original
+process's CPU time. Both results are included in Diagnostics.
+
+Install the matching APK in place. In Restore Test, choose **FEX runtime**, then
+**Open or resume PlayOnline update**. Reuse the staged copy and reach FFXI Check
+Files. Record the checked-file count at the start and after five minutes. Stop
+and export support if it remains extremely slow; another hour-long run is not
+needed. Activate only after the official repair finishes and staged verification
+passes. A synthetic benchmark or visible menu is not proof of a completed repair.
+
+See [repair performance evidence](playonline-repair-0542.md) for the measured
+boundary, qualification and remaining phone-test limits.

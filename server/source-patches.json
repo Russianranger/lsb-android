@@ -1,0 +1,79 @@
+[
+  {
+    "id": "decoded-linkshell-terminated-copy",
+    "path": "src/common/utils.cpp",
+    "before": "    strncpy(target, decodedSignature, LinkshellStringLength);\n}\n\nstd::string EncodeStringSignature",
+    "after": "    // Decoded strings use DecodeStringLength, including the final terminator.\n    const auto decodedLength = std::strlen(decodedSignature);\n    std::memcpy(target, decodedSignature, decodedLength);\n    std::memset(target + decodedLength, 0, DecodeStringLength - decodedLength);\n}\n\nstd::string EncodeStringSignature",
+    "group": "decoded-string-buffers"
+  },
+  {
+    "id": "decoded-signature-terminated-copy",
+    "path": "src/common/utils.cpp",
+    "before": "    strncpy(target, decodedSignature, SignatureStringLength);\n}\n\n// Take a regular string",
+    "after": "    // Preserve decoded characters and zero padding in the decoded-size buffer.\n    const auto decodedLength = std::strlen(decodedSignature);\n    std::memcpy(target, decodedSignature, decodedLength);\n    std::memset(target + decodedLength, 0, DecodeStringLength - decodedLength);\n}\n\n// Take a regular string",
+    "group": "decoded-string-buffers"
+  },
+  {
+    "id": "linkshell-decoded-buffer-capacity",
+    "path": "src/map/items/item_linkshell.cpp",
+    "before": "    char  decoded[LinkshellStringLength] = {};\n    DecodeStringLinkshell",
+    "after": "    char  decoded[DecodeStringLength] = {};\n    DecodeStringLinkshell",
+    "group": "decoded-string-buffers"
+  },
+  {
+    "id": "asio-search-accept-loop-tuple-header",
+    "group": "asio-search-accept-loop",
+    "path": "src/search/search_listener.h",
+    "before": "#pragma once\n\n#include <asio/ts/internet.hpp>",
+    "after": "#pragma once\n\n#include <tuple>\n\n#include <asio/ts/internet.hpp>"
+  },
+  {
+    "id": "asio-search-accept-loop-named-result",
+    "group": "asio-search-accept-loop",
+    "path": "src/search/search_listener.h",
+    "before": "            auto [ec, socket] = co_await acceptor_.async_accept(asio::as_tuple(asio::use_awaitable));",
+    "after": "            // Keep the accepted tuple named across the coroutine suspension.\n            auto acceptResult = co_await acceptor_.async_accept(asio::as_tuple(asio::use_awaitable));\n            const auto& ec = std::get<0>(acceptResult);\n            auto& socket = std::get<1>(acceptResult);"
+  },
+  {
+    "id": "asio-login-accept-loop-tuple-header",
+    "group": "asio-login-accept-loop",
+    "path": "src/login/handler.h",
+    "before": "#pragma once\n\n#include <asio/ssl.hpp>",
+    "after": "#pragma once\n\n#include <tuple>\n\n#include <asio/ssl.hpp>"
+  },
+  {
+    "id": "asio-login-accept-loop-named-result",
+    "group": "asio-login-accept-loop",
+    "path": "src/login/handler.h",
+    "before": "            auto [ec, socket] = co_await acceptor_.async_accept(asio::as_tuple(asio::use_awaitable));",
+    "after": "            // Keep the accepted tuple named across the coroutine suspension.\n            auto acceptResult = co_await acceptor_.async_accept(asio::as_tuple(asio::use_awaitable));\n            const auto& ec = std::get<0>(acceptResult);\n            auto& socket = std::get<1>(acceptResult);"
+  },
+  {
+    "id": "sol-direct-char-array-pointer-keys",
+    "group": "sol-direct-char-array-keys",
+    "path": "ext/sol/include/sol/sol.hpp",
+    "before": "\t\ttemplate <bool global = false, bool raw = false, typename Key>\n\t\tvoid get_field(lua_State* L, Key&& key) {\n\t\t\tfield_getter<meta::unqualified_t<Key>, global, raw> {}.get(L, std::forward<Key>(key));\n\t\t}\n\n\t\ttemplate <bool global = false, bool raw = false, typename Key>\n\t\tvoid get_field(lua_State* L, Key&& key, int tableindex) {\n\t\t\tfield_getter<meta::unqualified_t<Key>, global, raw> {}.get(L, std::forward<Key>(key), tableindex);\n\t\t}\n\n",
+    "after": "\t\ttemplate <bool global = false, bool raw = false, typename Key>\n\t\tvoid get_field(lua_State* L, Key&& key) {\n\t\t\t// Narrow C-string arrays use pointer keys in the direct Lua field API.\n\t\t\t// Keep raw lookups and all other key types on their existing path.\n\t\t\tif constexpr (!raw && std::is_array_v<std::remove_reference_t<Key>>\n\t\t\t     && meta::is_c_str_v<meta::unqualified_t<Key>>) {\n\t\t\t\tconst char* key_pointer = key;\n\t\t\t\tfield_getter<const char*, global, raw> {}.get(L, key_pointer);\n\t\t\t}\n\t\t\telse {\n\t\t\t\tfield_getter<meta::unqualified_t<Key>, global, raw> {}.get(L, std::forward<Key>(key));\n\t\t\t}\n\t\t}\n\n\t\ttemplate <bool global = false, bool raw = false, typename Key>\n\t\tvoid get_field(lua_State* L, Key&& key, int tableindex) {\n\t\t\t// Narrow C-string arrays use pointer keys in the direct Lua field API.\n\t\t\t// Keep raw lookups and all other key types on their existing path.\n\t\t\tif constexpr (!raw && std::is_array_v<std::remove_reference_t<Key>>\n\t\t\t     && meta::is_c_str_v<meta::unqualified_t<Key>>) {\n\t\t\t\tconst char* key_pointer = key;\n\t\t\t\tfield_getter<const char*, global, raw> {}.get(L, key_pointer, tableindex);\n\t\t\t}\n\t\t\telse {\n\t\t\t\tfield_getter<meta::unqualified_t<Key>, global, raw> {}.get(L, std::forward<Key>(key), tableindex);\n\t\t\t}\n\t\t}\n\n"
+  },
+  {
+    "id": "lua-geteva-safe-entity-check",
+    "group": "lua-geteva-safe-entity-check",
+    "path": "src/map/lua/lua_base_entity.cpp",
+    "before": "uint16 CLuaBaseEntity::getEVA()\n{\n    if (auto* PEntity = static_cast<CBattleEntity*>(m_PBaseEntity))\n    {\n        return PEntity->EVA();\n    }\n\n    ShowError(\"Invalid entity type calling function (%s).\", m_PBaseEntity->getName());\n    return 0;\n}",
+    "after": "uint16 CLuaBaseEntity::getEVA()\n{\n    if (auto* PEntity = dynamic_cast<CBattleEntity*>(m_PBaseEntity))\n    {\n        return PEntity->EVA();\n    }\n\n    if (m_PBaseEntity)\n    {\n        ShowError(\"Invalid entity type calling function (%s).\", m_PBaseEntity->getName());\n    }\n    else\n    {\n        ShowError(\"Null entity calling getEVA().\");\n    }\n    return 0;\n}"
+  },
+  {
+    "id": "asio-profile-accept-loop-tuple-header",
+    "group": "asio-profile-accept-loop",
+    "path": "src/profile/profile_engine.cpp",
+    "before": "#include <stdexcept>\n\nnamespace",
+    "after": "#include <stdexcept>\n#include <tuple>\n\nnamespace"
+  },
+  {
+    "id": "asio-profile-accept-loop-named-result",
+    "group": "asio-profile-accept-loop",
+    "path": "src/profile/profile_engine.cpp",
+    "before": "        auto [ec, socket] = co_await acceptor.async_accept(asio::as_tuple(asio::use_awaitable));",
+    "after": "        // Keep the accepted tuple named across the coroutine suspension.\n        auto acceptResult = co_await acceptor.async_accept(asio::as_tuple(asio::use_awaitable));\n        auto& ec = std::get<0>(acceptResult);\n        auto& socket = std::get<1>(acceptResult);"
+  }
+]

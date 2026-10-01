@@ -1,0 +1,20 @@
+--- a/Source/Windows/Common/CPUFeatures.cpp
++++ b/Source/Windows/Common/CPUFeatures.cpp
+@@ -87,8 +87,16 @@
+   // Baseline FEX feature-set
+   CpuInfo.ProcessorFeatureBits = CPU_FEATURE_VME | CPU_FEATURE_TSC | CPU_FEATURE_CMOV | CPU_FEATURE_PGE | CPU_FEATURE_PSE | CPU_FEATURE_MTRR |
+                                  CPU_FEATURE_CX8 | CPU_FEATURE_MMX | CPU_FEATURE_X86 | CPU_FEATURE_PAT | CPU_FEATURE_FXSR | CPU_FEATURE_SEP |
+-                                 CPU_FEATURE_SSE | CPU_FEATURE_3DNOW | CPU_FEATURE_SSE2 | CPU_FEATURE_SSE3 | CPU_FEATURE_CX128 |
++                                 CPU_FEATURE_SSE | CPU_FEATURE_SSE2 | CPU_FEATURE_SSE3 | CPU_FEATURE_CX128 |
+                                  CPU_FEATURE_NX | CPU_FEATURE_SSSE3 | CPU_FEATURE_SSE41 | CPU_FEATURE_PAE | CPU_FEATURE_DAZ;
++
++  // Match the guest CPUID contract, including the Windows 3DNow workaround.
++  // Legacy D3DX dispatchers consult this API before their own CPUID check;
++  // advertising a disabled feature can suppress the usable SSE2 path.
++  const auto ExtendedFeatures = CTX.RunCPUIDFunction(0x80000001, 0);
++  if (ExtendedFeatures.edx & (1U << 31)) {
++    CpuInfo.ProcessorFeatureBits |= CPU_FEATURE_3DNOW;
++  }
+ 
+   // Features that require specific host CPU support
+   const auto CPUIDResult01 = CTX.RunCPUIDFunction(0x01, 0);
