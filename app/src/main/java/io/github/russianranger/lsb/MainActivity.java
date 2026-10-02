@@ -237,6 +237,7 @@ public final class MainActivity extends Activity {
         button(intro,"Runtime installation and checks",()->navigate("Runtime",""),true);
         button(intro,"Historical GameHub reference",()->navigate("Profile",""),true);
         button(intro,"Diagnostics and history",()->navigate("Diagnostics",""),true);
+        serverRuntimeSettingsCard();
         ClientStore source=store(this);if(ClientRuntime.get(this).preparationState().has("current"))loginCard(source);
         button(intro,"Inspect all activated client files",()->run("Inspecting active client",(ctx,p)->ClientRuntime.get(ctx).inspectActiveClient())).setEnabled(ClientRuntime.get(this).preparationState().has("current")&&!ClientRuntime.get(this).alive());
         initializationCard(source);
@@ -244,6 +245,15 @@ public final class MainActivity extends Activity {
         button(legacy,"Validate client and preview repair script",()->run("Inspecting client",(ctx,p)->{String script=store(ctx).previewRepair(profile(ctx),p);FilesEx.text(new File(ctx.getFilesDir(),"repair-preview.txt"),script);return "Repair preview ready in Diagnostics.";})).setEnabled(source.hasClient());
         button(legacy,"Export prepared client + GameHub launcher",()->create("prepared","ffxi-prepared.zip")).setEnabled(source.hasClient());
         button(legacy,"Export launcher update only",()->create("launcher","ffxi-launcher-update.zip")).setEnabled(source.hasClient());
+    }
+    private void serverRuntimeSettingsCard(){
+        ServerRuntime sr=ServerRuntime.get(this);LinearLayout settings=card("Server runtime settings");
+        CheckBox acceleration=new CheckBox(this);acceleration.setText("Server runtime acceleration");acceleration.setTextColor(TEXT);
+        acceleration.setChecked(getSharedPreferences("server",0).getBoolean("proot_acceleration",true));acceleration.setEnabled(!sr.alive()&&!WorkService.busy);
+        acceleration.setOnCheckedChangeListener((box,value)->getSharedPreferences("server",0).edit().putBoolean("proot_acceleration",value).apply());settings.addView(acceleration);
+        settings.addView(label("Enabled by default for faster server startup. Startup checks keep compatibility mode if unavailable. Stop the server before changing; turn off only to troubleshoot or compare boot times. Builds, backups and database recovery use compatibility mode.",13,MUTED));
+        File filterReceipt=new File(sr.logs,"proot-acceleration.json");
+        if(filterReceipt.isFile())try{JSONObject filter=new JSONObject(FilesEx.read(filterReceipt,65536));settings.addView(label("Last server start: "+("syscall_filter".equals(filter.optString("mode"))?"acceleration confirmed":"compatibility mode"),13,MUTED));}catch(Exception ignored){}
     }
     private void installationCard()throws Exception {
         JSONObject active=InstallationSummary.snapshot(this);LinearLayout panel=card("Currently playing with");
@@ -816,12 +826,6 @@ public final class MainActivity extends Activity {
         else live.addView(label("Open the Build tab to fetch or import source, compile with jemalloc, prepare a database, and check the exact build before deploying.",15,TEXT));
         button(live,"Start managed server",()->startForegroundService(new Intent(this,ServerService.class))).setEnabled(sr.installed()&&active.has("generation")&&!running);
         button(live,"Stop managed server",()->startForegroundService(new Intent(this,ServerService.class).setAction("stop"))).setEnabled(running);
-        CheckBox acceleration=new CheckBox(this);acceleration.setText("Server runtime acceleration");acceleration.setTextColor(TEXT);
-        acceleration.setChecked(getSharedPreferences("server",0).getBoolean("proot_acceleration",true));acceleration.setEnabled(!running&&!WorkService.busy);
-        acceleration.setOnCheckedChangeListener((box,value)->getSharedPreferences("server",0).edit().putBoolean("proot_acceleration",value).apply());live.addView(acceleration);
-        live.addView(label("Reduces server startup overhead when supported. Startup checks fall back to compatibility mode before opening the database. Stop the server before changing; turn off to compare boot times or troubleshoot. Builds, backups and database recovery use compatibility mode.",13,MUTED));
-        File filterReceipt=new File(sr.logs,"proot-acceleration.json");
-        if(filterReceipt.isFile())try{JSONObject filter=new JSONObject(FilesEx.read(filterReceipt,65536));live.addView(label("Last server start: "+("syscall_filter".equals(filter.optString("mode"))?"acceleration confirmed":"compatibility mode"),13,MUTED));}catch(Exception ignored){}
         if(active.has("generation")){
             final String generation=active.getString("generation");
             button(live,"Repair missing profile service",()->run("Building missing profile service with jemalloc",(ctx,p)->ServerRuntime.get(ctx).repairProfile(generation,p))).setEnabled(idle&&sr.toolsCurrent());
