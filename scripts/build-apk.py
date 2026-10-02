@@ -60,6 +60,7 @@ def build_apk(variant, source_manifest, output):
                 if f.is_file(): z.write(f, 'assets/runtime/'+f.name)
         for f in sorted((root/'server').glob('*')):
             if f.is_file(): z.write(f, 'assets/server/'+f.name)
+        z.write(root/'runtime/proot_preflight.py','assets/server/proot_preflight.py')
         for f in sorted((root/'out/runtime-libs').rglob('*.so')):
             z.write(f, 'lib/'+f.relative_to(root/'out/runtime-libs').as_posix())
         for f in sorted(dex.glob('*.dex')): z.write(f, f.name)

@@ -163,11 +163,12 @@ public class WorkServiceTest {
             FilesEx.text(new File(runtime.state,"import.sql"),"staged SQL retained");
             // Config.NONE does not load APK assets; seed the same production asset.
             FilesEx.text(new File(runtime.backend,"hosts"),FilesEx.read(new File("server/hosts"),4096));
+            context.getSharedPreferences("server",0).edit().putBoolean("proot_acceleration",false).commit();
             runtime.perform("deploy",false,s->{});runtime.perform("start",false,s->{});
             assertEquals(2,calls.get());assertTrue(runtime.toolsCurrent());
             assertEquals("",FilesEx.read(new File(runtime.root,"etc/hosts"),4096));
             assertEquals("staged SQL retained",FilesEx.read(new File(runtime.state,"import.sql"),4096));
-        }finally{FilesEx.delete(runtime.home);}
+        }finally{FilesEx.delete(runtime.home);context.getSharedPreferences("server",0).edit().remove("proot_acceleration").commit();}
     }
     @Test public void dependencyDetailsReachSupportExport()throws Exception {
         ServerRuntime runtime=new ServerRuntime(context,builder->{throw new AssertionError("No process needed for support export");});

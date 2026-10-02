@@ -56,6 +56,9 @@ public class ServerPageTest {
         org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Server")).setup();
         try{
             FantasyTiles tiles=(FantasyTiles)member(controller.get(),"tiles");View content=(View)member(controller.get(),"content");
+            CheckBox acceleration=(CheckBox)text(content,"Server runtime acceleration");assertNotNull(acceleration);assertTrue(acceleration.isChecked());
+            acceleration.performClick();assertFalse(ctx.getSharedPreferences("server",0).getBoolean("proot_acceleration",true));assertEquals(before,prefs.getAll());
+            acceleration.performClick();assertTrue(ctx.getSharedPreferences("server",0).getBoolean("proot_acceleration",false));
             assertNull(text(tiles,"◇  Import your working server"));assertNull(text(tiles,"◇  Source builds & updates"));
             assertNotNull(text(tiles,"◇  Create account"));assertNotNull(text(tiles,"◇  Database backup & restore"));assertNotNull(text(content,"Open Build tab"));
             capture(tiles,920,"server-tiles-wide.png");text(tiles,"◇  Create account").performClick();
@@ -72,7 +75,7 @@ public class ServerPageTest {
             capture(tiles,920,"database-checkpoints-wide.png");capture(tiles,400,"database-checkpoints-narrow.png");
             text(tiles,"◇  Database backup & restore").performClick();text(tiles,"Prepare a replacement database on Build").performClick();assertEquals("Build",member(controller.get(),"tab"));assertNotNull(text((View)member(controller.get(),"content"),"Build workspace"));
             assertEquals(before,prefs.getAll());
-        }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);prefs.edit().clear().commit();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
+        }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);prefs.edit().clear().commit();ctx.getSharedPreferences("server",0).edit().clear().commit();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }
     @Test public void buildTabRequiresCurrentToolsAndOffersWorkersWithoutDatabase()throws Exception{
         Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);

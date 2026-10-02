@@ -75,12 +75,12 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.6.1.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.6.2.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.6.1.apk
+            out/LSB-Android-0.6.2.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/
@@ -277,7 +277,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Real MariaDB deployment and recovery on ARM64
-        run: docker run --rm -v "$PWD:/src:ro" ubuntu:26.04 bash /src/tests/server/check.sh
+        run: docker run --rm --security-opt seccomp=unconfined -v "$PWD:/src:ro" ubuntu:26.04 bash /src/tests/server/check.sh
 
   runtime-release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/codex/client-baseline'
