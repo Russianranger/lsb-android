@@ -1,3 +1,11 @@
+# Beta 0.7: accepted server acceleration and release
+
+The user accepted improved startup on Thor (map ready 95.96 seconds with actual filtering confirmed, existing three accounts/three characters) and authorized merging PR #2 into Main and publishing Beta 0.7. Acceleration defaults ON; its independent switch/last-start receipt are under More → Advanced settings and repairs → Server runtime settings. The Server page no longer shows the control. Saved OFF preferences are retained, and the switch locks during server/maintenance work. The preflight/gate/fallback, database/backup maintenance, client runtime and postponed optimizations are unchanged.
+
+Android version 0.7.0/code 74 and the original certificate allow an in-place update. API 35 build and 146 Android tests pass at `1095f832`; all 74 payload entries match qualified CI artifact `11247303695`. Original-signed APK SHA-256: `8ab58ee5dd504a5cb63c106bab86a3841b33cb4821ef2faa4cf50c591101dbaa`, size 18581208 bytes. Private signing checkpoint remains private. Saved APK: `file_00000000389881fba8dd0903bddafd76`. Complete prior qualification run `36946975980` passes, and fresh server deployment, Windows launcher and source compilation pass. See [Beta 0.7 qualification](QUALIFICATION-0.7.md) for exact evidence and [upgrade checks](TESTING-0.7.md). Historical sections below describe earlier checkpoints and their then-current restrictions; the latest explicit user release authorization supersedes those restrictions. Preserve the archived Beta 0.6 tag/APK.
+
+---
+
 # 0.6.2: checked server acceleration, original-signed test APK
 
 Continue existing draft PR #2 and `codex/beta-061-improvements`. App/server runtime implementation is `671fa356`; later commits through `cf49b516` change only CI fixtures. The only new boot optimization is default-on Server runtime acceleration, with an independent switch, credential-free preflight, confirmed native filtering, stdin release gate and compatibility fallback before database access. Builds, SQL checkpoints/recovery and backups keep compatibility mode. Script caching and deferred zones are postponed.
