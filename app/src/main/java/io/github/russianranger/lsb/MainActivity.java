@@ -237,12 +237,23 @@ public final class MainActivity extends Activity {
         button(intro,"Runtime installation and checks",()->navigate("Runtime",""),true);
         button(intro,"Historical GameHub reference",()->navigate("Profile",""),true);
         button(intro,"Diagnostics and history",()->navigate("Diagnostics",""),true);
+        serverRuntimeSettingsCard();
         ClientStore source=store(this);if(ClientRuntime.get(this).preparationState().has("current"))loginCard(source);
+        button(intro,"Inspect all activated client files",()->run("Inspecting active client",(ctx,p)->ClientRuntime.get(ctx).inspectActiveClient())).setEnabled(ClientRuntime.get(this).preparationState().has("current")&&!ClientRuntime.get(this).alive());
         initializationCard(source);
         LinearLayout legacy=card("External launcher and repair tools");
         button(legacy,"Validate client and preview repair script",()->run("Inspecting client",(ctx,p)->{String script=store(ctx).previewRepair(profile(ctx),p);FilesEx.text(new File(ctx.getFilesDir(),"repair-preview.txt"),script);return "Repair preview ready in Diagnostics.";})).setEnabled(source.hasClient());
         button(legacy,"Export prepared client + GameHub launcher",()->create("prepared","ffxi-prepared.zip")).setEnabled(source.hasClient());
         button(legacy,"Export launcher update only",()->create("launcher","ffxi-launcher-update.zip")).setEnabled(source.hasClient());
+    }
+    private void serverRuntimeSettingsCard(){
+        ServerRuntime sr=ServerRuntime.get(this);LinearLayout settings=card("Server runtime settings");
+        CheckBox acceleration=new CheckBox(this);acceleration.setText("Server runtime acceleration");acceleration.setTextColor(TEXT);
+        acceleration.setChecked(getSharedPreferences("server",0).getBoolean("proot_acceleration",true));acceleration.setEnabled(!sr.alive()&&!WorkService.busy);
+        acceleration.setOnCheckedChangeListener((box,value)->getSharedPreferences("server",0).edit().putBoolean("proot_acceleration",value).apply());settings.addView(acceleration);
+        settings.addView(label("Enabled by default for faster server startup. Startup checks keep compatibility mode if unavailable. Stop the server before changing; turn off only to troubleshoot or compare boot times. Builds, backups and database recovery use compatibility mode.",13,MUTED));
+        File filterReceipt=new File(sr.logs,"proot-acceleration.json");
+        if(filterReceipt.isFile())try{JSONObject filter=new JSONObject(FilesEx.read(filterReceipt,65536));settings.addView(label("Last server start: "+("syscall_filter".equals(filter.optString("mode"))?"acceleration confirmed":"compatibility mode"),13,MUTED));}catch(Exception ignored){}
     }
     private void installationCard()throws Exception {
         JSONObject active=InstallationSummary.snapshot(this);LinearLayout panel=card("Currently playing with");
@@ -739,6 +750,10 @@ public final class MainActivity extends Activity {
         s.saveConfig(next);
         if (!old.host.equals(next.host) || !old.region.equals(next.region) || !old.polCore.equals(next.polCore)) FilesEx.delete(new File(getFilesDir(), "repair-preview.txt"));
     }
+    private Spinner spinner(LinearLayout parent,String title,String[] values,int selected) {
+        parent.addView(label(title,14,MUTED));Spinner choice=new Spinner(this);
+        choice.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,values));choice.setSelection(selected);parent.addView(choice);return choice;
+    }
     private Spinner playOnlineSpinner(LinearLayout parent, List<String> paths) {
         List<String> labels = new ArrayList<>();
         for (String path : paths) labels.add((ClientInspector.isPatchCache(path) ? "Patch cache — do not use" : "Client files") + " · " + (path.toLowerCase(Locale.ROOT).endsWith("polcoreeu.dll") ? "EU" : "US / JP") + " · " + path);
@@ -841,6 +856,27 @@ public final class MainActivity extends Activity {
         button(recovery,"Export full database backup",()->create("server-db","lsb-database.sql.gz")).setEnabled(active.has("generation")&&idle);
         button(recovery,"Prepare a replacement database on Build",()->{tab="Build";draw();},true);
         button(recovery,"Restore previous server + database",()->confirm("Restore previous deployment","This switches both server files and player data to the retained previous generation. Progress made after that snapshot remains in the other generation.",()->run("Switching server generation",(ctx,p)->ServerRuntime.get(ctx).perform("rollback",false,p)))).setEnabled(active.has("generation")&&idle);
+        LinearLayout checkpoints=card("Database checkpoints");
+        checkpoints.addView(label("Small dated saves of accounts, characters and world data, without copying the client or runtimes. Stop the client and server first. Full working-combination backups remain the way to recover after an app uninstall or a server build change.",15,TEXT));
+        SharedPreferences checkpointPrefs=getSharedPreferences("server",0);int[] keepValues={2,3,5,10};int selectedKeep=checkpointPrefs.getInt("checkpoint_keep",5),keepIndex=2;
+        for(int i=0;i<keepValues.length;i++)if(keepValues[i]==selectedKeep)keepIndex=i;
+        Spinner retention=spinner(checkpoints,"Checkpoints to keep",new String[]{"Keep newest 2","Keep newest 3","Keep newest 5","Keep newest 10"},keepIndex);retention.setContentDescription("Database checkpoint retention");
+        checkpoints.addView(label("The selected limit applies after the next successful save. Older checkpoints are then removed. These saves are stored inside the app and included in complete backups.",13,MUTED));
+        button(checkpoints,"Save database checkpoint",()->{
+            final int keep=keepValues[retention.getSelectedItemPosition()];checkpointPrefs.edit().putInt("checkpoint_keep",keep).apply();
+            run("Saving database checkpoint",(ctx,p)->ServerRuntime.get(ctx).performCheckpoint("create-checkpoint",null,keep,p));
+        }).setEnabled(active.has("generation")&&idle);
+        JSONArray saved=sr.checkpoints();String[] saveLabels=new String[Math.max(1,saved.length())];
+        if(saved.length()==0)saveLabels[0]="No database checkpoints yet";
+        else for(int i=0;i<saved.length();i++){
+            JSONObject item=saved.getJSONObject(i);JSONObject pair=object(item,"compatibility");String buildId=pair.optString("build_id","");
+            saveLabels[i]=receiptTime(item,"created_at")+" · "+item.optInt("accounts")+" accounts / "+item.optInt("characters")+" characters · "+String.format(Locale.ROOT,"%.1f MiB",item.optLong("bytes")/1048576.0)+" · "+(buildId.isEmpty()?"legacy build":buildId.substring(0,Math.min(8,buildId.length())));
+        }
+        Spinner checkpointChoice=spinner(checkpoints,"Saved database",saveLabels,0);checkpointChoice.setContentDescription("Saved database checkpoint");
+        button(checkpoints,"Restore selected database checkpoint",()->{
+            JSONObject selected=saved.optJSONObject(checkpointChoice.getSelectedItemPosition());final String id=selected.optString("checkpoint_id");final int keep=keepValues[retention.getSelectedItemPosition()];
+            confirm("Restore database checkpoint",saveLabels[checkpointChoice.getSelectedItemPosition()]+"\n\nThis restores player and world progress to this date. The app checks that the checkpoint matches the deployed server build. Your current server and database are retained as the previous deployment.",()->run("Restoring database checkpoint",(ctx,p)->ServerRuntime.get(ctx).performCheckpoint("restore-checkpoint",id,keep,p)));
+        }).setEnabled(active.has("generation")&&idle&&saved.length()>0);
         LinearLayout diagnostics=card("Server logs");
         button(diagnostics,"View server operation log",this::showLiveServerLog,true);
         button(diagnostics,"Probe saved server address",()->run("Checking server TCP ports",(ctx,p)->{String address=store(ctx).config().host;StringBuilder result=new StringBuilder("TCP reachability only: "+address+"\n");for(int port:new int[]{54231,54230,54001,51220,51240})try(Socket socket=new Socket()){socket.connect(new InetSocketAddress(address,port),2500);result.append(port).append(": reachable\n");}catch(IOException e){result.append(port).append(": unavailable\n");}FilesEx.text(new File(ctx.getFilesDir(),"server-probe.txt"),result.toString());return result.toString();}));
@@ -895,6 +931,8 @@ public final class MainActivity extends Activity {
         LinearLayout tools=featuredCard("Server build tools");
         button(tools,sr.toolsCurrent()?"Server runtime ready":sr.installed()?"Update server runtime and build tools":"Install server runtime and build tools",()->run("Installing server runtime",(ctx,p)->ServerRuntime.get(ctx).install(p))).setEnabled(idle&&!sr.toolsCurrent());
         if(!sr.toolsCurrent())tools.addView(label("Install or update the ARM64 compiler, MariaDB and jemalloc before building. Existing source and deployed databases are retained.",13,MUTED));
+        button(tools,sr.compilerCacheInstalled()?"Compiler cache installed":"Install compiler cache",()->run("Installing compiler cache",(ctx,p)->ServerRuntime.get(ctx).perform("install-build-cache",false,p))).setEnabled(idle&&sr.toolsCurrent()&&!sr.compilerCacheInstalled());
+        tools.addView(label("Reuses compiled objects across source builds, with compiler, header and option checks. Limited to 2 GiB; every result still passes binary and jemalloc validation.",12,MUTED));
         LinearLayout source=featuredCard("1 · Fetch or import source");
         source.addView(label("FETCHED SOURCE\n"+sourceIdentity(selected),13,TEXT));
         EditText repo=loginField(source,"GitHub repository",getSharedPreferences("server",0).getString("repository","https://github.com/LandSandBoat/server"),android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);repo.setContentDescription("Source GitHub repository");

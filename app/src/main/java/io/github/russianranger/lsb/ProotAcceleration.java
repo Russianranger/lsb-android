@@ -17,7 +17,7 @@ final class ProotAcceleration {
     private final File run,logs;
     private final Starter starter;
     private final long timeoutMs;
-    private boolean requested,preflight,observed,updater;
+    private boolean requested,preflight,observed,updater,server;
     private long elapsed;
     private String reason="not_requested";
     private MarkerStream launch;
@@ -27,6 +27,7 @@ final class ProotAcceleration {
         this.session=session;this.run=run;this.logs=logs;this.starter=starter;this.timeoutMs=timeoutMs;
     }
     static boolean eligible(JSONObject r){
+        if("start-server".equals(r.optString("action")))return true;
         if("update-client".equals(r.optString("action"))){
             String engine=r.optString("engine");
             return ("box64".equals(engine)||"fex".equals(engine))
@@ -55,13 +56,15 @@ final class ProotAcceleration {
     }
     boolean prepare(ProcessBuilder main,JSONObject request,Check stop,Cleanup cleanup)throws Exception{
         updater="update-client".equals(request.optString("action"));
+        server="start-server".equals(request.optString("action"));
         configure(main,false);requested=request.optBoolean("proot_acceleration","syscall_filter".equals(request.optString("performance_trial")));
-        if(!requested)return false;
+        if(!requested){if(server){reason="disabled";save();}return false;}
         if(!eligible(request)){reason=updater?"requires_tested_playonline_profile":"requires_tested_fex_turnip26_two_worker_profile";save();return false;}
         reason="checking";save();stop.check();
-        List<String> command=new ArrayList<>(main.command());int script=command.indexOf("/opt/lsb/supervisor.py");
+        List<String> command=new ArrayList<>(main.command());int script=command.indexOf(server?"/opt/lsb-server/manager.py":"/opt/lsb/supervisor.py");
         if(script<0||script!=command.size()-1)throw new IOException("Cannot isolate the syscall-filter check");
-        command.set(script,"/opt/lsb/proot_preflight.py");if(command.contains("--sysvipc"))command.add("--sysvipc");
+        command.set(script,server?"/opt/lsb-server/proot_preflight.py":"/opt/lsb/proot_preflight.py");
+        if(server)command.add("--server");else if(command.contains("--sysvipc"))command.add("--sysvipc");
         ProcessBuilder probe=new ProcessBuilder(command);probe.environment().clear();probe.environment().putAll(main.environment());
         probe.directory(main.directory());probe.redirectErrorStream(true);configure(probe,true);
         Process child=null;MarkerStream reader=null;long begin=System.nanoTime();boolean interrupted=false;
@@ -115,6 +118,24 @@ final class ProotAcceleration {
             stop.check();
         }catch(InterruptedException|InterruptedIOException e){reason="cancelled";save();throw e;}
         observed=true;reason="launch_filter_observed";save();
+    }
+    /** Server stdout remains in its existing log. No database may start until the parent releases stdin. */
+    boolean observeServerLaunch(Process child,Check stop,File output)throws Exception{
+        if(!server||!preflight)throw new IOException("Server syscall-filter preflight is missing");
+        observed=false;reason="awaiting_launch_marker";save();
+        long deadline=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(Math.min(5000,timeoutMs));
+        while(true){
+            stop.check();boolean marker=false;
+            if(output.isFile())try(RandomAccessFile file=new RandomAccessFile(output,"r")){
+                byte[] bytes=new byte[(int)Math.min(file.length(),65536)];file.readFully(bytes);
+                String value=new String(bytes,StandardCharsets.US_ASCII);
+                // Require a complete, exact line from the native wrapper.
+                marker=value.startsWith(MARKER+"\n")||value.contains("\n"+MARKER+"\n");
+            }
+            if(marker&&child.isAlive()){observed=true;reason="launch_filter_observed";save();return true;}
+            if(!child.isAlive()||System.nanoTime()>=deadline){reason="launch_filter_not_observed";save();return false;}
+            Thread.sleep(20);
+        }
     }
     void close(){
         if(launch==null)return;

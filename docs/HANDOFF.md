@@ -1,3 +1,48 @@
+# Beta 0.7: accepted server acceleration and release
+
+The user accepted improved startup on Thor (map ready 95.96 seconds with actual filtering confirmed, existing three accounts/three characters) and authorized merging PR #2 into Main and publishing Beta 0.7. Acceleration defaults ON; its independent switch/last-start receipt are under More → Advanced settings and repairs → Server runtime settings. The Server page no longer shows the control. Saved OFF preferences are retained, and the switch locks during server/maintenance work. The preflight/gate/fallback, database/backup maintenance, client runtime and postponed optimizations are unchanged.
+
+Android version 0.7.0/code 74 and the original certificate allow an in-place update. API 35 build and 146 Android tests pass at `1095f832`; all 74 payload entries match qualified CI artifact `11247303695`. Original-signed APK SHA-256: `8ab58ee5dd504a5cb63c106bab86a3841b33cb4821ef2faa4cf50c591101dbaa`, size 18581208 bytes. Private signing checkpoint remains private. Saved APK: `file_00000000389881fba8dd0903bddafd76`. Complete prior qualification run `36946975980` passes, and fresh server deployment, Windows launcher and source compilation pass. See [Beta 0.7 qualification](QUALIFICATION-0.7.md) for exact evidence and [upgrade checks](TESTING-0.7.md). Historical sections below describe earlier checkpoints and their then-current restrictions; the latest explicit user release authorization supersedes those restrictions. Preserve the archived Beta 0.6 tag/APK.
+
+---
+
+# 0.6.2: checked server acceleration, original-signed test APK
+
+Continue existing draft PR #2 and `codex/beta-061-improvements`. App/server runtime implementation is `671fa356`; later commits through `cf49b516` change only CI fixtures. The only new boot optimization is default-on Server runtime acceleration, with an independent switch, credential-free preflight, confirmed native filtering, stdin release gate and compatibility fallback before database access. Builds, SQL checkpoints/recovery and backups keep compatibility mode. Script caching and deferred zones are postponed.
+
+API 35 app compilation, 145 Android tests, 198 runtime and 138 server unit tests pass. Full latest ARM64 server job `110651210399` in run `36946972226` passes: actual patched PRoot filtering, MariaDB and jemalloc service readiness/clean shutdown, byte-preserved preflight/gate data and retained accounts/characters/password hash, plus checkpoints and full-session recovery. Automatic source/profile builds also passed. Wider fresh client CI jobs remain running; prior complete 0.6.1 qualifications and both original failed-job retries passed. Do not change native client code or stretch qualification deadlines to hide graphics/heartbeat flakes.
+
+Original-signed 0.6.2/code 73 APK is 18,585,304 bytes, SHA-256 `156aa8f4612390a6c7bcca07081c24941eb5e8db26589cfa2d5fdff986bf75f5`. Its 74 non-signature entries match latest API-qualified artifact `11203265136` at `cf49b516` from run `36946972226`. The signer matches Beta 0.6/0.6.1; recover the saved private signing checkpoint for future updates, never commit it. Saved device APK file ID: `file_00000000446c81f587799cb1d40adc1e`. Install over the existing standard app; no uninstall, data clear, server rebuild or redeployment. Raw CI APKs cannot update the original-signed app.
+
+Main `f3abab7` and the published Beta 0.6 are preserved. Keep PR #2 draft. The real 300-zone Thor speedup is unmeasured: follow [OFF/ON timings and existing-character login](TESTING-0.6.2.md), exporting support ZIPs with `server/proot-acceleration.json`. See [qualification and artifact evidence](QUALIFICATION-0.6.2.md).
+
+---
+
+# 0.6.1: resumed qualification and original-signed test APK
+
+Continue draft PR #2 on `codex/beta-061-improvements`; implementation commit
+`c3aac1e8ba4de6663ea1d7b0e5df7c93c99a2595` is preserved. Main at `f3abab7`
+and the original-signed Beta 0.6 release are unchanged. The Windows heartbeat
+qualification passed on retry with no code changes, making full push run
+`36905461856` green. The parallel PR Box64 readback-timeout job is being retried;
+the complete Box64 suite already passed at the same implementation commit in
+the push run. Server-source compilation passed as run `36905467847`.
+
+The original private signing checkpoint was recovered from the user's saved
+`LSB-Android-preview-signing.zip`. Its certificate matches the actual Beta 0.6
+APK: `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Do not generate a replacement key or prescribe uninstalling the working app.
+The delivered 0.6.1/code 72 APK is original-signed and preserves every tested
+CI payload entry. SHA-256:
+`917f78066f9df4c3a8e98afa415206dbbee55de6ddc263388889b4b0c53f1bc8`.
+
+See [qualification](QUALIFICATION-0.6.1.md) for exact job/artifact evidence and
+[Thor instructions](TESTING-0.6.1.md) for the outstanding device pass. No
+production fixes, native refactors or milestone restarts were necessary.
+Keep PR #2 draft and do not merge until the new phone pass is ready.
+
+---
+
 # 0.5.55: navigation, working combination, shared progress
 
 User confirmed the 0.5.54 pass was working and requested original proposals

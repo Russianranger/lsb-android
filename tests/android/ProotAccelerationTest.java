@@ -45,6 +45,20 @@ public class ProotAccelerationTest {
         ProotAcceleration.MarkerStream good=new ProotAcceleration.MarkerStream(fragmented);good.start();good.join(1000);
         assertTrue(good.marker);assertTrue(good.check);assertFalse(good.failed);
     }
+    @Test public void serverLaunchRequiresExactCurrentFileMarkerAndLiveWrapper()throws Exception{
+        for(String value:new String[]{MARKER_LINE(),"prefix "+MARKER_LINE(),ProotAcceleration.MARKER, ""}){
+            File dir=Files.createTempDirectory("server-filter-file").toFile();
+            Child probe=new Child(MARKER_LINE()+ProotAcceleration.CHECK+"\n",false);
+            ProotAcceleration helper=helper(probe,dir,new ArrayList<>());
+            ProcessBuilder main=new ProcessBuilder("proot","/usr/bin/python3","/opt/lsb-server/manager.py");
+            assertTrue(helper.prepare(main,new JSONObject().put("action","start-server").put("proot_acceleration",true),()->{},()->{}));
+            File output=new File(dir,"supervisor.log");Files.write(output.toPath(),value.getBytes("UTF-8"));
+            assertEquals(value.equals(MARKER_LINE()),helper.observeServerLaunch(new Child("",true),()->{},output));
+            assertEquals(value.equals(MARKER_LINE()),helper.receipt().getBoolean("launch_observed"));
+            if(value.equals(MARKER_LINE()))assertFalse(helper.observeServerLaunch(new Child("",false),()->{},output));
+        }
+    }
+    private static String MARKER_LINE(){return ProotAcceleration.MARKER+"\n";}
     @Test public void successfulProbeCleansUpBeforeEnablingAndObservesRealLaunch()throws Exception{
         File dir=Files.createTempDirectory("proot-acceleration").toFile();Child probe=new Child(ProotAcceleration.MARKER+"\n"+ProotAcceleration.CHECK+"\n",false);
         List<ProcessBuilder> launched=new ArrayList<>();ProotAcceleration helper=helper(probe,dir,launched);ProcessBuilder main=command();int[] cleaned={0};

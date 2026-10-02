@@ -46,6 +46,25 @@ public class ServerPageTest {
         File directory=new File(MainActivity.storage(context),"server/current");FilesEx.text(new File(directory,"source-report.txt"),"Source: "+identity.optString("origin")+"\nExpected client: 30260904_1\n");
         FilesEx.text(new File(directory,"source-identity.json"),identity.toString());
     }
+    @Test public void advancedServerAccelerationDefaultsOnPreservesChoiceAndLocksDuringWork()throws Exception{
+        Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
+        ServerRuntime sr=ServerRuntime.get(ctx);FilesEx.delete(sr.home);SharedPreferences server=ctx.getSharedPreferences("server",0),client=ctx.getSharedPreferences("runtime",0);
+        server.edit().clear().commit();client.edit().putBoolean("proot_acceleration",true).commit();Map<String,?> before=client.getAll();
+        FilesEx.text(new File(sr.logs,"proot-acceleration.json"),"{\"mode\":\"syscall_filter\"}");
+        try{
+            for(int state=0;state<4;state++){
+                setMember(sr,"active",state==2);WorkService.busy=state==3;
+                org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Advanced")).setup();
+                try{
+                    FantasyTiles tiles=(FantasyTiles)member(controller.get(),"tiles");text(tiles,"◇  Server runtime settings").performClick();
+                    CheckBox acceleration=(CheckBox)text(tiles,"Server runtime acceleration");assertNotNull(acceleration);
+                    assertEquals(state==0,acceleration.isChecked());assertEquals(state<2,acceleration.isEnabled());assertNotNull(text(tiles,"Last server start: acceleration confirmed"));
+                    if(state==0){assertFalse(server.contains("proot_acceleration"));acceleration.performClick();assertFalse(server.getBoolean("proot_acceleration",true));capture(tiles,400,"server-runtime-settings-narrow.png");}
+                    assertEquals(before,client.getAll());
+                }finally{controller.pause().stop().destroy();Shadows.shadowOf(Looper.getMainLooper()).idle();}
+            }
+        }finally{WorkService.busy=false;setMember(sr,"active",false);FilesEx.delete(sr.home);server.edit().clear().commit();client.edit().clear().commit();singleton.set(null,null);}
+    }
     @Test public void serverTabKeepsAccountsAndRecoveryAndLinksToBuild()throws Exception{
         Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);
         ServerRuntime sr=ServerRuntime.get(ctx);String id="11111111-1111-1111-1111-111111111111";
@@ -56,6 +75,7 @@ public class ServerPageTest {
         org.robolectric.android.controller.ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class,new Intent(ctx,MainActivity.class).putExtra("tab","Server")).setup();
         try{
             FantasyTiles tiles=(FantasyTiles)member(controller.get(),"tiles");View content=(View)member(controller.get(),"content");
+            assertNull(text(content,"Server runtime acceleration"));assertNull(text(content,"Last server start:"));
             assertNull(text(tiles,"◇  Import your working server"));assertNull(text(tiles,"◇  Source builds & updates"));
             assertNotNull(text(tiles,"◇  Create account"));assertNotNull(text(tiles,"◇  Database backup & restore"));assertNotNull(text(content,"Open Build tab"));
             capture(tiles,920,"server-tiles-wide.png");text(tiles,"◇  Create account").performClick();
@@ -67,9 +87,12 @@ public class ServerPageTest {
             AlertDialog dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();assertNotNull(dialog);assertTrue(((TextView)dialog.findViewById(android.R.id.message)).getText().toString().contains("do not match"));dialog.dismiss();assertFalse(WorkService.busy);
             controller.pause();assertEquals("",password.getText().toString());assertEquals("",confirm.getText().toString());controller.resume();
             text(tiles,"◇  Database backup & restore").performClick();assertNull(text(tiles,"Restore imported database"));assertNotNull(text(tiles,"Restore previous server + database"));
-            text(tiles,"Prepare a replacement database on Build").performClick();assertEquals("Build",member(controller.get(),"tab"));assertNotNull(text((View)member(controller.get(),"content"),"Build workspace"));
+            text(tiles,"◇  Database checkpoints").performClick();assertTrue(text(tiles,"Save database checkpoint").isEnabled());assertFalse(text(tiles,"Restore selected database checkpoint").isEnabled());
+            Spinner retention=(Spinner)described(tiles,"Database checkpoint retention");assertEquals(4,retention.getCount());assertEquals(2,retention.getSelectedItemPosition());
+            capture(tiles,920,"database-checkpoints-wide.png");capture(tiles,400,"database-checkpoints-narrow.png");
+            text(tiles,"◇  Database backup & restore").performClick();text(tiles,"Prepare a replacement database on Build").performClick();assertEquals("Build",member(controller.get(),"tab"));assertNotNull(text((View)member(controller.get(),"content"),"Build workspace"));
             assertEquals(before,prefs.getAll());
-        }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);prefs.edit().clear().commit();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
+        }finally{controller.pause().stop().destroy();FilesEx.delete(sr.home);prefs.edit().clear().commit();ctx.getSharedPreferences("server",0).edit().clear().commit();singleton.set(null,null);Shadows.shadowOf(Looper.getMainLooper()).idle();}
     }
     @Test public void buildTabRequiresCurrentToolsAndOffersWorkersWithoutDatabase()throws Exception{
         Context ctx=RuntimeEnvironment.getApplication();Field singleton=ServerRuntime.class.getDeclaredField("instance");singleton.setAccessible(true);singleton.set(null,null);

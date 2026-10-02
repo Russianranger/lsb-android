@@ -67,7 +67,8 @@ final class SessionBackup {
                     if(!root.equals("files"))return false;
                     if(nested!=null&&(path.equals(nested)||path.startsWith(nested+"/")))return true;
                     if(path.equals(SETTINGS))return true;
-                    return path.equals("rt/run")||path.startsWith("rt/run/")||path.equals("rt/tmp")||path.startsWith("rt/tmp/")
+                    return path.equals("server-runtime/state/compiler-cache")||path.startsWith("server-runtime/state/compiler-cache/")
+                        ||path.equals("rt/run")||path.startsWith("rt/run/")||path.equals("rt/tmp")||path.startsWith("rt/tmp/")
                         ||path.equals("server-runtime/run")||path.startsWith("server-runtime/run/")||path.equals("server-runtime/tmp")||path.startsWith("server-runtime/tmp/");
                 },progress);
             }

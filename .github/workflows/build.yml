@@ -50,7 +50,8 @@ jobs:
       - name: Build x86 Windows launcher and native test fixtures
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686-posix clang lld
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686-posix clang lld ccache
+          python3 tests/server/compiler-cache.py
           python3 scripts/build-launcher.py --tests
       - uses: actions/upload-artifact@v4
         with:
@@ -73,15 +74,13 @@ jobs:
           python3 scripts/build-apk.py \
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
-            --keystore "$RUNNER_TEMP/ci-only.jks" \
-            --with-restore-test
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.5.55.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-Restore-Test-0.5.55.apk
+            --keystore "$RUNNER_TEMP/ci-only.jks"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.7.0.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.5.55.apk
+            out/LSB-Android-0.7.0.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/
@@ -103,12 +102,6 @@ jobs:
             out/windows-tests/dependency-detach.dll
             out/windows-tests/dependency-attach.dll
             out/windows-tests/dependency-cycle.exe
-      - uses: actions/upload-artifact@v4
-        with:
-          name: restore-test-device-build
-          path: |
-            out/LSB-Android-Restore-Test-0.5.55.apk
-            out/LSB-Android-Restore-Test-0.5.55.apk.sha256
       - name: Preserve APK verification tools
         run: |
           mkdir -p out/apk-tools/lib out/apk-tools/lib64
@@ -284,7 +277,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Real MariaDB deployment and recovery on ARM64
-        run: docker run --rm -v "$PWD:/src:ro" ubuntu:26.04 bash /src/tests/server/check.sh
+        run: docker run --rm --security-opt seccomp=unconfined -v "$PWD:/src:ro" ubuntu:26.04 bash /src/tests/server/check.sh
 
   runtime-release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/codex/client-baseline'

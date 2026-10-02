@@ -43,6 +43,7 @@ final class ServerRuntime {
         return out.toString().trim();
     }catch(Exception e){return "";}}
     boolean installed(){return new File(root,"lsb-server-ready").isFile();}
+    boolean compilerCacheInstalled(){return new File(root,"usr/bin/ccache").isFile();}
     boolean toolsCurrent(){return new File(root,"lsb-server-tools-v4").isFile();}
     boolean hasDatabaseImport(){return new File(state,"import.sql").isFile();}
     JSONObject deployment()throws Exception {
@@ -205,7 +206,31 @@ final class ServerRuntime {
     private void execute(List<String> guest,SafeZip.Progress progress)throws Exception {
         execute(guest,progress,null);
     }
+    private void checkFilterStop()throws Exception {
+        SafeZip.checkCancelled();
+        if(new File(run,"stop").exists())throw new InterruptedIOException("Server start cancelled before opening the database");
+    }
+    private List<Integer> filterProcesses(String owner){
+        List<Integer> found=new ArrayList<>();File[] proc=new File("/proc").listFiles();if(proc==null)return found;
+        byte[] needle=("LSB_SERVER_FILTER_OWNER="+owner+"\0").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        for(File folder:proc)try{
+            int pid=Integer.parseInt(folder.getName());if(pid==android.os.Process.myPid())continue;
+            if(Os.stat(folder.getPath()).st_uid!=android.os.Process.myUid())continue;
+            byte[] env=Files.readAllBytes(new File(folder,"environ").toPath());
+            outer:for(int i=0;i+needle.length<=env.length;i++){for(int j=0;j<needle.length;j++)if(env[i+j]!=needle[j])continue outer;found.add(pid);break;}
+        }catch(Exception ignored){}
+        return found;
+    }
+    /** Only this credential-free probe or unreleased launch gate; never an existing server tree. */
+    private void reapFilterProcesses(String owner)throws Exception {
+        for(int pid:filterProcesses(owner))try{Os.kill(pid,15);}catch(Exception ignored){}
+        for(int n=0;n<20&&!filterProcesses(owner).isEmpty();n++)Thread.sleep(100);
+        for(int pid:filterProcesses(owner))try{Os.kill(pid,9);}catch(Exception ignored){}
+        for(int n=0;n<20&&!filterProcesses(owner).isEmpty();n++)Thread.sleep(100);
+        if(!filterProcesses(owner).isEmpty())throw new IOException("Server acceleration check has not stopped; restart the app before retrying");
+    }
     private void execute(List<String> guest,SafeZip.Progress progress,ServerAccountRequest account)throws Exception {
+        ProotAcceleration acceleration=null;String filterOwner=UUID.randomUUID().toString();boolean gateReleased=false;
         try{
             // Start a clean view for every child, including dependency installation.
             // Keep the latest build evidence available after inspect/start/backup.
@@ -213,7 +238,36 @@ final class ServerRuntime {
             synchronized(this){logsReady=true;}
             new File(run,"stop").delete();File nativeDir=new File(context.getApplicationInfo().nativeLibraryDir);
             ProcessBuilder pb=new ProcessBuilder(command(guest));pb.environment().put("PROOT_LOADER",new File(nativeDir,"libproot-loader.so").getPath());pb.environment().put("PROOT_TMP_DIR",tmp.getPath());pb.environment().put("PROOT_NO_SECCOMP","1");pb.environment().put("LSB_SERVER_OWNER",home.getPath());pb.redirectErrorStream(true);pb.redirectOutput(new File(logs,"supervisor.log"));
-            process=processStarter.start(pb);
+            List<String> ordinaryCommand=new ArrayList<>(pb.command());
+            boolean start=account==null&&guest.equals(Arrays.asList("/usr/bin/python3","/opt/lsb-server/manager.py"))
+                &&"start".equals(new JSONObject(FilesEx.read(new File(run,"request.json"),65536)).optString("action"));
+            if(start){
+                status="Checking server runtime acceleration…";progress.update(status);
+                pb.command().add(pb.command().indexOf("/usr/bin/python3"),"LSB_SERVER_FILTER_OWNER="+filterOwner);
+                pb.environment().put("LSB_SERVER_FILTER_OWNER",filterOwner);
+                acceleration=new ProotAcceleration(filterOwner,run,logs,processStarter::start,15000);
+                JSONObject request=new JSONObject().put("action","start-server").put("proot_acceleration",context.getSharedPreferences("server",0).getBoolean("proot_acceleration",true));
+                boolean filter=acceleration.prepare(pb,request,this::checkFilterStop,()->reapFilterProcesses(filterOwner));
+                checkFilterStop();
+                if(filter){
+                    pb.command().set(pb.command().size()-1,"/opt/lsb-server/accelerated_start.py");
+                    process=processStarter.start(pb);
+                    if(acceleration.observeServerLaunch(process,this::checkFilterStop,new File(logs,"supervisor.log"))){
+                        checkFilterStop();
+                        process.getOutputStream().write("LSB_SERVER_FILTER_GO_V1\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                        process.getOutputStream().flush();gateReleased=true;
+                    }else{
+                        // No release was sent: manager.py and the database have not run.
+                        process.getOutputStream().close();ProotAcceleration.terminate(process);reapFilterProcesses(filterOwner);process=null;
+                        checkFilterStop();filter=false;
+                    }
+                }
+                if(!filter){
+                    pb.command(ordinaryCommand);pb.environment().remove("LSB_SERVER_FILTER_OWNER");ProotAcceleration.configure(pb,false);
+                    process=processStarter.start(pb);
+                }
+                status=filter?"Starting managed server with runtime acceleration…":"Starting managed server in compatibility mode…";progress.update(status);
+            }else process=processStarter.start(pb);
             try(OutputStream input=process.getOutputStream()){if(account!=null)account.send(input);}
             while(!process.waitFor(1,TimeUnit.SECONDS)){
                 File file=new File(run,"status.json");if(file.isFile())try{status=new JSONObject(FilesEx.read(file,65536)).optString("message",status);progress.update(status);}catch(Exception ignored){}
@@ -233,6 +287,7 @@ final class ServerRuntime {
             }}finally{
                 // Keep a still-live child visible to idle() until it actually exits.
                 if(child==null||!child.isAlive())process=null;
+                if(acceleration!=null){try{if(!gateReleased)reapFilterProcesses(filterOwner);}finally{acceleration.close();}}
             }
         }
     }
@@ -262,6 +317,29 @@ final class ServerRuntime {
         execute(Arrays.asList("/usr/bin/python3","/opt/lsb-server/manager.py"),progress,account);return status;
     }
     void stop()throws IOException{FilesEx.mkdir(run);FilesEx.text(new File(run,"stop"),"stop\n");status="Stopping managed server…";}
+    JSONArray checkpoints()throws Exception {
+        File directory=new File(state,"checkpoints");
+        if(Files.isSymbolicLink(directory.toPath()))throw new IOException("Invalid checkpoint storage");
+        List<JSONObject> list=new ArrayList<>();File[] folders=directory.listFiles();
+        if(folders!=null)for(File folder:folders){
+            if(!folder.getName().matches("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")||Files.isSymbolicLink(folder.toPath()))continue;
+            File data=new File(folder,"database.sql.gz");
+            if(!Files.isRegularFile(data.toPath(),LinkOption.NOFOLLOW_LINKS))continue;
+            try{
+                JSONObject saved=receipt(new File(folder,"receipt.json"));
+                if(saved.optInt("format")==1&&folder.getName().equals(saved.optString("checkpoint_id"))&&data.length()==saved.optLong("bytes",-1))list.add(saved);
+            }catch(Exception ignored){}
+        }
+        list.sort((a,b)->Double.compare(b.optDouble("created_at"),a.optDouble("created_at")));
+        return new JSONArray(list);
+    }
+    String performCheckpoint(String action,String id,int keep,SafeZip.Progress progress)throws Exception {
+        if(!Arrays.asList("create-checkpoint","restore-checkpoint").contains(action))throw new IOException("Unknown checkpoint action");
+        if(!Arrays.asList(2,3,5,10).contains(keep))throw new IOException("Choose how many checkpoints to keep");
+        JSONObject selection=new JSONObject().put("checkpoint_keep",keep);
+        if(action.equals("restore-checkpoint")){selectedId(id,"database checkpoint");selection.put("checkpoint_id",id);}
+        try(Operation reserved=beginOperation()){return performReserved(action,false,progress,null,selection);}
+    }
     void exportDatabase(OutputStream out,SafeZip.Progress progress)throws Exception {
         try(Operation reserved=beginOperation()){
         performReserved("backup",false,progress,null);
@@ -285,6 +363,7 @@ final class ServerRuntime {
         return result;
     }
     void exportLogs(ZipOutputStream zip)throws Exception {
+        File filter=new File(logs,"proot-acceleration.json");if(filter.isFile())SafeZip.entry(zip,"server/proot-acceleration.json",FilesEx.read(filter,65536));
         File entryTrace=new File(logs,"zone-entry.log");if(entryTrace.isFile())SafeZip.entry(zip,"server/zone-entry.log",redactCredentials(ServerLogTail.read(entryTrace,131072)));
         SafeZip.entry(zip,"server/deployment.json",deployment().toString(2));
         File s=new File(run,"status.json");if(s.isFile())SafeZip.entry(zip,"server/status.json",FilesEx.read(s,65536));

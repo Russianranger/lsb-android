@@ -57,6 +57,7 @@ class SourceBuildTests(unittest.TestCase):
             (root / name).write_bytes(arm64_elf(name))
 
     def loader(self, args, **kwargs):
+        if args==['ccache','--print-stats']:return subprocess.CompletedProcess(args,0,'direct_cache_hit 0\ncache_miss 1\n','')
         if args[0] == 'ldd':
             return subprocess.CompletedProcess(args, 0,
                 'libjemalloc.so.2 => /usr/lib/aarch64-linux-gnu/libjemalloc.so.2 (0x1)\n'
