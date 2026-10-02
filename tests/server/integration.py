@@ -228,6 +228,7 @@ for name in ('xi_connect','xi_map','xi_search','xi_world'):
 print('PASS: managed database + four ARM64 processes recognize current timed readiness, wait for map scripts after the login port opens, and stop without changing client data',flush=True)
 from proot_integration import verify as verify_filtered_start
 verify_filtered_start(repo,backend)
+(run/'stop').unlink(missing_ok=True)
 assert query_generation(restored['generation'],"SELECT COUNT(*) FROM accounts; SELECT COUNT(*) FROM chars; SELECT password FROM accounts WHERE login='NewPlayer';").splitlines()==['2','2',record[1]]
 assert (Path('/client')/'sentinel').read_bytes()==b'accepted client kept'
 print('PASS: accelerated startup preserves existing accounts, characters, password hash and client data',flush=True)
