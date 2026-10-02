@@ -1,3 +1,15 @@
+# 0.6.2: checked server acceleration, original-signed test APK
+
+Continue existing draft PR #2 and `codex/beta-061-improvements`. App/server runtime implementation is `671fa356`; later commits through `cf49b516` change only CI fixtures. The only new boot optimization is default-on Server runtime acceleration, with an independent switch, credential-free preflight, confirmed native filtering, stdin release gate and compatibility fallback before database access. Builds, SQL checkpoints/recovery and backups keep compatibility mode. Script caching and deferred zones are postponed.
+
+API 35 app compilation, 145 Android tests, 198 runtime and 138 server unit tests pass. Full latest ARM64 server job `110651210399` in run `36946972226` passes: actual patched PRoot filtering, MariaDB and jemalloc service readiness/clean shutdown, byte-preserved preflight/gate data and retained accounts/characters/password hash, plus checkpoints and full-session recovery. Automatic source/profile builds also passed. Wider fresh client CI jobs remain running; prior complete 0.6.1 qualifications and both original failed-job retries passed. Do not change native client code or stretch qualification deadlines to hide graphics/heartbeat flakes.
+
+Original-signed 0.6.2/code 73 APK is 18,585,304 bytes, SHA-256 `156aa8f4612390a6c7bcca07081c24941eb5e8db26589cfa2d5fdff986bf75f5`. Its 74 non-signature entries match latest API-qualified artifact `11203265136` at `cf49b516` from run `36946972226`. The signer matches Beta 0.6/0.6.1; recover the saved private signing checkpoint for future updates, never commit it. Saved device APK file ID: `file_00000000446c81f587799cb1d40adc1e`. Install over the existing standard app; no uninstall, data clear, server rebuild or redeployment. Raw CI APKs cannot update the original-signed app.
+
+Main `f3abab7` and the published Beta 0.6 are preserved. Keep PR #2 draft. The real 300-zone Thor speedup is unmeasured: follow [OFF/ON timings and existing-character login](TESTING-0.6.2.md), exporting support ZIPs with `server/proot-acceleration.json`. See [qualification and artifact evidence](QUALIFICATION-0.6.2.md).
+
+---
+
 # 0.6.1: resumed qualification and original-signed test APK
 
 Continue draft PR #2 on `codex/beta-061-improvements`; implementation commit

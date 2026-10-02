@@ -25,8 +25,8 @@ Beta 0.6 commit `f3abab7ab3c1de6fb1bccea02a1d0cc7ff7fc630`.
   parallel push Box64 job `110516445264` passed the complete suite, including
   those DXVK pixels, software rendering, native capture, client initialization,
   launch/relaunch, input, updater lifetime and PRoot. A retry of the failed
-  PR job was started as `110550713725`; its final result should be checked
-  before claiming that both workflow runs are green. The same-code full
+  PR job passed unchanged on retry as `110550713725`; both workflow runs
+  are now successful. The same-code full
   passing run is conclusive qualification for the delivered payload; a CI
   lavapipe readback timeout is not a new Android runtime regression diagnosis.
 - `git diff f3abab7..c3aac1e8 -- windows runtime scripts/check-runtime.sh
