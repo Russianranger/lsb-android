@@ -20,7 +20,7 @@ def verify(repo, backend):
     before=(backend.STATE/'active.json').read_bytes()
     def digest(path):
         with path.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
-    data_hashes={p:digest(p) for p in backend.current().joinpath('mysql').rglob('*') if p.is_file()}
+    data_hashes={p:digest(p) for p in backend.current().joinpath('database').rglob('*') if p.is_file()}
     assert data_hashes,'Expected a stopped physical database to verify'
     probe=subprocess.run(command+['/usr/bin/python3',str(repo/'runtime/proot_preflight.py'),'--server'],
                          env=environment,capture_output=True,text=True,timeout=20)
