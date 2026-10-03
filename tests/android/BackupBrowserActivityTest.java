@@ -59,6 +59,7 @@ public class BackupBrowserActivityTest {
         FilesEx.text(new File(session, "previous/client/recovery.dat"), "private-recovery-file-content");
         controller = Robolectric.buildActivity(BackupBrowserActivity.class).setup();
         ready();
+        text(content(),"Copies").performClick();ready();
     }
 
     @After public void cleanup() throws Exception {
@@ -206,5 +207,33 @@ public class BackupBrowserActivityTest {
             try {StorageBackups.inventory(context,s->{});fail("Unresolved recovery must prevent browsing");}
             catch(IOException expected) {assertFalse(files.exists());}
         } finally {SessionBackup.active=false;SessionBackup.recoveryError="";WorkService.busy=false;}
+    }
+
+    @Test public void fullAppViewIncludesUncataloguedCacheAndFoldersWithReadOnlySizedNavigation() throws Exception {
+        File extra=new File(context.getFilesDir(),"uncatalogued/nested/data");File cache=new File(context.getCacheDir(),"extra-cache");
+        FilesEx.text(extra,"private-new-file");FilesEx.text(cache,"cache");
+        try {
+            text(content(),"App files").performClick();ready();
+            assertNotNull(text(content(),"App files:"));choose("Internal data / files");ready();
+            ListView rows=list(content());boolean found=false;
+            for(int n=0;n<rows.getAdapter().getCount();n++){View row=rows.getAdapter().getView(n,null,rows);if(text(row,"uncatalogued")!=null){assertNotNull(text(row,"16 B"));found=true;}}
+            assertTrue(found);choose("uncatalogued");ready();choose("nested");ready();choose("data");
+            assertNull("Generic app folders must not gain a delete control",text(content(),"Delete copy"));
+            assertTrue(extra.isFile());assertEquals("private-new-file",FilesEx.read(extra,100));
+            text(content(),"Parent folder").performClick();ready();capture(400,800,"storage-all-files-narrow.png");
+        }finally{FilesEx.delete(new File(context.getFilesDir(),"uncatalogued"));FilesEx.delete(cache);}
+    }
+
+    @Test public void legacyExportHasLocateActionAndPickerDoesNotStartASecondExportOrRestore() throws Exception {
+        File receipt=new File(context.getFilesDir(),"working-combination.json");
+        InstallationSummary.recordSaved(context,new org.json.JSONObject(),"content://missing.exports/document/working.zip");
+        try {
+            text(content(),"Exports").performClick();ready();capture(400,800,"storage-exports-narrow.png");
+            choose("lsb-working-combination.zip");AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog();assertTrue(dialogMessage(dialog).contains("Access is unavailable"));
+            assertEquals(View.GONE,dialog.getButton(AlertDialog.BUTTON_POSITIVE).getVisibility());clickDialog(AlertDialog.BUTTON_NEUTRAL);
+            android.content.Intent picker=Shadows.shadowOf(controller.get()).getNextStartedActivityForResult().intent;
+            assertEquals(android.content.Intent.ACTION_OPEN_DOCUMENT,picker.getAction());assertTrue((picker.getFlags()&android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)!=0);
+            assertFalse(WorkService.busy);assertTrue(new File(session,"current/client/active.dat").isFile());
+        }finally{FilesEx.delete(receipt);}
     }
 }

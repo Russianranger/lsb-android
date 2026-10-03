@@ -1026,14 +1026,23 @@ public final class MainActivity extends Activity {
         next.addView(label("Client files: managed import available\nRegistry/COM repair: in-app staged initialization\nWindows runtime: Box64 fallback and verified FEX v3 world play\nDisplay, D3D8 and audio: open-probe checks in Runtime tab\nFFXI registration/COM: staged preparation on Client tab\nLogin: prepared-client launch on Client tab\nController: native joystick mapping\nServer: isolated source/database deployment\n\nA successful import means the file layout and selected PE headers passed checks. It does not mean the client has launched.", 14, TEXT));
     }
     private void pick(String kind) { pending = kind; Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"); startActivityForResult(i, PICK); }
-    private void create(String kind, String name) { pending = kind; Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind.equals("profile") ? "application/json" : kind.equals("server-helper")?"text/x-python":kind.equals("server-db")?"application/gzip":"application/zip").putExtra(Intent.EXTRA_TITLE, name); startActivityForResult(i, CREATE); }
+    private void create(String kind, String name) { pending = kind; Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind.equals("profile") ? "application/json" : kind.equals("server-helper")?"text/x-python":kind.equals("server-db")?"application/gzip":"application/zip").putExtra(Intent.EXTRA_TITLE, name).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION); startActivityForResult(i, CREATE); }
     @Override protected void onActivityResult(int request, int response, Intent data) {
         super.onActivityResult(request, response, data);
         if ((request != PICK && request != CREATE) || response != RESULT_OK || data == null || data.getData() == null) { pending = ""; return; }
         final Uri uri = data.getData(); final String kind = pending; pending = ""; final boolean preserveFiles = preserveOnImport;
         final int grant = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        final int existingGrant = ExportedBackups.persistedFlags(this, uri);
         try { getContentResolver().takePersistableUriPermission(uri, grant); } catch (SecurityException ignored) { }
-        run(request == PICK ? "Reading selected file" : "Writing export", (ctx, p) -> {
+        final Context exportContext=getApplicationContext();
+        run(request == PICK ? "Reading selected file" : "Writing export", new WorkService.Job() {
+            private boolean keepGrant,released;
+            private synchronized void release(Context ctx) {
+                if(released)return;released=true;
+                int flags=grant&~existingGrant;if(!keepGrant&&flags!=0)try{ctx.getContentResolver().releasePersistableUriPermission(uri,flags);}catch(SecurityException ignored){}
+            }
+            @Override public void close(){release(exportContext);}
+            @Override public String run(Context ctx,SafeZip.Progress p)throws Exception {
             try {
             if (request == PICK) {
                 try (InputStream in = ctx.getContentResolver().openInputStream(uri)) {
@@ -1073,13 +1082,20 @@ public final class MainActivity extends Activity {
                     default: throw new IOException("Export operation was lost; please select it again");
                 }
             } catch (Exception e) { try { DocumentsContract.deleteDocument(ctx.getContentResolver(), uri); } catch (Exception ignored) { } throw e; }
+            String receiptWarning="";
+            if(ExportedBackups.trackedKind(kind)){
+                keepGrant=true; // Only after the completed stream has closed successfully.
+                try{ExportedBackups.record(ctx,uri,kind);}
+                catch(Exception error){receiptWarning=" The export is saved, but its storage-browser receipt could not be recorded. Use Locate existing backup in Backups and storage.";}
+            }
             if(workingCombination!=null){
                 try{InstallationSummary.recordSaved(ctx,workingCombination,uri.toString());}
                 catch(Exception error){return "Working-combination backup saved, but its local summary could not be recorded. Keep the selected ZIP for recovery.";}
-                return "Working combination saved. Restore this complete ZIP to recover the client, loader, server, database and settings together.";
+                return "Working combination saved. Find the selected ZIP under Backups and storage → Exports. Restore it to recover the client, loader, server, database and settings together."+receiptWarning;
             }
-            return "Export completed: " + kind + ".";
-            } finally { try { ctx.getContentResolver().releasePersistableUriPermission(uri, grant); } catch (SecurityException ignored) { } }
+            return "Export completed: " + kind + "."+receiptWarning;
+            } finally { release(ctx); }
+            }
         });
     }
     private static byte[] windowsLauncher(Context ctx) throws IOException {

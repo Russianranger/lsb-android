@@ -38,7 +38,9 @@ final class StorageBackups {
     static final class Node {
         final String name,path;
         final boolean directory,link;
-        final long bytes,modified;
+        long bytes;
+        boolean sizeIncomplete;
+        final long modified;
         Node(Path root,Path target)throws IOException {
             BasicFileAttributes a=Files.readAttributes(target,BasicFileAttributes.class,NOFOLLOW);
             name=target.getFileName().toString();path=root.relativize(target).toString();directory=a.isDirectory();link=a.isSymbolicLink();
