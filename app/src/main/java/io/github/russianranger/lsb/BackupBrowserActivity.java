@@ -116,7 +116,7 @@ public final class BackupBrowserActivity extends Activity {
         button(sections, "Copies", () -> section("copies"), true);
         button(sections, "Exports", () -> section("exports"), true);
         page.addView(sections);
-        totals = label("Measuring all app data…", 13, TEXT);
+        totals = label("Open App files to measure storage totals.", 13, TEXT);
         totals.setMaxLines(2); totals.setEllipsize(TextUtils.TruncateAt.END);
         totals.setOnClickListener(v -> { if(storage!=null)dialog=new AlertDialog.Builder(this).setTitle("Complete app storage").setMessage(storageDetails()).setPositiveButton("Close",null).show(); });
         page.addView(totals);
@@ -286,6 +286,7 @@ public final class BackupBrowserActivity extends Activity {
         location.setText(itemId.isEmpty() ? mode.equals("files")?"All app data · sorted by file size":mode.equals("exports")?"Exported backups · chosen destinations":"Retained copies in this installation" : display(itemLabel) + (relativePath.isEmpty() ? "" : " / " + display(relativePath)));
         up.setText(itemId.isEmpty() ? "Back to launcher" : relativePath.isEmpty() ? mode.equals("files")?"All app files":"All copies" : "Parent folder");
         if(storage!=null)totals.setText("App files: "+size(storage.bytes)+(storage.errors==0?"":" · partial scan")+" · tap for full totals\n"+(storage.androidData>=0?"Android app data: "+size(storage.androidData):storage.allocationKnown?"Allocated on disk: "+size(storage.allocated):"Allocated size unavailable"));
+        else totals.setText(scanning&&!mode.equals("exports")?"Measuring all app data…":"Open App files to measure storage totals.");
         locate.setVisibility(mode.equals("exports")?View.VISIBLE:View.GONE);locate.setEnabled(!blocked&&!scanning);
         note.setText(mode.equals("exports")?"Archives stay in your chosen destination. Locating an existing backup grants access; it does not copy or restore it.":mode.equals("files")?"Includes internal files, caches, restore staging and app external folders. Links are not followed. Tap totals for GB/GiB and scan details.":"Copies are already included in App files totals. Current clients, runtimes and databases are protected.");
         String text = !SessionBackup.recoveryError.isEmpty() ? "Return to the launcher to finish session recovery.\n" + SessionBackup.recoveryError
