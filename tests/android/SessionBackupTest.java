@@ -97,6 +97,25 @@ public class SessionBackupTest {
         for(Installation c:installations){for(SharedPreferences prefs:c.preferences.values())prefs.edit().clear().commit();TarExtractor.remove(c.home);}
     }
 
+    @Test public void completeBackupRestoresAClientAfterOriginalImportRemovalAndPreservesFutureImportSettings()throws Exception {
+        Installation source=installation(false,false),target=installation(true,false);settings(source);
+        ClientStore imported=MainActivity.store(source);
+        imported.importClient(new ByteArrayInputStream(ImportedClientCleanupTest.clientZip()),false,true,QUIET);
+        imported.saveConfig(new LaunchConfig("127.0.0.1","US",imported.config().polCore));
+        PreparedClientStore prepared=new PreparedClientStore(new File(source.files,"rt/clients"));
+        File generation=ImportedClientCleanupTest.prepare(imported,prepared,new File(source.files,"rt/prefix"));
+        write(generation,"client/FFXI/USER/settings","played before backup");write(generation,"client/POL/usr/settings","saved viewer settings");
+        write(source.files,"server-runtime/state/character-fixture","existing character");
+        new StorageBackups(source.files,MainActivity.storage(source),new File(source.noBackup,"session-transfer")).delete("client-import",QUIET);
+        byte[] archive=export(source);reset();SessionBackup.restore(target,new ByteArrayInputStream(archive),QUIET);sameSettings(source,target);
+        ClientStore restored=MainActivity.store(target);assertTrue(restored.releasedImport());assertFalse(restored.hasClient());assertEquals("127.0.0.1",restored.config().host);
+        File restoredGeneration=ClientRuntime.get(target).prepared().selected("current");assertEquals(generation.getName(),restoredGeneration.getName());
+        assertNotNull(ClientRuntime.get(target).launchManifest(restoredGeneration));assertEquals(FilesEx.hash(imported.retainedLoader()),FilesEx.hash(restored.retainedLoader()));
+        assertEquals("existing character",read(target.files,"server-runtime/state/character-fixture"));assertEquals("played before backup",read(restoredGeneration,"client/FFXI/USER/settings"));
+        restored.importClient(new ByteArrayInputStream(ImportedClientCleanupTest.clientZip()),false,true,QUIET);
+        assertEquals("played before backup",read(restored.client(),"FFXI/USER/settings"));assertEquals("saved viewer settings",read(restored.client(),"POL/usr/settings"));assertFalse(restored.releasedImport());assertTrue(imported.releasedImport());
+    }
+
     @Test public void completeExportRestoresBothRuntimesClientsDatabaseAndEverySettingIntoIsolatedApp()throws Exception {
         Installation source=installation(false,false),target=installation(false,true);settings(source);
         File managed=MainActivity.storage(source);

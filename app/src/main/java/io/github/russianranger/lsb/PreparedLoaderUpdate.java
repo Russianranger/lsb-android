@@ -42,6 +42,37 @@ final class PreparedLoaderUpdate {
         }
         return found;
     }
+    static void retainImportedLoader(ClientStore imported,File from)throws Exception {
+        if(from.length()>64L*1048576)throw new IOException("Imported loader exceeds 64 MiB");
+        File target=safe(imported.current(),"retained-xiloader.exe",false),temp=safe(imported.current(),"retained-xiloader.new",false);
+        try {
+            Files.copy(from.toPath(),temp.toPath(),StandardCopyOption.REPLACE_EXISTING);
+            ClientInspector.requireX86(temp);
+            if(!FilesEx.hash(temp).equals(FilesEx.hash(from)))throw new IOException("Imported loader changed during verification");
+            try(FileOutputStream out=new FileOutputStream(temp,true)){out.getFD().sync();}
+            Files.move(temp.toPath(),target.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
+        }finally{Files.deleteIfExists(temp.toPath());}
+    }
+    void importLoader(ClientStore imported,InputStream input,SafeZip.Progress progress)throws Exception {
+        if(!imported.releasedImport()){imported.importLoader(input,progress);return;}
+        if(imported.hasPendingImport())throw new IOException("Finish or discard the pending client import before changing xiloader");
+        recover(progress);
+        if(store.selected("candidate")!=null||!store.complete(store.selected("current")))throw new IOException("Finish prepared-client recovery before importing xiloader");
+        JSONObject inventory=new JSONObject(imported.inventory()),key=loaderKey(inventory);
+        if(key==null)throw new IOException("Saved loader metadata is missing; reimport the client");
+        File old=safe(imported.current(),"retained-xiloader.exe",true),temp=safe(imported.current(),"loader-import.new",false);
+        try {
+            long count=0;byte[] buffer=new byte[65536];
+            try(FileOutputStream out=new FileOutputStream(temp)){int n;while((n=input.read(buffer))!=-1){SafeZip.checkCancelled();count+=n;if(count>64L*1048576)throw new IOException("xiloader exceeds 64 MiB");out.write(buffer,0,n);}out.getFD().sync();}
+            ClientInspector.requireX86(temp);String hash=FilesEx.hash(temp);
+            inventory.put("bytes",Math.addExact(inventory.getLong("bytes"),temp.length()-old.length()));key.put("sha256",hash);
+            File backup=safe(imported.current().getParentFile(),"previous-xiloader.exe",false);
+            Files.copy(old.toPath(),backup.toPath(),StandardCopyOption.REPLACE_EXISTING);
+            Files.move(temp.toPath(),old.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
+            StorageBackups.atomic(safe(imported.current(),"inventory.json",true).toPath(),inventory.toString(2));
+            progress.update("Imported xiloader retained separately; applying it to the prepared client…");
+        }finally{Files.deleteIfExists(temp.toPath());}
+    }
     /** Persisted hashes only; drawing the launcher never scans the full installation. */
     JSONObject selection(ClientStore imported)throws Exception {
         JSONObject result=new JSONObject().put("prepared_available",false).put("differs",false).put("recovery_pending",false);
@@ -141,7 +172,7 @@ final class PreparedLoaderUpdate {
         if(sourceKey==null||oldKey==null)throw new IOException("Import xiloader and prepare a client containing a loader first");
         String loader=oldKey.getString("path"),oldHash=oldKey.getString("sha256");
         if(!loader.equals(meta.getProperty("loader")))throw new IOException("Prepared loader path does not match its inventory");
-        File from=safe(imported.client(),sourceKey.getString("path"),true),target=safe(client,loader,true);
+        File from=imported.releasedImport()?safe(imported.current(),"retained-xiloader.exe",true):safe(imported.client(),sourceKey.getString("path"),true),target=safe(client,loader,true);
         if(from.length()>64L*1048576||!sourceKey.getString("sha256").equals(expectedSha256)||!FilesEx.hash(from).equals(expectedSha256))throw new IOException("Imported xiloader changed; select it again");
         ClientInspector.requireX86(from);
         if(!FilesEx.hash(safe(gen,"source-inventory.json",true)).equals(meta.getProperty("inventorySha256")))throw new IOException("Prepared inventory changed; inspect the prepared client");

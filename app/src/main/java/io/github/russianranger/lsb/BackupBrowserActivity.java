@@ -392,22 +392,23 @@ public final class BackupBrowserActivity extends Activity {
             itemId = item.id; itemLabel = item.label; relativePath = "";
             nodes = Collections.emptyList(); adapter.notifyDataSetChanged(); load();
         });
-        if (item.deletable) builder.setPositiveButton("Delete copy…", (d, which) -> confirmDelete(item));
+        if (item.deletable) builder.setPositiveButton(item.id.equals("client-import")?"Remove imported files…":"Delete copy…", (d, which) -> confirmDelete(item));
         dialog = builder.show();
         if (item.deletable && runtimesActive()) dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
     }
 
     private void confirmDelete(StorageBackups.Item item) {
         if (WorkService.busy || runtimesActive()) { toast("Stop the client and server and wait for other operations before deleting."); return; }
-        dialog = new AlertDialog.Builder(this).setTitle("Delete this retained copy?")
+        boolean original=item.id.equals("client-import");
+        dialog = new AlertDialog.Builder(this).setTitle(original?"Remove original imported client files?":"Delete this retained copy?")
                 .setMessage(display(item.label) + "\n" + size(item.bytes) + "\n\n" + item.detail
-                        + "\n\nThis permanently removes this copy. Any rollback that depends on it will no longer be available. Export a complete session backup first if you want to keep it.")
+                        + (original?"\n\nFirst, every imported file outside USER/usr settings is compared with the active preparation. This can take several minutes and does not run on normal launches. Removal proceeds only if they match. Your prepared personal settings stay in place. Keep your original ZIP or an external complete session backup for fresh preparation or external launcher packages. No files are removed until you confirm here.":"\n\nThis permanently removes this copy. Any rollback that depends on it will no longer be available. Export a complete session backup first if you want to keep it."))
                 .setNegativeButton("Keep copy", null)
-                .setPositiveButton("Delete copy", (d, which) -> {
+                .setPositiveButton(original?"Verify and remove":"Delete copy", (d, which) -> {
                     final String id = item.id;
                     if (runtimesActive()) { toast("Stop the client and server before deleting."); return; }
                     stopScan();
-                    boolean accepted = WorkService.submit(getApplicationContext(), "Deleting retained copy", (context, progress) -> StorageBackups.delete(context, id, progress));
+                    boolean accepted = WorkService.submit(getApplicationContext(), original?"Verifying and removing original import":"Deleting retained copy", (context, progress) -> StorageBackups.delete(context, id, progress));
                     if (!accepted) { toast("An operation is already running or could not start."); load(); }
                     else { showingWork = true; updateStatus(); }
                 }).show();

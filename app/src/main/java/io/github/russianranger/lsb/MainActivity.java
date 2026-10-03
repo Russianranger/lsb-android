@@ -109,7 +109,21 @@ public final class MainActivity extends Activity {
         File root = ctx.getExternalFilesDir(null); if (root == null) root = ctx.getFilesDir();
         File data = new File(root, "lsb"); FilesEx.mkdir(data); return data;
     }
-    static ClientStore store(Context ctx) throws IOException { return new ClientStore(new File(storage(ctx), "session")); }
+    static ClientStore store(Context ctx) throws IOException {
+        File session=new File(storage(ctx),"session");ClientStore source=new ClientStore(session);
+        if(source.releasedImport())try {
+            File clients=new File(ctx.getFilesDir(),"rt/clients");
+            if(clients.isDirectory()){
+                PreparedClientStore prepared=new PreparedClientStore(clients);File gen=prepared.selected("current");
+                if(prepared.complete(gen)){
+                    JSONObject receipt=new JSONObject(FilesEx.read(new File(gen,"initialization-passed.json"),262144));
+                    if("passed".equals(receipt.optString("status"))&&gen.getName().equals(receipt.optString("generation")))
+                        return new ClientStore(session,new File(gen,"client"),prepared.metadata(gen).getProperty("core",""));
+                }
+            }
+        }catch(Exception unavailable){ /* Imports with preservation enabled fail closed without a validated personal-settings source. */ }
+        return source;
+    }
     static String profile(Context ctx) throws IOException {
         try (InputStream in = ctx.getAssets().open("working-profile.json")) { ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] b = new byte[4096]; int n; while ((n = in.read(b)) != -1) out.write(b, 0, n); return out.toString("UTF-8"); }
     }
@@ -483,13 +497,13 @@ public final class MainActivity extends Activity {
             button(repair,dependency?"Open loader and prerequisite repairs":"Open failure diagnostics",()->navigate(dependency?"Advanced":"Diagnostics",dependency?"Capture & diagnostics":""),true);
         }
         if (s.hasPendingImport() && !WorkService.busy) pendingImportCard(s);
-        LinearLayout status = card(s.hasClient() ? "Imported client" : "Bring your FFXI installation");
+        LinearLayout status = card(s.hasClient() ? "Imported client" : s.releasedImport() ? "Original import removed" : "Bring your FFXI installation");
         status.addView(label(s.summary(), 15, TEXT));
-        status.addView(label("Your imported files are the source for a separate working installation. Launch uses the activated preparation above.", 14, MUTED));
+        status.addView(label(s.releasedImport()?"Your prepared client and its personal settings remain available. A new import can preserve USER and usr settings from that prepared client.":"Your imported files are the source for a separate working installation. Launch uses the activated preparation above. After testing it, remove the original from Manage backups and storage → Copies to reclaim space.", 14, MUTED));
         status.addView(label("Free space: " + storage(this).getUsableSpace() / 1073741824L + " GiB. Imports need room for a new full copy while retaining the active client.", 13, MUTED));
         preserve = new CheckBox(this); preserve.setText("Preserve current FFXI USER and PlayOnline usr settings on client import"); preserve.setTextColor(TEXT); preserve.setChecked(preserveOnImport); preserve.setOnCheckedChangeListener((b, checked) -> preserveOnImport = checked); status.addView(preserve);
         button(status, s.hasClient() ? "Import a complete client update ZIP" : "Import client ZIP", () -> pick("client")).setEnabled(!s.hasPendingImport());
-        button(status, ready ? "Import and apply xiloader.exe" : "Import xiloader.exe", () -> pick("loader")).setEnabled(s.hasClient()&&!ClientRuntime.get(this).alive()&&(!ready||!preparation.has("candidate")));
+        button(status, ready ? "Import and apply xiloader.exe" : "Import xiloader.exe", () -> pick("loader")).setEnabled((s.hasClient()||(s.releasedImport()&&ready))&&!ClientRuntime.get(this).alive()&&(!ready||!preparation.has("candidate")));
 
         LinearLayout launch = card("Connection");
         LaunchConfig cfg = s.config(); launch.addView(label("Server address", 14, MUTED)); host = new EditText(this); host.setSingleLine(true); host.setTextColor(TEXT); host.setText(cfg.host); host.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI); launch.addView(host);
@@ -724,7 +738,8 @@ public final class MainActivity extends Activity {
         if(!rt.installed())card.addView(label("Install the Windows runtime from More → Advanced → Runtime installation first.",14,MUTED));
         button(card,repair?"Retry launcher prerequisite repair":copied?"Retry client initialization":"Prepare imported client",()->{
             try{if(!copied&&!repair&&tab.equals("Client"))saveConnection();startInitialization(repair?"repair-launcher":"initialize");}catch(Exception e){error(e);}
-        }).setEnabled(!update&&source.hasClient()&&!source.hasPendingImport()&&rt.installed()&&!rt.alive());
+        }).setEnabled(!update&&(source.hasClient()||copied||repair)&&!source.hasPendingImport()&&rt.installed()&&!rt.alive());
+        if(source.releasedImport())card.addView(label("Reimport a complete client ZIP to create a fresh preparation. Repairs and PlayOnline updates can still copy your active prepared client.",14,MUTED));
         button(card,"Open initialization display",()->startActivity(new Intent(this,RuntimeActivity.class))).setEnabled(rt.alive());
         button(card,"Stop initialization",()->startForegroundService(new Intent(this,RuntimeService.class).setAction("stop"))).setEnabled(rt.alive());
         button(card,"View preparation results",()->{try{showText("Prepared client",rt.preparationState().toString(2));}catch(Exception e){error(e);}});
@@ -1057,7 +1072,7 @@ public final class MainActivity extends Activity {
                             if(runtime.alive())throw new IOException("Stop the client and runtime before importing xiloader");
                             JSONObject prepared=runtime.preparationState();
                             if(prepared.has("current")&&prepared.has("candidate"))throw new IOException("Finish or discard the staged client preparation or update before importing xiloader");
-                            store(ctx).importLoader(in,p);
+                            runtime.importLoader(in,p);
                             JSONObject selection=runtime.loaderSelectionState();
                             if(selection.optBoolean("prepared_available"))return runtime.applyImportedLoader(selection.getString("imported_sha256"),p);
                             return "32-bit xiloader imported. Prepare the client before testing login.";

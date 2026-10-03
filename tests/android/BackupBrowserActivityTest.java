@@ -124,7 +124,7 @@ public class BackupBrowserActivityTest {
 
     @Test public void protectedDataCannotBeDeletedAndRecoveryDeletionRequiresExplicitConfirmation() throws Exception {
         capture(920,520,"backup-browser-wide.png");capture(400,800,"backup-browser-narrow.png");
-        choose("Current imported client");AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog();
+        choose("Original imported client files");AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog();
         assertTrue(dialogMessage(dialog).contains("Protected"));
         assertEquals(View.GONE,dialog.getButton(AlertDialog.BUTTON_POSITIVE).getVisibility());
         assertFalse(dialogMessage(dialog).contains("private-active-file-content"));dialog.dismiss();
@@ -142,6 +142,24 @@ public class BackupBrowserActivityTest {
         choose("Previous imported client");dialog=ShadowAlertDialog.getLatestAlertDialog();
         assertFalse("A running client must prevent removal",dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled());
         ClientRuntime.get(context).starting=false;
+    }
+
+    @Test public void originalImportRemovalIsOptionalAndRequiresItsOwnContentVerificationConfirmation() throws Exception {
+        controller.pause().stop().destroy();FilesEx.delete(session);
+        io.github.russianranger.lsb.core.ClientStore imported=MainActivity.store(context);
+        imported.importClient(new java.io.ByteArrayInputStream(ImportedClientCleanupTest.clientZip()),false,true,message->{});
+        File clients=new File(context.getFilesDir(),"rt/clients");FilesEx.delete(clients);
+        io.github.russianranger.lsb.core.PreparedClientStore prepared=new io.github.russianranger.lsb.core.PreparedClientStore(clients);
+        File generation=ImportedClientCleanupTest.prepare(imported,prepared,new File(context.getFilesDir(),"rt/prefix"));
+        controller=Robolectric.buildActivity(BackupBrowserActivity.class).setup();ready();text(content(),"Copies").performClick();ready();
+        capture(920,520,"import-cleanup-wide.png");capture(400,800,"import-cleanup-narrow.png");
+        choose("Original imported client files");AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog();
+        assertEquals("Remove imported files…",dialog.getButton(AlertDialog.BUTTON_POSITIVE).getText().toString());
+        clickDialog(AlertDialog.BUTTON_POSITIVE);dialog=ShadowAlertDialog.getLatestAlertDialog();
+        assertTrue(dialogMessage(dialog).contains("every imported file"));assertTrue(dialogMessage(dialog).contains("personal settings stay"));
+        assertEquals("Verify and remove",dialog.getButton(AlertDialog.BUTTON_POSITIVE).getText().toString());
+        assertTrue(imported.hasClient());assertFalse(WorkService.busy);clickDialog(AlertDialog.BUTTON_NEGATIVE);
+        assertTrue(imported.hasClient());assertFalse(WorkService.busy);assertTrue(new File(generation,"client/FFXI/ROM/0/0.DAT").isFile());
     }
 
     @Test public void acceptedDeletionRunsThroughForegroundServiceAndRescansWithoutTouchingCurrent() throws Exception {

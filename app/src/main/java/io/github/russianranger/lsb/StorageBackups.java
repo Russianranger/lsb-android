@@ -121,7 +121,9 @@ final class StorageBackups {
             if(!selectedServer)detail="Protected: server selection metadata is missing or incomplete; complete deployment before removing generations.";
             add(items,"server:"+id,active?"Active server and database":rollback?"Server and database recovery copy":"Older server/database copy "+shortId(id),detail,files,generation,selectedServer&&!active,rollback?"server":"",id);
         }
-        fixed(items,"client-import","Current imported client","Protected: source used to prepare clients and export launch packages.",managed,"session/current",false);
+        boolean removableImport=directory(managed,"session/current/client")&&directory(files,"rt/clients")&&new ImportedClientCleanup(new PreparedClientStore(files.resolve("rt/clients").toFile()),new ClientStore(managed.resolve("session").toFile())).available();
+        fixed(items,"client-import","Original imported client files",removableImport?"Remove this original after a one-time comparison with the active prepared client. Prepared files, personal settings, connection and loader metadata, server and database are kept. Fresh preparation and external launcher packages will require reimporting your original ZIP.":"Protected: finish import, preparation, staged updates and loader validation before removing the original.",managed,"session/current/client",removableImport);
+        fixed(items,"client-import-settings","Imported client settings","Protected: connection and region settings remain available after the original files are removed.",managed,"session/current/session.properties",false);
         boolean importHealthy=directory(managed,"session/current/client")&&!exists(managed.resolve("session/swap"));
         fixed(items,"client-import-previous","Previous imported client",importHealthy?"Previous imported source. Deleting it removes Switch to previous client for this import.":"Protected: the current import or an interrupted swap needs recovery.",managed,"session/previous",importHealthy);
         fixed(items,"server-source","Current imported server source","Protected: selected source used for deployment and compilation.",managed,"server/current",false);
@@ -139,7 +141,7 @@ final class StorageBackups {
         fixed(items,"fex-archive","FEX download cache","Downloaded FEX archive. The installed runtime is separate.",files,"rt/fex/download.tar.gz",true);
         fixed(items,"server-archive","Server runtime download cache","Downloaded Ubuntu archive. The installed server runtime is separate.",files,"server-runtime/ubuntu-base.tar.gz",true);
         // An interruption after quarantine leaves only disposable names; never recovery roots/journals.
-        for(Path parent:Arrays.asList(clients,state.resolve("generations"),managed.resolve("session"),managed.resolve("server"),files.resolve("rt"),files.resolve("rt/fex"),files.resolve("server-runtime"),state,files.resolve("rt/prefix-backups")))
+        for(Path parent:Arrays.asList(clients,state.resolve("generations"),managed.resolve("session"),managed.resolve("session/current"),managed.resolve("server"),files.resolve("rt"),files.resolve("rt/fex"),files.resolve("server-runtime"),state,files.resolve("rt/prefix-backups")))
             trash(items,parent.startsWith(managed)?managed:files,parent);
         for(Path runtime:childrenOf(files,fex))if(runtime.getFileName().toString().matches("[0-9a-f]{64}"))trash(items,files,runtime);
         return items;
@@ -190,6 +192,7 @@ final class StorageBackups {
     String delete(String id,SafeZip.Progress progress)throws Exception {
         checkRecovery();Item item=find(id);if(!item.deletable)throw new IOException("This item is protected: "+item.label);
         requireParents(item.root,item.target);if(Files.isSymbolicLink(item.target))throw new IOException("Backup location became a symbolic link; refresh the browser");
+        if(id.equals("client-import"))new ImportedClientCleanup(new PreparedClientStore(files.resolve("rt/clients").toFile()),new ClientStore(managed.resolve("session").toFile())).verifyAndRetain(progress);
         SafeZip.checkCancelled();
         // First remove rollback selection atomically. A crash can leave an unused full copy,
         // never a pointer selecting a partially removed client or database.
@@ -216,7 +219,7 @@ final class StorageBackups {
             @Override public FileVisitResult postVisitDirectory(Path path,IOException error)throws IOException {if(error!=null)throw error;SafeZip.checkCancelled();requireParents(item.root,path);Files.delete(path);report();return FileVisitResult.CONTINUE;}
             private void report(){if(++count[0]%1000==0)progress.update("Removing "+item.label+" · "+count[0]+" entries");}
         });}
-        return item.label+" deleted. Active clients, runtimes and deployed database retained.";
+        return id.equals("client-import")?"Original imported client files removed. Prepared client, personal settings, connection, loader and deployed database retained. Reimport your ZIP for fresh preparation or external launcher packages.":item.label+" deleted. Active clients, runtimes and deployed database retained.";
     }
     private static void makeWritable(Path path)throws IOException {
         // A copied package may preserve read-only modes. Never chmod a symlink target.
@@ -236,7 +239,7 @@ final class StorageBackups {
     private static void validateIds(Properties p,String... keys)throws IOException {for(String key:keys){String id=p.getProperty(key,"");if(!id.isEmpty()&&!id.matches(UUID_PATTERN))throw new IOException("Invalid client selection metadata");}}
     private static String serverId(JSONObject p,String key)throws Exception {if(!p.has(key)||p.isNull(key))return "";Object value=p.get(key);if(!(value instanceof String)||(!((String)value).matches(UUID_PATTERN)&&!(key.equals("previous")&&value.equals(""))))throw new IOException("Invalid server selection metadata");return (String)value;}
     private static void requireRegular(Path path)throws IOException {if(!Files.isRegularFile(path,NOFOLLOW))throw new IOException("Invalid backup selection metadata");}
-    private static void atomic(Path path,String value)throws IOException {
+    static void atomic(Path path,String value)throws IOException {
         Path tmp=path.resolveSibling(path.getFileName()+".backup-"+java.util.UUID.randomUUID());
         try {
             try(OutputStream out=Files.newOutputStream(tmp,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE)){out.write(value.getBytes(StandardCharsets.UTF_8));}
