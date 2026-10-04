@@ -111,6 +111,10 @@ final class ClientRuntime {
     JSONObject loaderSelectionState()throws Exception {
         return new PreparedLoaderUpdate(prepared()).selection(MainActivity.store(context));
     }
+    synchronized void importLoader(InputStream input,SafeZip.Progress progress)throws Exception {
+        if(alive())throw new IOException("Stop the client and runtime before importing xiloader");
+        reapOrphans();new PreparedLoaderUpdate(prepared()).importLoader(MainActivity.store(context),input,progress);
+    }
     synchronized String applyImportedLoader(String expectedSha256,SafeZip.Progress progress)throws Exception {
         if(alive())throw new IOException("Stop the client and runtime before changing xiloader");
         reapOrphans();

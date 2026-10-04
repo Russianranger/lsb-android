@@ -7,16 +7,24 @@ import java.util.zip.*;
 
 public final class ClientStore {
     private final File home;
-    public ClientStore(File home) throws IOException { this.home = home; FilesEx.mkdir(home); }
+    private final File personalClient;
+    private final String personalCore;
+    public ClientStore(File home) throws IOException { this(home, null, ""); }
+    public ClientStore(File home, File personalClient, String personalCore) throws IOException {
+        this.home = home; this.personalClient = personalClient; this.personalCore = personalCore; FilesEx.mkdir(home);
+    }
     public File current() { return new File(home, "current"); }
     public File previous() { return new File(home, "previous"); }
     public File client() { return new File(current(), "client"); }
     public boolean hasClient() { return client().isDirectory(); }
+    public boolean releasedImport() { return !hasClient() && java.nio.file.Files.isRegularFile(new File(current(), "import-removal.json").toPath(), LinkOption.NOFOLLOW_LINKS); }
+    public File retainedLoader() { return new File(current(), "retained-xiloader.exe"); }
     public boolean hasPrevious() { return new File(previous(), "client").isDirectory(); }
     public LaunchConfig config() throws IOException { return LaunchConfig.load(new File(current(), "session.properties")); }
     public void saveConfig(LaunchConfig config) throws IOException { requireRegion(config); FilesEx.mkdir(current()); FilesEx.text(new File(current(), "session.properties"), config.properties()); }
     public String summary() throws IOException {
         File f = new File(current(), "summary.txt");
+        if (releasedImport()) return "Original imported client files removed to reclaim space. Connection settings and loader selection are retained. Play, repairs, updates and complete session backups use the activated preparation. Reimport a complete client ZIP for a fresh preparation or external launcher package.";
         return hasClient() && f.exists() ? FilesEx.read(f, 8192) : "Import a ZIP containing both PlayOnline and FINAL FANTASY XI. Nested folders are detected automatically.";
     }
     public String inventory() throws IOException {
@@ -95,8 +103,9 @@ public final class ClientStore {
     }
     private void activateImport(File payload, LaunchConfig cfg, boolean preserveUser, SafeZip.Progress progress) throws Exception {
         ClientInspector.Snapshot fresh = ClientInspector.inspect(payload, cfg.polCore, progress);
-        if (preserveUser && hasClient()) {
-            ClientInspector.Snapshot old = ClientInspector.inspect(client(), config().polCore, progress);
+        if (preserveUser && (hasClient() || releasedImport())) {
+            if (!hasClient() && personalClient == null) throw new IOException("The prepared client is unavailable; recover it before importing with personal-settings preservation enabled.");
+            ClientInspector.Snapshot old = ClientInspector.inspect(hasClient() ? client() : personalClient, hasClient() ? config().polCore : personalCore, progress);
             preserveDirectory(old.game, fresh.game, "USER", progress);
             preserveDirectory(old.pol, fresh.pol, "usr", progress);
             fresh = ClientInspector.inspect(payload, fresh.polCore, progress);
