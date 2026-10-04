@@ -1,3 +1,15 @@
+# Beta 0.7.3: cleanup after a verified PlayOnline update
+
+Continue `codex/storage-accounting-export-visibility` and draft PR #3. Preserve Main `f6f851d`, Beta 0.7 and archived Beta 0.6. Both complete 0.7.2 Verify baseline runs `37152627284` and `37152629906` finished successfully, including server deployment, native runtime/FEX/PlayOnline and Windows.
+
+The Thor 0.7.2 cleanup attempt correctly retained files but was too strict: the original import is an old client, while active generation `05d8856e-7a99-46c1-a9da-07cc4e8b3ec6` was updated through PlayOnline. Support ZIP `lsb-support(20261004-011957).zip` shows `updatePhase=verified`, pre-update inventory matching original game/POL DLLs, changed active FFXI DLLs, passed initialization, and a subsequent xiloader replacement. That loader transaction archives `update-verified.json`; requiring that receipt to remain live would incorrectly reject the same device again.
+
+Cleanup now verifies the active inventory/digest/binaries and repaired ROM/0/0.dat, recognizes original non-loader critical binaries in recorded update ancestry, and checks generation/session/non-loader binary identity in the live verification receipt or a hash-checked committed loader transaction's archived receipt. Verified updates may differ in game/ROM/obsolete source files. Non-updated preparations keep the existing full comparison. Cleanup retains the ACTIVE loader and adjusts only its small import selection metadata if the original loader differs; the prepared tree is never changed. Pending/staged maintenance, unrelated imports, changed active binaries, missing/incorrect proof, damaged archives and symlinks stay protected. Existing quarantine/cancellation and complete backup/restore formats remain in use.
+
+Version 0.7.3/code 77, original signing certificate `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`. Keep the signing key private and outside Git. PR #3 records current exact-head qualification/APK evidence. Device check: install over the current app, stop both runtimes, retry optional import removal, refresh totals (~14.1 GiB original), then normal/quick login and existing server character. Do not reimport or prepare the old client. See [focused instructions](TESTING-0.7.3.md).
+
+---
+
 # Beta 0.7.2: optional removal of the original imported client
 
 Continue `codex/storage-accounting-export-visibility` and draft [PR #3](https://github.com/Russianranger/lsb-android/pull/3); preserve Main `f6f851d` and published Beta 0.7. The screenshots identify two real copies: external `lsb/session/current/client` is the original import (~14.3 GiB), internal `files/rt/clients/<generation>/client` is the active prepared client (with a Windows prefix). The user authorized optional removal of the original after verifying the preparation.

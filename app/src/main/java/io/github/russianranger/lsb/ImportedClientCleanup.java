@@ -7,7 +7,7 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
-/** One-time comparison before removing the import; normal launches never run this scan. */
+/** Validates the active installation and update ancestry before removing only the import. */
 final class ImportedClientCleanup {
     private final PreparedClientStore prepared;
     private final ClientStore imported;
@@ -41,6 +41,49 @@ final class ImportedClientCleanup {
         return gen;
     }
     boolean available() { try { generation(); return true; } catch(Exception unavailable) { return false; } }
+    private static Map<String,String> keys(JSONObject inventory,boolean manifest,String loader)throws Exception {
+        Map<String,String> keys=new TreeMap<>();
+        if(manifest){JSONObject values=inventory.getJSONObject("key_files");Iterator<String> names=values.keys();while(names.hasNext()){String path=names.next();if(!path.equals(loader))keys.put(path,values.getString(path));}}
+        else {JSONArray values=inventory.getJSONArray("keyFiles");for(int i=0;i<values.length();i++){JSONObject key=values.getJSONObject(i);String path=key.getString("path");if(!new File(path).getName().equalsIgnoreCase("xiloader.exe")&&keys.put(path,key.getString("sha256"))!=null)throw new IOException("Duplicate client inventory key");}}
+        if(keys.size()<3)throw new IOException("Incomplete client inventory");return keys;
+    }
+    private boolean updateAncestorMatches(File gen,JSONObject source)throws Exception {
+        Set<String> visited=new HashSet<>();Map<String,String> original=keys(source,false,"");
+        for(int depth=0;depth<32&&gen!=null;depth++){
+            SafeZip.checkCancelled();if(!visited.add(gen.getName()))throw new IOException("Cyclic update ancestry");
+            File before=new File(gen,"update-source-inventory.json");
+            if(Files.exists(before.toPath(),LinkOption.NOFOLLOW_LINKS)&&original.equals(keys(new JSONObject(FilesEx.read(regular(gen,"update-source-inventory.json"),262144)),false,"")))return true;
+            Properties meta=prepared.metadata(gen);String parent=meta.getProperty("repairOf",meta.getProperty("updateOf",""));
+            if(parent.isEmpty())break;gen=prepared.generation(parent);
+            if(!Files.isDirectory(gen.toPath(),LinkOption.NOFOLLOW_LINKS))break;
+        }return false;
+    }
+    private static boolean updateReceipt(JSONObject receipt,JSONObject initialized,File gen,JSONObject manifest,String loader)throws Exception {
+        return "passed".equals(receipt.optString("status"))&&gen.getName().equals(receipt.optString("generation"))&&!receipt.optString("session_id").isEmpty()&&receipt.optString("session_id").equals(initialized.optString("session_id"))&&keys(receipt,true,loader).equals(keys(manifest,true,loader));
+    }
+    private boolean verifiedUpdate(File gen,Properties meta,JSONObject source,JSONObject manifest)throws Exception {
+        if(!"verified".equals(meta.getProperty("updatePhase"))||meta.getProperty("updateOf","").isEmpty())return false;
+        if(gen.equals(prepared.generation(meta.getProperty("updateOf")))||!updateAncestorMatches(gen,source))return false;
+        JSONObject initialized=new JSONObject(FilesEx.read(regular(gen,"initialization-passed.json"),262144));String loader=meta.getProperty("loader");
+        File receipt=new File(gen,"update-verified.json");
+        if(Files.exists(receipt.toPath(),LinkOption.NOFOLLOW_LINKS))return updateReceipt(new JSONObject(FilesEx.read(regular(gen,"update-verified.json"),262144)),initialized,gen,manifest,loader);
+        // Loader replacement archives the prior verification receipt. It still proves
+        // the unchanged updated DLLs/prefix; the current loader is independently hashed.
+        File history=new File(gen,"loader-updates");if(!Files.exists(history.toPath(),LinkOption.NOFOLLOW_LINKS))return false;
+        inside(gen,"loader-updates");if(!history.isDirectory())throw new IOException("Invalid loader-update history");
+        int count=0;for(File transaction:FilesEx.children(history)){
+            SafeZip.checkCancelled();if(++count>512)throw new IOException("Too many loader-update records");
+            if(!transaction.getName().matches("[0-9a-f-]{36}"))continue;inside(history,transaction.getName());
+            regular(transaction,"committed");JSONObject journal=new JSONObject(FilesEx.read(regular(transaction,"journal.json"),262144));
+            if(!gen.getName().equals(journal.optString("generation"))||!transaction.getName().equals(journal.optString("id")))throw new IOException("Loader-update history generation mismatch");
+            JSONArray entries=journal.getJSONArray("files");if(entries.length()>8)throw new IOException("Invalid loader-update history");
+            for(int i=0;i<entries.length();i++){
+                JSONObject entry=entries.getJSONObject(i);if(!"update-verified.json".equals(entry.optString("path"))||"missing".equals(entry.optString("old")))continue;
+                File old=regular(transaction,i+".old");if(!FilesEx.hash(old).equals(entry.getString("old")))throw new IOException("Archived update verification changed");
+                if(updateReceipt(new JSONObject(FilesEx.read(old,262144)),initialized,gen,manifest,loader))return true;
+            }
+        }return false;
+    }
     void verifyAndRetain(SafeZip.Progress progress)throws Exception {
         File gen=generation();Properties meta=prepared.metadata(gen);
         File inventoryFile=regular(gen,"source-inventory.json");
@@ -55,14 +98,23 @@ final class ImportedClientCleanup {
             if(!FilesEx.relative(working,selected).equals(meta.getProperty(path)))throw new IOException("Prepared client paths changed; imported files retained");
         }
         ClientInspector.requireX86(active.polExecutable);
+        JSONObject manifest=ClientLaunchValidation.manifest(gen,meta,progress);
+        if(manifest==null)throw new IOException("Active client validation is incomplete; imported files retained");
         progress.update("Comparing original imported files with the prepared client…");
         ClientInspector.Snapshot source=ClientInspector.inspect(imported.client(),imported.config().polCore,progress);
-        if(!source.warning().isEmpty()||source.loader==null||!new JSONObject(source.inventory).getJSONArray("keyFiles").toString().equals(stored.getJSONArray("keyFiles").toString()))throw new IOException("The import differs from the active preparation. Keep it or prepare this import before removing its files.");
+        if(!source.warning().isEmpty()||source.loader==null)throw new IOException("Original import inspection failed; imported files retained");
+        boolean updated=verifiedUpdate(gen,meta,new JSONObject(source.inventory),manifest);
+        if(updated){
+            File rom=ClientInspector.child(active.game,"ROM"),zero=rom==null?null:ClientInspector.child(rom,"0"),dat=zero==null?null:ClientInspector.child(zero,"0.dat");
+            if(dat==null||regular(working,FilesEx.relative(working,dat)).length()==0)throw new IOException("Updated client is missing ROM/0/0.dat; imported files retained");
+        }
+        if(!updated&&!new JSONObject(source.inventory).getJSONArray("keyFiles").toString().equals(stored.getJSONArray("keyFiles").toString()))throw new IOException("The import differs and its verified PlayOnline update ancestry is unavailable. Imported files retained.");
         final Path original=imported.client().toPath();
         final String user=FilesEx.relative(imported.client(),source.game)+"/USER",usr=FilesEx.relative(imported.client(),source.pol)+"/usr";
         final long[] checked={0,0},reported={0};
         final byte[] a=new byte[65536],b=new byte[65536];
-        Files.walkFileTree(original,EnumSet.noneOf(FileVisitOption.class),64,new SimpleFileVisitor<Path>() {
+        if(updated)progress.update("Verified PlayOnline update history; the older import may differ from the active client…");
+        else Files.walkFileTree(original,EnumSet.noneOf(FileVisitOption.class),64,new SimpleFileVisitor<Path>() {
             @Override public FileVisitResult preVisitDirectory(Path path,BasicFileAttributes attrs)throws IOException {
                 SafeZip.checkCancelled();String name=original.relativize(path).toString().replace(File.separatorChar,'/');
                 if(name.equalsIgnoreCase(user)||name.equalsIgnoreCase(usr))return FileVisitResult.SKIP_SUBTREE;
@@ -91,9 +143,13 @@ final class ImportedClientCleanup {
         // Recheck selection after the expensive comparison, before any payload is detached.
         if(!gen.equals(generation()))throw new IOException("Active client selection changed; imported files retained");
         SafeZip.checkCancelled();
-        progress.update("Retaining connection settings and the selected imported loader…");
-        PreparedLoaderUpdate.retainImportedLoader(imported,source.loader);
-        JSONObject receipt=new JSONObject().put("format",1).put("generation",gen.getName()).put("verified_at",System.currentTimeMillis()).put("compared_files",checked[0]).put("compared_bytes",checked[1]).put("import_bytes",source.bytes).put("prepared_inventory_sha256",meta.getProperty("inventorySha256"));
+        progress.update("Retaining connection settings and the active prepared loader…");
+        PreparedLoaderUpdate.retainImportedLoader(imported,active.loader);
+        JSONObject retained=new JSONObject(source.inventory);String selected=FilesEx.relative(working,active.loader),hash=FilesEx.hash(active.loader);
+        JSONArray retainedKeys=retained.getJSONArray("keyFiles");boolean changed=false;
+        for(int i=0;i<retainedKeys.length();i++){JSONObject key=retainedKeys.getJSONObject(i);if(key.getString("path").equals(FilesEx.relative(imported.client(),source.loader))){changed=!selected.equals(key.getString("path"))||!hash.equals(key.getString("sha256"));key.put("path",selected).put("sha256",hash);}}
+        if(changed){retained.put("bytes",Math.addExact(source.bytes,active.loader.length()-source.loader.length()));StorageBackups.atomic(new File(imported.current(),"inventory.json").toPath(),retained.toString(2));}
+        JSONObject receipt=new JSONObject().put("format",1).put("generation",gen.getName()).put("verification",updated?"verified_playonline_update":"identical_import").put("verified_at",System.currentTimeMillis()).put("compared_files",checked[0]).put("compared_bytes",checked[1]).put("import_bytes",source.bytes).put("prepared_inventory_sha256",meta.getProperty("inventorySha256"));
         StorageBackups.atomic(new File(imported.current(),"import-removal.json").toPath(),receipt.toString(2));
     }
     private static IOException different(String name) { return new IOException("Imported file differs from or is missing in the prepared client: "+name+". Imported files retained."); }

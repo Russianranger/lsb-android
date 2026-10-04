@@ -156,7 +156,7 @@ public class BackupBrowserActivityTest {
         choose("Original imported client files");AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog();
         assertEquals("Remove imported files…",dialog.getButton(AlertDialog.BUTTON_POSITIVE).getText().toString());
         clickDialog(AlertDialog.BUTTON_POSITIVE);dialog=ShadowAlertDialog.getLatestAlertDialog();
-        assertTrue(dialogMessage(dialog).contains("every imported file"));assertTrue(dialogMessage(dialog).contains("personal settings stay"));
+        assertTrue(dialogMessage(dialog).contains("verified PlayOnline update"));assertTrue(dialogMessage(dialog).contains("personal settings stay"));
         assertEquals("Verify and remove",dialog.getButton(AlertDialog.BUTTON_POSITIVE).getText().toString());
         assertTrue(imported.hasClient());assertFalse(WorkService.busy);clickDialog(AlertDialog.BUTTON_NEGATIVE);
         assertTrue(imported.hasClient());assertFalse(WorkService.busy);assertTrue(new File(generation,"client/FFXI/ROM/0/0.DAT").isFile());

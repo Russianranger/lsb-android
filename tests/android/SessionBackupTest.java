@@ -103,7 +103,8 @@ public class SessionBackupTest {
         imported.importClient(new ByteArrayInputStream(ImportedClientCleanupTest.clientZip()),false,true,QUIET);
         imported.saveConfig(new LaunchConfig("127.0.0.1","US",imported.config().polCore));
         PreparedClientStore prepared=new PreparedClientStore(new File(source.files,"rt/clients"));
-        File generation=ImportedClientCleanupTest.prepare(imported,prepared,new File(source.files,"rt/prefix"));
+        ImportedClientCleanupTest.prepare(imported,prepared,new File(source.files,"rt/prefix"));
+        File generation=ImportedClientCleanupTest.verifiedUpdate(prepared);
         write(generation,"client/FFXI/USER/settings","played before backup");write(generation,"client/POL/usr/settings","saved viewer settings");
         write(source.files,"server-runtime/state/character-fixture","existing character");
         new StorageBackups(source.files,MainActivity.storage(source),new File(source.noBackup,"session-transfer")).delete("client-import",QUIET);

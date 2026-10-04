@@ -53,6 +53,47 @@ public class ImportedClientCleanupTest {
     private interface Action{void run()throws Exception;}
     private void fails(Action action)throws Exception {try{action.run();fail("Unsafe removal accepted");}catch(IOException expected){}assertTrue(source.hasClient());assertFalse(source.releasedImport());}
     private StorageBackups.Item original()throws Exception {for(StorageBackups.Item item:backups.inventory(QUIET))if(item.id.equals("client-import"))return item;throw new AssertionError("Original not listed");}
+    static File verifiedUpdate(PreparedClientStore prepared)throws Exception {
+        File update=prepared.stageUpdate(QUIET);prepared.prepareUpdateRepair();
+        Files.write(new File(update,"client/FFXI/FFXi.dll").toPath(),pe(2));Files.write(new File(update,"client/FFXI/FFXiMain.dll").toPath(),pe(3));
+        Files.write(new File(update,"client/POL/polcore.dll").toPath(),pe(4));
+        Files.write(new File(update,"client/FFXI/ROM/0/0.DAT").toPath(),new byte[]{4,5,6,7});
+        Files.delete(new File(update,"client/FFXI/ROM/0/1.DAT").toPath());FilesEx.text(new File(update,"client/FFXI/ROM/0/2.DAT"),"new updated data");
+        prepared.requireRepairCompleted();ClientInspector.Snapshot updated=ClientInspector.inspect(new File(update,"client"),prepared.metadata(update).getProperty("core"),QUIET);prepared.recordUpdatedInventory(updated);
+        FilesEx.text(new File(update,"initialization-passed.json"),new JSONObject().put("status","passed").put("generation",update.getName()).put("session_id","verified-update-session").toString());
+        JSONObject manifest=ClientLaunchValidation.manifest(update,prepared.metadata(update),QUIET);
+        FilesEx.text(new File(update,"update-verified.json"),new JSONObject().put("status","passed").put("generation",update.getName()).put("session_id","verified-update-session").put("key_files",manifest.getJSONObject("key_files")).toString());
+        prepared.updatePhase("verified");prepared.promote(update);return update;
+    }
+    @Test public void verifiedPlayOnlineUpdateAllowsOlderDifferentAndObsoleteImportFiles()throws Exception {
+        gen=verifiedUpdate(prepared);activeBefore=snapshot(gen);String currentLoader=FilesEx.hash(new File(gen,"client/POL/xiloader.exe"));
+        backups.delete("client-import",QUIET);assertTrue(source.releasedImport());assertEquals(activeBefore,snapshot(gen));assertEquals(currentLoader,FilesEx.hash(source.retainedLoader()));
+        assertEquals("verified_playonline_update",new JSONObject(FilesEx.read(new File(source.current(),"import-removal.json"),4096)).getString("verification"));
+        assertEquals("keep character",FilesEx.read(new File(files,"server-runtime/state/database/character"),100));assertNotNull(ClientLaunchValidation.manifest(gen,prepared.metadata(gen),QUIET));
+    }
+    @Test public void loaderReplacementArchivesUpdateProofAndCleanupKeepsActiveLoaderInsteadOfOldImportLoader()throws Exception {
+        gen=verifiedUpdate(prepared);PreparedLoaderUpdate loader=new PreparedLoaderUpdate(prepared);
+        source.importLoader(new ByteArrayInputStream(pe(9)),QUIET);String currentHash=loader.selection(source).getString("imported_sha256");loader.apply(source,currentHash,QUIET);
+        assertFalse(new File(gen,"update-verified.json").exists());assertTrue(new File(gen,"loader-updates").isDirectory());
+        source.importLoader(new ByteArrayInputStream(pe(1)),QUIET);assertTrue(loader.selection(source).getBoolean("differs"));activeBefore=snapshot(gen);
+        backups.delete("client-import",QUIET);assertEquals(activeBefore,snapshot(gen));assertEquals(currentHash,FilesEx.hash(source.retainedLoader()));assertFalse(loader.selection(source).getBoolean("differs"));
+        assertEquals(currentHash,FilesEx.hash(new File(gen,"client/POL/xiloader.exe")));assertEquals("played settings",FilesEx.read(new File(gen,"client/FFXI/USER/settings"),100));
+        assertTrue(loader.apply(source,currentHash,QUIET).contains("already uses"));
+    }
+    @Test public void missingMismatchedOrDamagedUpdateProofAndUnrelatedImportCannotAuthorizeCleanup()throws Exception {
+        gen=verifiedUpdate(prepared);File proof=new File(gen,"update-verified.json");String valid=FilesEx.read(proof,16384);
+        Files.delete(proof.toPath());fails(()->backups.delete("client-import",QUIET));
+        FilesEx.text(proof,new JSONObject(valid).put("generation",UUID.randomUUID().toString()).toString());fails(()->backups.delete("client-import",QUIET));
+        FilesEx.text(proof,valid);Files.write(new File(source.client(),"FFXI/FFXi.dll").toPath(),pe(10));fails(()->backups.delete("client-import",QUIET));Files.write(new File(source.client(),"FFXI/FFXi.dll").toPath(),pe(1));
+        Files.delete(new File(gen,"client/FFXI/ROM/0/0.DAT").toPath());fails(()->backups.delete("client-import",QUIET));
+    }
+    @Test public void changedUpdatedBinaryAndCorruptArchivedVerificationAreRejected()throws Exception {
+        gen=verifiedUpdate(prepared);Path dll=new File(gen,"client/FFXI/FFXi.dll").toPath();Files.write(dll,pe(8));fails(()->backups.delete("client-import",QUIET));Files.write(dll,pe(2));
+        PreparedLoaderUpdate loader=new PreparedLoaderUpdate(prepared);source.importLoader(new ByteArrayInputStream(pe(9)),QUIET);loader.apply(source,loader.selection(source).getString("imported_sha256"),QUIET);
+        File txn=new File(gen,"loader-updates").listFiles()[0];JSONArray entries=new JSONObject(FilesEx.read(new File(txn,"journal.json"),262144)).getJSONArray("files");
+        for(int i=0;i<entries.length();i++)if("update-verified.json".equals(entries.getJSONObject(i).getString("path")))FilesEx.text(new File(txn,i+".old"),"{}");
+        fails(()->backups.delete("client-import",QUIET));
+    }
     @Test public void removesOnlyOriginalPayloadAndPreservesLaunchLoaderConfigurationAndCharacters()throws Exception {
         assertTrue(original().deletable);String inventory=source.inventory(),loaderHash=FilesEx.hash(new File(source.client(),"POL/xiloader.exe"));
         assertTrue(backups.delete("client-import",QUIET).contains("Original imported client files removed"));
