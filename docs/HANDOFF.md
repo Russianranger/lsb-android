@@ -1,3 +1,68 @@
+# 0.7.6: three new sampling and queue trials
+
+Continue `codex/filtered-performance-076` from the final 0.7.5 checkpoint.
+Current and future GitHub pushes remain authorized for this repository; keep
+Main, existing releases and earlier review branches intact. No merge or
+official release was requested.
+
+Four 0.7.5 device exports confirm actual filtering, two workers, zone 100 entry
+and clean exits for Baseline/G/H/I. The common 60–150 second steady windows
+show Baseline 28.308, G 28.234, H 28.364 and I 28.214 Surface posts/s, with
+7/10/6/9 gaps over 100 ms and no gaps over 250 ms. A later 90–150 second
+selection agrees. These are delivery counters, not HUD game FPS. H's tiny lead
+does not justify promotion. Keep Baseline default; G/H/I normalize to Baseline
+with a visible notice. Exact mapping, hashes, deduplication, profile receipts
+and limits: [0.7.5 results](thor-trial-results-075.md).
+
+The next independent choices are J Faster frame sampling (`capture90`: bridge
+polls at 90 Hz), K Steady sampling schedule (`capture_deadline`: absolute
+monotonic 60 Hz deadlines with missed-tick skipping and no bursts), and L
+Shorter render queue (`frame_latency`: `d3d9.maxFrameLatency = 1`). J does not
+change the 60 Hz Android display preference or game cap; K keeps the sampling
+rate; L may reduce useful CPU/GPU overlap and FPS. No resolution/quality,
+FEX precision/memory-ordering or accepted filtering/worker changes.
+
+Baseline measures 58.213 completed replies/s: 28.308 posted and 29.905 unchanged.
+Its maximum Surface-post call is 31.698 ms, and all seven long gaps contain
+five or six unchanged replies. These motivate sampling/queue hypotheses, not
+an established cause of upstream render stalls or a proven device benefit.
+
+J/K/L require the exact filtered FEX/Turnip 26/DXVK 2.7.1/two-worker profile.
+J/K additionally require native Surface, accepted Vulkan SHM upload, the native
+mapped-file display transport and the 60 Hz preference. MIT-SHM X11 readback
+may use the supported, logged `XGetImage` fallback; no first viewer capture
+is required before login. Current owned-helper rate/schedule proof verifies
+active capture/pacing configuration, not physical Android Surface or GPU
+performance. The viewer can open later. That proof or consumed L configuration,
+the combined eight
+warmup frames/128 pixel samples and independent actual host-filter evidence
+must qualify before login. Failed trials cannot authorize an unverified
+launch or silently disable the stability feature.
+Actual JNI/socket/Surface frame errors that would send active J/K to RFB
+instead stop the trial. Normal pause/resume, rotation, clean game exit and Stop
+remain supported; expected helper closure during exit/Stop must not be
+misreported as a trial failure.
+
+0.7.5 follow-through: push run `38019029060` passes all required jobs, including
+broad runtime/FEX/PlayOnline. PR run `38019032575` retains a later modern-Mesa
+Docker FEX/DXVK 2.7.1 cancellation probe failure after both Turnip cycles
+passed: the existing 60-second D3D8 check times out, then `integration.py:146`
+reports `Cancellation fixture did not start`. Its PlayOnline Box64
+filtered-viewer result lacks reviewable
+evidence. Other PR jobs pass. Preserve those findings and the older checkpoint
+below; they do not qualify the changed 0.7.6 helper/profile.
+
+0.7.6 implementation tests, Android/native/real ARM64 qualification and
+original-signed APK identity are pending. Do not substitute the prior 0.7.5
+passes for this changed bridge/profile. Test Baseline, then J/K/L separately
+over the same 3–5 minute route, preserving borders/view/cap/cache/power mode;
+Stop/export each run. No runtime reinstall, reimport or server rebuild.
+See [new trial rationale](thor-performance-trials-076.md) and
+[phone instructions](TESTING-0.7.6.md). Keep the original signing key private
+outside Git. No FPS gain is claimed until the new device comparison.
+
+---
+
 # 0.7.5: three isolated filtered gameplay performance trials
 
 Continue `codex/filtered-performance-075`, based on startup fix

@@ -29,7 +29,8 @@ public class ProotAccelerationTest {
         public Process destroyForcibly(){destroy();return this;}
     }
     private JSONObject request()throws Exception{return new JSONObject().put("performance_trial","none").put("proot_acceleration",true).put("action","launch")
-        .put("engine","fex").put("renderer","turnip26").put("dxvk_version","2.7.1").put("dxvk_two_compilers",true);}
+        .put("engine","fex").put("renderer","turnip26").put("dxvk_version","2.7.1").put("dxvk_two_compilers",true)
+        .put("native_surface",true).put("shm_upload",true).put("display_fps",60);}
     private JSONObject updater(String engine)throws Exception{return new JSONObject().put("action","update-client").put("engine",engine)
         .put("renderer","turnip26").put("dxvk_version","2.5.3").put("proot_acceleration",true);}
     private ProcessBuilder command(){return new ProcessBuilder("proot","--sysvipc","--kill-on-exit","/usr/bin/python3","/opt/lsb/supervisor.py");}
@@ -111,7 +112,7 @@ public class ProotAccelerationTest {
         assertTrue(launched.isEmpty());
     }
     @Test public void newTrialsKeepFilteringOnlyForTheExactGameplayProfile()throws Exception{
-        for(String trial:new String[]{"none","syscall_filter","tiler_mode","short_jit","immediate_present"}){
+        for(String trial:new String[]{"none","syscall_filter","tiler_mode","short_jit","immediate_present","capture90","capture_deadline","frame_latency"}){
             assertTrue(trial,ProotAcceleration.eligible(request().put("performance_trial",trial)));
             for(String key:new String[]{"turnip_sysmem","dxvk_staged_buffers"})
                 assertFalse(trial+" "+key,ProotAcceleration.eligible(request().put("performance_trial",trial).put(key,true)));
@@ -122,9 +123,9 @@ public class ProotAccelerationTest {
             for(String action:new String[]{"probe","initialize","verify-client-update"})
                 assertFalse(ProotAcceleration.eligible(request().put("performance_trial",trial).put("action",action)));
         }
-        for(String trial:new String[]{"one_compiler","cached_dynamic","gpl_fast","unknown","tiler_mode,short_jit","immediate_present+tiler_mode"})
+        for(String trial:new String[]{"one_compiler","cached_dynamic","gpl_fast","unknown","capture90,capture_deadline","frame_latency+capture90"})
             assertFalse(trial,ProotAcceleration.eligible(request().put("performance_trial",trial)));
-        for(String trial:new String[]{"tiler_mode","short_jit","immediate_present"}){
+        for(String trial:new String[]{"capture90","capture_deadline","frame_latency"}){
             List<ProcessBuilder> launched=new ArrayList<>();
             Child probe=new Child(ProotAcceleration.MARKER+"\n"+ProotAcceleration.CHECK+"\n",false);
             ProotAcceleration helper=helper(probe,Files.createTempDirectory("proot-new-trial").toFile(),launched);ProcessBuilder main=command();
@@ -132,6 +133,18 @@ public class ProotAccelerationTest {
             assertEquals(1,launched.size());assertFalse(main.environment().containsKey("PROOT_NO_SECCOMP"));
             assertTrue(helper.receipt().getBoolean("preflight_passed"));
         }
+    }
+    @Test public void captureTrialsRequireSharedMemoryNativeDisplayAtSixtyHertz()throws Exception{
+        for(String trial:new String[]{"capture90","capture_deadline"}){
+            for(String key:new String[]{"native_surface","shm_upload"}){
+                assertFalse(trial+" "+key,ProotAcceleration.eligible(request().put("performance_trial",trial).put(key,false)));
+                JSONObject missing=request().put("performance_trial",trial);missing.remove(key);assertFalse(trial+" missing "+key,ProotAcceleration.eligible(missing));
+            }
+            for(int fps:new int[]{30,90,0})assertFalse(trial+" "+fps,ProotAcceleration.eligible(request().put("performance_trial",trial).put("display_fps",fps)));
+            JSONObject missing=request().put("performance_trial",trial);missing.remove("display_fps");assertFalse(ProotAcceleration.eligible(missing));
+        }
+        for(String trial:new String[]{"none","frame_latency"})
+            assertTrue(trial,ProotAcceleration.eligible(request().put("performance_trial",trial).put("native_surface",false).put("shm_upload",false).put("display_fps",30)));
     }
     @Test public void updaterProfilesKeepPreflightObservationAndFallbackForBothEngines()throws Exception{
         for(String engine:new String[]{"box64","fex"})for(boolean enabled:new boolean[]{false,true}){
@@ -157,7 +170,7 @@ public class ProotAccelerationTest {
                 assertFalse(key,ProotAcceleration.eligible(updater(engine).put(key,true)));
             for(String action:new String[]{"launch","initialize","verify-client-update","probe"})
                 assertFalse(action,ProotAcceleration.eligible(updater(engine).put("action",action)));
-            for(String trial:new String[]{"syscall_filter","one_compiler","cached_dynamic","gpl_fast","tiler_mode","short_jit","immediate_present"})
+            for(String trial:new String[]{"syscall_filter","one_compiler","cached_dynamic","gpl_fast","tiler_mode","short_jit","immediate_present","capture90","capture_deadline","frame_latency"})
                 assertFalse(trial,ProotAcceleration.eligible(updater(engine).put("performance_trial",trial)));
             assertFalse(ProotAcceleration.eligible(updater(engine).put("dxvk_version","2.7.1")));
             assertFalse(ProotAcceleration.eligible(updater(engine).put("renderer","software")));

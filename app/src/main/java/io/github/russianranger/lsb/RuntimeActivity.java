@@ -26,6 +26,7 @@ public final class RuntimeActivity extends Activity {
     private TextView status;
     private String displayError="";
     private boolean failureShown;
+    private volatile FutureTask<Boolean> nativeStop;
     private ControllerInput controller;
     private String padSession="";
     private final Runnable padTick=new Runnable(){public void run(){
@@ -107,8 +108,8 @@ public final class RuntimeActivity extends Activity {
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e){if(hasWindowFocus()&&controller!=null&&controller.motion(e))return true;return super.dispatchGenericMotionEvent(e);}
     @Override protected void onDestroy(){closeNative();releaseAndClose();input.shutdown();super.onDestroy();}
     private static final class DisplaySession {
-        final RfbConnection connection;final String id;final boolean fast;final int cap;
-        DisplaySession(RfbConnection c,String id,boolean fast,int cap){connection=c;this.id=id;this.fast=fast;this.cap=cap;}
+        final RfbConnection connection;final String id;final boolean fast;final int cap;final String captureTrial;
+        DisplaySession(RfbConnection c,String id,boolean fast,int cap,String trial){connection=c;this.id=id;this.fast=fast;this.cap=cap;captureTrial=trial;}
     }
     private void recordFrames(DisplaySession display){
         RfbConnection c=display.connection;long[] allocation=screen.allocations();
@@ -135,34 +136,66 @@ public final class RuntimeActivity extends Activity {
                 int cap=rt.activeDisplayFps();
                 RfbConnection c=new RfbConnection(s.getInputStream(),s.getOutputStream(),screen,fast,getSharedPreferences("runtime",MODE_PRIVATE).getBoolean("compressed_display",true));
                 boolean nativeRequested=rt.nativeSurfaceRequested();screen.nativeMode=nativeRequested;
-                display=new DisplaySession(c,id,fast,cap);c.handshake(!nativeRequested);
-                if(!viewing||generation!=connectionGeneration)return;
+                display=new DisplaySession(c,id,fast,cap,rt.captureTrialForSession(id));c.handshake(!nativeRequested);
+                if(!viewing||generation!=connectionGeneration||!java.util.Objects.equals(id,rt.sessionKey()))return;
                 socket=s;connection=c;displaySession=display;ui.post(()->{
-                    if(!viewing||generation!=connectionGeneration)return;
+                    if(!viewing||generation!=connectionGeneration||!java.util.Objects.equals(id,rt.sessionKey()))return;
                     displayError="";
                     if(nativeRequested)openNative(rt,id,c,generation);
                     else presentationStatus="Standard display";
                 });
                 while(viewing&&generation==connectionGeneration)c.readUpdate();
-            }catch(Exception e){if(viewing&&generation==connectionGeneration)ui.post(()->displayError="Display closed: "+e.getMessage());}
+            }catch(Exception e){if(viewing&&generation==connectionGeneration){final DisplaySession failed=display;ui.post(()->displayConnectionFailed(failed,generation,e.getMessage()));}}
             finally{if(display!=null){recordFrames(display);display.connection.close();}try{if(s!=null)s.close();}catch(Exception ignored){}if(generation==connectionGeneration){connection=null;socket=null;displaySession=null;}}
         },"lsb-display").start();
     }
     private void openNative(ClientRuntime rt,String id,RfbConnection c,int generation){
         closeNative();screen.nativeMode=true;
-        nativeDisplay=new NativePresentation(this,rt.nativeFrameSocket(),rt.nativeFramePixels(),rt.nativeFrameReports(id),new NativePresentation.Events(){
-            public boolean current(){return generation==connectionGeneration&&java.util.Objects.equals(id,rt.sessionKey());}
-            public void size(int w,int h){if(viewing&&generation==connectionGeneration){screen.frameSize(w,h);fitNative();}}
-            public void failed(String reason){fallbackNative(c,generation,reason);}
-        });
-        layout.addView(nativeDisplay,0,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
-        presentationStatus="Native Surface · shared memory";fitNative();
+        try{
+            nativeDisplay=new NativePresentation(this,rt.nativeFrameSocket(),rt.nativeFramePixels(),rt.nativeFrameReports(id),new NativePresentation.Events(){
+                public boolean current(){return viewing&&generation==connectionGeneration&&connection==c&&java.util.Objects.equals(id,rt.sessionKey());}
+                public void size(int w,int h){if(current()){screen.frameSize(w,h);fitNative();}}
+                public void failed(String reason){fallbackNative(c,id,generation,reason);}
+            });
+            layout.addView(nativeDisplay,0,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+            presentationStatus="Native Surface · shared memory";fitNative();
+        }catch(RuntimeException|LinkageError failure){fallbackNative(c,id,generation,"Native display initialization failed");}
     }
     private void fallbackNative(RfbConnection c,int generation,String reason){
-        if(!viewing||generation!=connectionGeneration||connection!=c)return;
+        DisplaySession display=displaySession;fallbackNative(c,display==null?ClientRuntime.get(this).sessionKey():display.id,generation,reason);
+    }
+    private void fallbackNative(RfbConnection c,String id,int generation,String reason){
+        ClientRuntime rt=ClientRuntime.get(this);
+        if(!viewing||generation!=connectionGeneration||connection!=c||!java.util.Objects.equals(id,rt.sessionKey()))return;
+        DisplaySession display=displaySession;
+        if(display!=null&&display.connection==c&&java.util.Objects.equals(display.id,id)&&ClientRuntime.captureTrial(display.captureTrial)){
+            if(!stopFailedCapture(display,generation))closeNative();return;
+        }
         closeNative();screen.nativeMode=false;screen.resize(c.width,c.height);
         presentationStatus="Using previous display: "+reason;
         send(current->{if(current==c)current.startFrames();});
+    }
+    private void displayConnectionFailed(DisplaySession display,int generation,String reason){
+        if(!viewing||generation!=connectionGeneration||display!=null&&!java.util.Objects.equals(display.id,ClientRuntime.get(this).sessionKey()))return;
+        // The reader's finally block may already have cleared the RFB fields.
+        // Its immutable session/generation still identifies the failed viewer.
+        if(display!=null&&ClientRuntime.captureTrial(display.captureTrial)){
+            if(!stopFailedCapture(display,generation))closeNative();return;
+        }
+        displayError="Display closed: "+reason;
+    }
+    private boolean stopFailedCapture(DisplaySession display,int generation){
+        ClientRuntime rt=ClientRuntime.get(this);String id=display.id,trial=display.captureTrial;
+        if(!viewing||generation!=connectionGeneration||connection!=null&&connection!=display.connection
+            ||!java.util.Objects.equals(id,rt.sessionKey())||!rt.nativeCaptureTrialRunning(id,trial))return false;
+        displayError=ClientRuntime.captureTrialFailure(trial);presentationStatus="Native Surface trial stopped";
+        viewing=false;ui.removeCallbacks(refresh);ui.removeCallbacks(padTick);controller.close();closeNative();releaseAndClose();updateStatus();
+        // A failed native reader can coincide with a blocked RFB input write.
+        // Stopping the owned trial must not depend on that queue.
+        nativeStop=new FutureTask<>(()->rt.stopNativeCaptureTrial(id,trial));
+        Thread stopping=new Thread(nativeStop,"lsb-native-trial-stop");stopping.setDaemon(true);stopping.start();
+        failureShown=true;new AlertDialog.Builder(this).setTitle("Optimization trial stopped").setMessage(displayError)
+            .setPositiveButton("Back to launcher",(dialog,which)->finish()).show();return true;
     }
     private void closeNative(){
         if(nativeDisplay!=null){nativeDisplay.close();layout.removeView(nativeDisplay);nativeDisplay=null;}

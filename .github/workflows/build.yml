@@ -36,6 +36,8 @@ jobs:
           python3 scripts/test-server-runtime-archive.py
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/native_surface.c -o /tmp/lsb-native-surface-test
           /tmp/lsb-native-surface-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/capture_pacing.c -o /tmp/lsb-capture-pacing-test
+          /tmp/lsb-capture-pacing-test
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/draw-stats.c -o /tmp/lsb-draw-stats-test
           /tmp/lsb-draw-stats-test
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/version-codec.c -o /tmp/lsb-version-codec-test
@@ -75,12 +77,12 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.7.5.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.7.6.apk
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.7.5.apk
+            out/LSB-Android-0.7.6.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/

@@ -12,6 +12,8 @@ class Contracts(unittest.TestCase):
   req={'format':1,'action':'launch','renderer':'turnip26','engine':'fex','audio':True,'session_id':str(uuid.uuid4()),
        'dxvk_version':'2.7.1','dxvk_two_compilers':True,'proot_acceleration':True,'performance_trial':'none'}
   req.update(request or {})
+  if req['performance_trial'] in module.NATIVE_TRIALS:
+   for key,value in {'native_surface':True,'shm_upload':True,'display_fps':60}.items():req.setdefault(key,value)
   s=module.Supervisor(req)
   s.env.update(LD_PRELOAD='gamepad upload',DXVK_CONFIG='d3d9.maxFrameRate = 30')
   s.state['vulkan']={'device':'fixture device'}
@@ -112,12 +114,17 @@ class Contracts(unittest.TestCase):
   log=self.filtered_graphics_log()+'info: DXVK: Using 2 compiler threads\n'*2
   log+='LSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\nLSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'
   key,option=module.FILTERED_TRIALS[trial]
-  return log+('info: Found config env: '+option+'\ninfo: '+option+'\n' if key=='DXVK_CONFIG' else 'LSB_GRAPHICS_CONFIG multiblock=0\n')
+  return log+('info: Found config env: '+option+'\ninfo: '+option+'\n' if key=='DXVK_CONFIG'
+             else 'LSB_GRAPHICS_CONFIG multiblock=0\n' if key=='FEX_MULTIBLOCK' else '')
  def filtered_trial_fixture(self,folder,trial,log=None):
   s,bundle=self.filtered_graphics_fixture(folder,{'performance_trial':trial},self.filtered_trial_log(trial) if log is None else log)
   receipt={'format':1,'session_id':s.req['session_id'],'requested':'syscall_filter',
            'preflight_passed':True,'launch_observed':True,'mode':'syscall_filter'}
   (folder/'proot-acceleration.json').write_text(json.dumps(receipt))
+  if trial in module.NATIVE_TRIALS:
+   s.verify_native_trial=Mock(return_value={'pid':4312,'display_fps':60,
+       'capture_fps':90 if trial=='capture90' else 60,'pacing':'relative' if trial=='capture90' else 'deadline'})
+   s.state['shm_upload_active']=True;s.env['LSB_X11_UPLOAD']='1'
   return s,bundle
  def test_new_trials_change_one_option_and_use_one_combined_filtered_process(self):
   with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
@@ -132,7 +139,7 @@ class Contracts(unittest.TestCase):
      expected=dict(before,DXVK_CONFIG=before['DXVK_CONFIG']+';dxvk.numCompilerThreads = 2')
      key,option=module.FILTERED_TRIALS[trial]
      if key=='DXVK_CONFIG':expected[key]+=';'+option
-     else:expected[key]=option
+     elif key=='FEX_MULTIBLOCK':expected[key]=option
      self.assertEqual(seen,[expected]);self.assertEqual(s.env,expected)
      self.assertEqual(s.state['runtime_acceleration']['active'],'syscall_filter')
      report=s.state['performance_trial'];self.assertEqual(report['active'],trial);self.assertTrue(report['verified'])
@@ -157,8 +164,8 @@ class Contracts(unittest.TestCase):
     key,option=module.FILTERED_TRIALS[trial]
     if key=='DXVK_CONFIG':
      failures['missing-option']='\n'.join(line for line in good.splitlines() if option not in line)+'\n'
-     name,value=option.split(' = ');failures['contradictory-option']=good+'info: '+name+' = '+('True' if value=='False' else '1')+'\n'
-    else:
+     name,value=option.split(' = ');failures['contradictory-option']=good+'info: '+name+' = '+('True' if value=='False' else '0' if value=='1' else '1')+'\n'
+    elif key=='FEX_MULTIBLOCK':
      failures.update({'missing-option':good.replace('LSB_GRAPHICS_CONFIG multiblock=0\n',''),
                       'wrong-option':good.replace('multiblock=0','multiblock=1'),
                       'duplicate-option':good+'LSB_GRAPHICS_CONFIG multiblock=0\n'})
@@ -181,8 +188,8 @@ class Contracts(unittest.TestCase):
       if failure!='missing':s.select_dxvk(bundle);s.configure_runtime_acceleration()
       if failure=='environment':s.env['DXVK_CONFIG']+=';dxvk.numCompilerThreads = 1'
       elif failure=='trial':s._filtered_trial='different'
-      elif failure=='verified':s.state['performance_trial']['verified']=False
-      elif failure=='active':s.state['performance_trial']['active']='none'
+      elif failure=='verified':s.state['performance_trial']['graphics_verified' if trial in module.NATIVE_TRIALS else 'verified']=False
+      elif failure=='active':s.state['performance_trial']['active']='other' if trial in module.NATIVE_TRIALS else 'none'
       elif failure=='filter':s.state.pop('runtime_acceleration')
       elif failure=='declined-host':s.state['runtime_acceleration']['active']='none'
       calls=s.spawn.call_count
@@ -226,6 +233,113 @@ class Contracts(unittest.TestCase):
     with self.assertRaises(module.Stopped):s.select_dxvk(bundle)
     kill.assert_called_with(4312,module.signal.SIGKILL);proc.wait.assert_called_once()
     self.assertEqual(s.state['performance_trial']['active'],'none');self.assertIsNone(s._filtered_graphics_environment)
+ def native_launch_fixture(self,folder,trial,receipt=None):
+  s,bundle=self.filtered_trial_fixture(folder,trial)
+  del s.verify_native_trial
+  binary=folder/'x11-frame-bridge';binary.write_bytes(b'native helper fixture')
+  manifest={'format':1,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest()}
+  (folder/'presentation-bundle.json').write_text(json.dumps(manifest))
+  with (folder/'framebuffer.bin').open('wb') as mapped:mapped.truncate(1280*720*4)
+  (folder/'framebuffer.bin').chmod(0o600)
+  s.children=[]
+  native=Mock(pid=4312);native.poll.return_value=None
+  def launch(args,name,**kwargs):
+   if name=='native-display.log':
+    native.args=list(args);s.children.append(native)
+    text=receipt if receipt is not None else ('LSB_NATIVE_CONFIG pid=4312 display_fps=60 capture_fps='+
+          ('90 pacing=relative' if trial=='capture90' else '60 pacing=deadline')+'\n')
+    (folder/name).write_text(text);return native
+   process=Mock();process.poll.return_value=0;s.children.append(process);return process
+  s.spawn.side_effect=launch
+  return s,bundle,native
+ def test_native_trials_require_display_and_upload_profile_before_initialization(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for trial in module.NATIVE_TRIALS:
+    for change in ({'native_surface':False},{'shm_upload':False},{'display_fps':30}):
+     with self.subTest(trial=trial,change=change):
+      s,bundle=self.filtered_graphics_fixture(pathlib.Path(t),dict(performance_trial=trial,**change))
+      self.assertFalse(s.filtered_graphics_profile())
+      with self.assertRaisesRegex(RuntimeError,'requires the filtered'):s.select_dxvk(bundle)
+      s.spawn.assert_not_called();s.install_dxvk.assert_not_called()
+      self.assertEqual(s.state['performance_trial']['active'],'none');self.assertTrue(s.state['performance_trial']['launch_blocked'])
+ def test_native_trials_confirm_owned_helper_and_activate_only_after_graphics_and_filter(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)),patch.object(module,'BUNDLE',pathlib.Path(t)),patch.object(module,'SESSION',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for trial in module.NATIVE_TRIALS:
+    with self.subTest(trial=trial):
+     s,bundle,native=self.native_launch_fixture(folder,trial);before=dict(s.env)
+     (folder/'native-display.log').write_text('LSB_NATIVE_CONFIG pid=100 display_fps=60 capture_fps=60 pacing=relative\n')
+     s.start_native_surface()
+     flag='--capture-rate=90' if trial=='capture90' else '--deadline-pacing'
+     self.assertEqual(s.spawn.call_args.args[0],list(s._native_surface_command))
+     self.assertEqual(s.spawn.call_args.args[0][-2:],['60',flag])
+     self.assertEqual(s.state['native_surface_configuration']['pid'],native.pid)
+     s.select_dxvk(bundle);s.configure_graphics_tuning()
+     pending=s.state['performance_trial'];self.assertEqual(pending['active'],'none');self.assertFalse(pending['verified'])
+     self.assertTrue(pending['graphics_verified']);self.assertTrue(pending['native_check_pending'])
+     s.configure_runtime_acceleration();s.configure_performance_trial()
+     report=s.state['performance_trial'];self.assertEqual(report['active'],trial);self.assertTrue(report['verified'])
+     self.assertTrue(report['host_filtering_confirmed']);self.assertFalse(report['native_check_pending'])
+     self.assertEqual(report['native_configuration']['helper_sha256'],hashlib.sha256((folder/'x11-frame-bridge').read_bytes()).hexdigest())
+     self.assertTrue(report['native_configuration']['mapped_file_owner_only'])
+     self.assertIn('Android Surface delivery is reported separately',report['configuration_proof'])
+     self.assertEqual(s.spawn.call_count,2)
+     self.assertEqual(s.env,dict(before,DXVK_CONFIG=before['DXVK_CONFIG']+';dxvk.numCompilerThreads = 2'))
+     self.assertNotIn('native_surface_fallback',s.state)
+ def test_native_trials_reject_missing_stale_or_contradictory_startup_receipts(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)),patch.object(module,'BUNDLE',pathlib.Path(t)),patch.object(module,'SESSION',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for trial in module.NATIVE_TRIALS:
+    good='LSB_NATIVE_CONFIG pid=4312 display_fps=60 capture_fps='+('90 pacing=relative' if trial=='capture90' else '60 pacing=deadline')+'\n'
+    receipts={'missing':'','wrong-pid':good.replace('4312','4313'),'wrong-display':good.replace('display_fps=60','display_fps=30'),
+              'wrong-capture':good.replace('capture_fps=90' if trial=='capture90' else 'capture_fps=60','capture_fps=30'),
+              'wrong-pacing':good.replace('pacing=relative','pacing=deadline') if trial=='capture90' else good.replace('pacing=deadline','pacing=relative'),
+              'duplicate':good+good,'malformed':good.replace(' pid=',' process=')}
+    for failure,receipt in receipts.items():
+     with self.subTest(trial=trial,failure=failure):
+      s,bundle,native=self.native_launch_fixture(folder,trial,receipt)
+      (folder/'native-display.log').write_text(good)
+      with patch.object(module.time,'monotonic',side_effect=[0,6]),self.assertRaisesRegex(RuntimeError,'native optimization trial startup failed'):s.start_native_surface()
+      self.assertTrue(s.state['performance_trial']['launch_blocked']);self.assertEqual(s.state['performance_trial']['active'],'none')
+      self.assertNotIn('native_surface_fallback',s.state);self.assertEqual(s.spawn.call_count,1)
+ def test_native_trials_revalidate_process_manifest_receipt_and_shm_before_activation(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)),patch.object(module,'BUNDLE',pathlib.Path(t)),patch.object(module,'SESSION',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   failures=('dead','not-owned','command','missing-proof','missing-log','duplicate-log','wrong-pid','symlink-log',
+             'changed-helper','changed-manifest','symlink-manifest','shm-inactive','shm-env','mapped-size','mapped-mode','mapped-symlink')
+   for trial in module.NATIVE_TRIALS:
+    for failure in failures:
+     with self.subTest(trial=trial,failure=failure):
+      for name in ('presentation-bundle.json','native-display.log','framebuffer.bin'):(folder/name).unlink(missing_ok=True)
+      s,bundle,native=self.native_launch_fixture(folder,trial)
+      s.start_native_surface();s.select_dxvk(bundle);s.configure_runtime_acceleration()
+      if failure=='dead':native.poll.return_value=1
+      elif failure=='not-owned':s.children.remove(native)
+      elif failure=='command':native.args[-1]='--wrong-option'
+      elif failure=='missing-proof':s._native_surface_proof=None
+      elif failure=='missing-log':(folder/'native-display.log').unlink()
+      elif failure=='duplicate-log':
+       log=(folder/'native-display.log').read_text();(folder/'native-display.log').write_text(log+log)
+      elif failure=='wrong-pid':
+       path=folder/'native-display.log';path.write_text(path.read_text().replace('4312','9000'))
+      elif failure=='symlink-log':
+       (folder/'copied-native.log').write_text((folder/'native-display.log').read_text());(folder/'native-display.log').unlink();(folder/'native-display.log').symlink_to(folder/'copied-native.log')
+      elif failure=='changed-helper':(folder/'x11-frame-bridge').write_bytes(b'changed helper')
+      elif failure=='changed-manifest':
+       path=folder/'presentation-bundle.json';path.write_text(path.read_text()+'\n')
+      elif failure=='symlink-manifest':
+       (folder/'copied-manifest.json').write_text((folder/'presentation-bundle.json').read_text());(folder/'presentation-bundle.json').unlink();(folder/'presentation-bundle.json').symlink_to(folder/'copied-manifest.json')
+      elif failure=='shm-inactive':s.state['shm_upload_active']=False
+      elif failure=='shm-env':s.env.pop('LSB_X11_UPLOAD')
+      elif failure=='mapped-size':(folder/'framebuffer.bin').write_bytes(b'small')
+      elif failure=='mapped-mode':(folder/'framebuffer.bin').chmod(0o644)
+      elif failure=='mapped-symlink':
+       (folder/'framebuffer.bin').rename(folder/'copied-map.bin');(folder/'framebuffer.bin').symlink_to(folder/'copied-map.bin')
+      calls=s.spawn.call_count
+      with self.assertRaises(RuntimeError):s.configure_performance_trial()
+      self.assertEqual(s.spawn.call_count,calls);self.assertTrue(s.state['performance_trial']['launch_blocked'])
+      self.assertEqual(s.state['performance_trial']['active'],'none');self.assertTrue(s.req['proot_acceleration'])
+      self.assertTrue(s.req['dxvk_two_compilers']);self.assertNotIn('native_surface_fallback',s.state)
  def test_pixel_check_requires_both_modes_and_rejects_failure_receipts(self):
   sw='LSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\n'
   hw='LSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'

@@ -20,6 +20,15 @@ XDamage/cursor events avoid idle captures, with a two-second periodic check and
 exact comparison before publication. The existing RFB connection retains input
 and can resume full framebuffer requests on native failure.
 
+Two isolated opt-in capture trials retain the 60 Hz display setting and the
+existing ownership and pixel suppression rules. `--capture-rate=90` polls for
+changed X11 pixels at up to 90 Hz; it does not change game rendering or post
+unchanged Surface buffers. `--deadline-pacing` keeps 60 Hz polling but schedules
+absolute monotonic sleeps, skipping obsolete deadlines after a late consumer.
+The modes cannot be combined and apply only to the 60 Hz display profile.
+Each helper prints a fixed configuration receipt with its own PID and effective
+display rate, capture rate and pacing policy; later metrics repeat those fields.
+
 Build the guest helper on ARM64 with `python3 scripts/build-presentation.py guest`.
 Build JNI using NDK 27.2.12479018 with the `android` target. The guest executable
 links libXdamage statically and the pinned guest's X11/Xext/Xfixes libraries

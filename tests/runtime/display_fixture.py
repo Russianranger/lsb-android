@@ -55,10 +55,11 @@ try:
     data=libc.malloc(len(pixels)*4);assert data;ctypes.memmove(data,pixels.buffer_info()[0],len(pixels)*4)
     picture=x.XCreateImage(d,x.XDefaultVisual(d,0),24,2,0,data,1280,720,32,0)
     x.XPutImage(d,window,gc,picture,0,0,0,0,1280,720);x.XSync(d,0);x.XDestroyImage(picture)
-    (folder/'ready').write_text('ready')
-    while not (folder/'stop').exists():
-        if server.poll() is not None:raise RuntimeError('X server stopped during transfer')
-        time.sleep(.1)
+    if '--check-only' not in sys.argv[2:]:
+        (folder/'ready').write_text('ready')
+        while not (folder/'stop').exists():
+            if server.poll() is not None:raise RuntimeError('X server stopped during transfer')
+            time.sleep(.1)
     x.XCloseDisplay(d)
 finally:
     if server.poll() is None:
