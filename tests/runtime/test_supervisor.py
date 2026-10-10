@@ -2,6 +2,112 @@ import importlib.util,json,pathlib,tempfile,unittest,uuid,io,time,hashlib
 from unittest.mock import patch,Mock
 spec=importlib.util.spec_from_file_location('supervisor',pathlib.Path(__file__).resolve().parents[2]/'runtime/supervisor.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class Contracts(unittest.TestCase):
+ def filtered_graphics_log(self):
+  stages=''.join('LSB_GRAPHICS_STAGE mode=warmup stage=present frame='+str(frame)+' edge='+edge+'\n'
+                 for frame in range(8) for edge in ('before','after'))
+  return ('info:  DXVK: v2.7.1\ninfo:  Found config env: dxvk.numCompilerThreads = 2\n'
+          'info:  DXVK: Using 2 compiler threads\ninfo: graphicsPipelineLibrary : 1\n'
+          'info: DXVK: Graphics pipeline libraries supported\n'+stages)
+ def filtered_graphics_fixture(self,folder,request=None,log=None):
+  req={'format':1,'action':'launch','renderer':'turnip26','engine':'fex','audio':True,'session_id':str(uuid.uuid4()),
+       'dxvk_version':'2.7.1','dxvk_two_compilers':True,'proot_acceleration':True,'performance_trial':'none'}
+  req.update(request or {})
+  s=module.Supervisor(req)
+  s.env.update(LD_PRELOAD='gamepad upload',DXVK_CONFIG='d3d9.maxFrameRate = 30')
+  s.state['vulkan']={'device':'fixture device'}
+  s.status=Mock(side_effect=lambda phase=None,**fields:s.state.update(fields))
+  s.install_dxvk=Mock();s.spawn=Mock();s.wait=Mock();s.logs=[Mock()]
+  s.spawn.return_value.poll.return_value=0
+  (folder/'graphics-tuning.log').write_text(self.filtered_graphics_log() if log is None else log)
+  bundle={'files':{'dxvk-'+version+name+'.dll':version+name for version in ('','2.7.1-') for name in ('d3d8','d3d9')}}
+  return s,bundle
+ def test_filtered_profile_runs_one_check_with_actual_two_worker_environment(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   s,bundle=self.filtered_graphics_fixture(pathlib.Path(t));previous=dict(s.env)
+   seen=[]
+   s.spawn.side_effect=lambda *args,**kwargs:(seen.append(dict(s.env)) or Mock(poll=lambda:0))
+   s.select_dxvk(bundle);s.configure_graphics_tuning()
+   self.assertEqual(s.install_dxvk.call_args_list,[unittest.mock.call('2.7.1')])
+   s.spawn.assert_called_once_with(['/opt/wine/bin/wine',r'P:\graphics-check.exe'],'graphics-tuning.log',fixed_output=True)
+   self.assertEqual(s.wait.call_args.args[1:],(45,'Filtered two-worker DXVK 2.7.1 draw and presentation check'))
+   self.assertEqual(seen,[dict(previous,DXVK_CONFIG='d3d9.maxFrameRate = 30;dxvk.numCompilerThreads = 2')])
+   self.assertEqual(s.env,seen[0]);self.assertEqual(s.state['dxvk_selected'],'2.7.1')
+   report=s.state['graphics_tuning'];self.assertTrue(report['combined_dxvk_check']);self.assertTrue(report['verified'])
+   self.assertEqual(report['active'],{'turnip_sysmem':False,'dxvk_two_compilers':True,'dxvk_staged_buffers':False})
+   self.assertTrue(report['graphics_pipeline_libraries']);self.assertNotIn('dxvk_fallback',s.state)
+ def test_combined_check_requires_exact_eligible_requested_profile(self):
+  with tempfile.TemporaryDirectory() as t:
+   folder=pathlib.Path(t)
+   changes=({'engine':'box64'},{'action':'probe'},{'action':'update-client'},{'renderer':'turnip24'},
+            {'renderer':'software'},{'dxvk_version':'2.5.3'},{'dxvk_two_compilers':False},
+            {'proot_acceleration':False},{'turnip_sysmem':True},{'dxvk_staged_buffers':True},
+            {'performance_trial':'one_compiler'},{'performance_trial':'gpl_fast'},
+            {'performance_trial':'cached_dynamic'})
+   for change in changes:
+    with self.subTest(change=change):
+     s,_=self.filtered_graphics_fixture(folder,change);self.assertFalse(s.filtered_graphics_profile())
+   for trial in ('none','syscall_filter'):
+    s,_=self.filtered_graphics_fixture(folder,{'performance_trial':trial});self.assertTrue(s.filtered_graphics_profile())
+   s,_=self.filtered_graphics_fixture(folder,{'performance_trial':'syscall_filter'})
+   del s.req['proot_acceleration'];self.assertTrue(s.filtered_graphics_profile())
+   s.req['performance_trial']='none';self.assertFalse(s.filtered_graphics_profile())
+ def test_combined_graphics_failure_retains_required_profile_and_blocks_launch(self):
+  good=self.filtered_graphics_log()
+  failures={'missing-version':good.replace('info:  DXVK: v2.7.1\n',''),
+            'wrong-version':good.replace('v2.7.1','v2.5.3'),
+            'missing-config':good.replace('info:  Found config env: dxvk.numCompilerThreads = 2\n',''),
+            'wrong-workers':good.replace('Using 2 compiler threads','Using 8 compiler threads'),
+            'missing-workers':good.replace('info:  DXVK: Using 2 compiler threads\n',''),
+            'repeated-workers':good+'info: DXVK: Using 2 compiler threads\n',
+            'changed-workers':good+'info: DXVK: Using 8 compiler threads\n',
+            'missing-frame':good.replace('LSB_GRAPHICS_STAGE mode=warmup stage=present frame=1 edge=after\n',''),
+            'duplicate-frame':good+'LSB_GRAPHICS_STAGE mode=warmup stage=present frame=7 edge=after\n',
+            'wrong-frame':good.replace('frame=4','frame=9'),
+            'failure-receipt':good+'LSB_D3D8_API mode=warmup stage=present hr=80004005 FAIL\n',
+            'timeout':good.split('LSB_GRAPHICS_STAGE mode=warmup stage=present frame=1 edge=after')[0]}
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for failure,log in failures.items():
+    with self.subTest(failure=failure):
+     s,bundle=self.filtered_graphics_fixture(pathlib.Path(t),log=log);previous=dict(s.env)
+     if failure=='timeout':s.wait.side_effect=RuntimeError('draw and presentation check timed out')
+     launch=Mock()
+     with self.assertRaisesRegex(RuntimeError,'syscall filtering and the two-worker profile were retained'):
+      s.select_dxvk(bundle);s.configure_graphics_tuning();launch()
+     launch.assert_not_called();self.assertTrue(s.req['proot_acceleration'])
+     self.assertEqual(s.install_dxvk.call_args_list,[unittest.mock.call('2.7.1')])
+     self.assertEqual(s.env,dict(previous,DXVK_CONFIG='d3d9.maxFrameRate = 30;dxvk.numCompilerThreads = 2'))
+     self.assertEqual(s.state['dxvk_selected'],'2.7.1');self.assertNotIn('dxvk_fallback',s.state)
+     self.assertNotIn('dxvk_compatibility',s.state);self.assertIsNone(s._filtered_graphics_environment)
+     self.assertFalse(any(s.state['graphics_tuning']['active'].values()))
+     self.assertFalse(s.state['graphics_tuning']['verified']);self.assertTrue(s.state['graphics_tuning']['launch_blocked'])
+     if failure=='timeout':
+      self.assertEqual(s.state['graphics_tuning']['last_stage'],dict(mode='warmup',stage='present',frame=1,edge='before'))
+ def test_combined_graphics_timeout_and_cancellation_reap_only_owned_probe(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)),patch.object(module.os,'killpg') as kill:
+   for error in (RuntimeError('timed out'),module.Stopped()):
+    s,bundle=self.filtered_graphics_fixture(pathlib.Path(t));s.wait.side_effect=error
+    proc=s.spawn.return_value;proc.poll.return_value=None;proc.pid=4312
+    with self.assertRaises(type(error)):s.select_dxvk(bundle)
+    kill.assert_called_with(4312,module.signal.SIGKILL);proc.wait.assert_called_once()
+    self.assertTrue(s.logs[-1].thread.join.called);self.assertIsNone(s._filtered_graphics_environment)
+    self.assertEqual(s.install_dxvk.call_count,1)
+ def test_filtered_tuning_cannot_reuse_missing_or_changed_internal_proof(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for changed in ('missing','environment','version','verified'):
+    s,bundle=self.filtered_graphics_fixture(pathlib.Path(t))
+    if changed!='missing':s.select_dxvk(bundle)
+    if changed=='environment':s.env['DXVK_CONFIG']='dxvk.numCompilerThreads = 8'
+    elif changed=='version':s.state['dxvk_selected']='2.5.3'
+    elif changed=='verified':s.state['graphics_tuning']['verified']=False
+    with self.assertRaisesRegex(RuntimeError,'baseline was not verified'):s.configure_graphics_tuning()
+ def test_unfiltered_dxvk_keeps_existing_version_fallback(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   s,bundle=self.filtered_graphics_fixture(pathlib.Path(t),{'proot_acceleration':False})
+   previous=dict(s.env);s.wait.side_effect=RuntimeError('ordinary compatibility check timed out')
+   s.select_dxvk(bundle)
+   self.assertEqual(s.install_dxvk.call_args_list,[unittest.mock.call('2.7.1'),unittest.mock.call('2.5.3')])
+   self.assertEqual(s.state['dxvk_selected'],'2.5.3');self.assertIn('dxvk_fallback',s.state)
+   self.assertEqual(s.env,previous);self.assertIsNone(s._filtered_graphics_environment)
  def test_pixel_check_requires_both_modes_and_rejects_failure_receipts(self):
   sw='LSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\n'
   hw='LSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'
