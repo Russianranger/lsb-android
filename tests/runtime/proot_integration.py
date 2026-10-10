@@ -184,7 +184,7 @@ def launch(cycle, trial='none'):
     if option:
         assert re.search(r'^info:\s+(?:Found config env:\s+)?' + re.escape(option) + r'\s*$', child_dxvk, re.M), child_dxvk[-4000:]
     if trial == 'short_jit':
-        assert re.findall(r'^LSB_TEXTURE_CONFIG multiblock=0\s*$', child, re.M) == [''], child[-4000:]
+        assert re.findall(r'^LSB_TEXTURE_CONFIG multiblock=(\S+)\s*$', child, re.M) == ['0'], child[-4000:]
     # No old automatic-worker device may be opened ahead of the verified
     # two-worker check. Keep all finite production budgets and legacy gates.
     assert not (logs / 'dxvk-compatibility.log').exists(), 'Filtered startup still performs redundant unqualified device warmup'
