@@ -11,6 +11,28 @@
 #ifdef MISSING_IMPORT
 __declspec(dllimport) int missing_fixture(void);
 #endif
+#ifdef FILTERED_GRAPHICS
+/* CI only: a real Windows child inherits the production launch environment.
+ * Its fixed synthetic output stays separate from this hostile login-output
+ * fixture. Neither account arguments nor retail assets reach this log. */
+static BOOL filtered_graphics(void){
+    SECURITY_ATTRIBUTES security={sizeof(security),NULL,TRUE};
+    HANDLE output=CreateFileW(L"Z:\\session\\filtered-graphics.log",GENERIC_WRITE,FILE_SHARE_READ,
+        &security,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
+    if(output==INVALID_HANDLE_VALUE)return FALSE;
+    STARTUPINFOW startup={0};PROCESS_INFORMATION process={0};
+    startup.cb=sizeof(startup);startup.dwFlags=STARTF_USESTDHANDLES;
+    startup.hStdInput=GetStdHandle(STD_INPUT_HANDLE);startup.hStdOutput=startup.hStdError=output;
+    WCHAR command[]=L"Z:\\fixtures\\texture-submission.exe";
+    BOOL started=CreateProcessW(NULL,command,NULL,NULL,TRUE,0,NULL,NULL,&startup,&process);
+    CloseHandle(output);
+    if(!started)return FALSE;
+    DWORD waited=WaitForSingleObject(process.hProcess,60000),code=1;
+    if(waited==WAIT_TIMEOUT)TerminateProcess(process.hProcess,99);
+    BOOL ok=waited==WAIT_OBJECT_0&&GetExitCodeProcess(process.hProcess,&code)&&!code;
+    CloseHandle(process.hThread);CloseHandle(process.hProcess);return ok;
+}
+#endif
 int wmain(int argc,WCHAR **wide){
 #ifdef MISSING_IMPORT
     if(missing_fixture()!=1)return 98;
@@ -80,6 +102,9 @@ int wmain(int argc,WCHAR **wide){
     if(!RegisterClassW(&cls))return 97;
     HWND window=CreateWindowW(cls.lpszClassName,pass,WS_OVERLAPPEDWINDOW|WS_VISIBLE,0,0,640,480,NULL,NULL,cls.hInstance,NULL);
     if(!window)return 97;
+#ifdef FILTERED_GRAPHICS
+    if(!filtered_graphics()){DestroyWindow(window);FreeLibrary(main_dll);return 99;}
+#endif
     ULONGLONG end=GetTickCount64()+2000;MSG msg;
     /* Keep a real visible game-class window alive while the integration test
      * verifies that completed startup scans stay idle across several old poll

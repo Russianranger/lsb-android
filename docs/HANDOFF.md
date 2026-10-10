@@ -1,3 +1,45 @@
+# 0.7.4: preserve syscall filtering during gameplay startup
+
+Continue `codex/filtered-startup-074`, based on the full 0.7.3 development
+checkpoint `2846bbf`. Preserve draft PR #3, Main `f6f851d`, Beta 0.7 and Beta 0.6.
+The user reports that syscall filtering is what makes the client stable and
+explicitly requests a fix that preserves it; disabling filtering is not an
+accepted resolution.
+
+Thor support `lsb-support(20261010-010710).zip` confirms actual host filtering,
+passing FEX execution and Turnip/DXVK 2.7.1 compatibility. The separate tuned
+probe hangs before its second Present and times out after 45 seconds. The old
+fallback clears active two-worker status, then rejects the filtered baseline
+with misleading disable-filter guidance. Five earlier archived sessions passed
+the same requested profile. The exact driver/thread cause remains unproven.
+
+For the exact eligible filtered FEX/Turnip26/DXVK2.7.1/two-worker baseline,
+DXVK selection and worker tuning now use one finite eight-frame process with
+the requested two-worker environment from the start. The check requires the
+actual version, consumed configuration, one observed two-worker confirmation,
+all eight ordered Present before/after pairs, successful exit and the unchanged
+45-second limit. Current-process/environment proof qualifies tuning; it cannot
+come from a request, stale log or previous launch. Failed graphics checks stop
+before login without replacing DXVK or reverting requested workers/filtering,
+and record the failing stage. Cancellation reaps the owned probe. Existing
+host receipt validation, ordinary compatibility fallbacks, updater and other
+experiment paths are retained.
+
+Version 0.7.4/code 78. All 204 runtime unit tests, including 43 supervisor
+contracts, pass locally; the core import/recovery/session archive checks also
+pass. The focused real ARM64 filtered modern-DXVK gameplay job is implemented but
+unrun: publication was automatically rejected for missing explicit authorization.
+The original-signed local APK is ready; see [qualification](QUALIFICATION-0.7.4.md). No device success is claimed
+before a fresh Thor pass. See [focused testing](TESTING-0.7.4.md).
+
+The original signing checkpoint was recovered privately and its certificate
+matches `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+Keep the key outside Git. Deliver an original-signed in-place update; raw CI
+artifacts have disposable signing. No runtime reinstall, client preparation,
+server rebuild/deployment or database replacement is required.
+
+---
+
 # Beta 0.7.3: cleanup after a verified PlayOnline update
 
 Continue `codex/storage-accounting-export-visibility` and draft PR #3. Preserve Main `f6f851d`, Beta 0.7 and archived Beta 0.6. Both complete 0.7.2 Verify baseline runs `37152627284` and `37152629906` finished successfully, including server deployment, native runtime/FEX/PlayOnline and Windows.

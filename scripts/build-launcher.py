@@ -37,6 +37,7 @@ if args.tests:
     build('tests/windows/loader-stub.c', tests/'loader-stub.exe')
     build('tests/windows/prerequisite-stub.c', tests/'prerequisite-stub.exe')
     build('tests/windows/login-stub.c', tests/'login-stub.exe', ['-mconsole'])
+    build('tests/windows/login-stub.c', tests/'filtered-login-stub.exe', ['-mconsole','-DFILTERED_GRAPHICS'])
     build('windows/playonline-run.c', tests/'playonline-run-test.exe', ['-mconsole', '-DLSB_PLAYONLINE_TEST_MODE'])
     build('windows/repair-io.c', tests/'repair-io-test.exe', ['-mconsole', '-DLSB_REPAIR_IO_TEST_MODE'])
     build('windows/repair-io.c', tests/'repair-io-timeout-test.exe', ['-mconsole', '-DLSB_REPAIR_IO_TEST_MODE', '-DLSB_REPAIR_IO_BUDGET_MS=0'])

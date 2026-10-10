@@ -346,6 +346,10 @@ class Supervisor:
         self.env['DXVK_STATE_CACHE_PATH']=str(cache)
 
     def select_dxvk(self,bundle):
+        self._filtered_graphics_environment=None
+        if self.filtered_graphics_profile():
+            self.select_filtered_dxvk(bundle)
+            return
         requested=self.req.get('dxvk_version','2.5.3');version=requested
         self.install_dxvk(version)
         if version=='2.7.1':
@@ -363,7 +367,93 @@ class Supervisor:
             dxvk_dll_sha256={name:bundle['files']['dxvk-'+('2.7.1-' if version=='2.7.1' else '')+name+'.dll'] for name in ('d3d8','d3d9')},
             graphics='DXVK '+version+' / '+self.state['vulkan'].get('device','unknown'))
 
+    def filtered_graphics_profile(self):
+        # Match the existing host-eligible gameplay profile. A declined host
+        # preflight can still use this exact graphics check in compatibility
+        # mode; only the independently validated host receipt proves filtering.
+        requested=self.req.get('proot_acceleration',self.req.get('performance_trial')=='syscall_filter')
+        return (requested and self.req.get('action')=='launch' and self.engine=='fex'
+            and self.req['renderer']=='turnip26' and self.req.get('dxvk_version','2.5.3')=='2.7.1'
+            and self.req.get('performance_trial','none') in ('none','syscall_filter')
+            and self.req.get('dxvk_two_compilers',False)
+            and not self.req.get('turnip_sysmem',False) and not self.req.get('dxvk_staged_buffers',False))
+
+    def select_filtered_dxvk(self,bundle):
+        # Qualify the actual two-worker profile once. Previously the filtered
+        # startup opened and destroyed an automatic-eight-worker device before
+        # immediately opening a second two-worker device. Keep the same finite
+        # draw/present check and deadline, without that redundant lifecycle.
+        self.install_dxvk('2.7.1')
+        self.env['DXVK_CONFIG']=';'.join(filter(None,(self.env.get('DXVK_CONFIG'),'dxvk.numCompilerThreads = 2')))
+        requested={key:self.req.get(key,False) for key in ('turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers')}
+        report={'requested':requested,'active':dict.fromkeys(requested,False),
+                'combined_dxvk_check':True,'verified':False,'log':'graphics-tuning.log'}
+        self.state.pop('dxvk_compatibility',None)
+        self.state.pop('dxvk_fallback',None)
+        self.status(dxvk_requested='2.7.1',dxvk_selected='2.7.1',
+            dxvk_dll_sha256={name:bundle['files']['dxvk-2.7.1-'+name+'.dll'] for name in ('d3d8','d3d9')},
+            graphics='DXVK 2.7.1 / '+self.state['vulkan'].get('device','unknown'),graphics_tuning=report)
+        proc=None
+        try:
+            proc=self.spawn(self.wine_command(r'P:\graphics-check.exe'),'graphics-tuning.log',fixed_output=True)
+            self.wait(proc,45,'Filtered two-worker DXVK 2.7.1 draw and presentation check')
+            self.logs[-1].thread.join(3)
+            log=(LOGS/'graphics-tuning.log').read_text(errors='replace')
+            if re.findall(r'^info:\s+DXVK: v(\S+)\s*$',log,re.M)!=['2.7.1']:
+                raise ValueError('DXVK 2.7.1 version was not confirmed')
+            if (not re.search(r'^info:\s+(?:Found config env:\s+)?dxvk\.numCompilerThreads = 2\s*$',log,re.M)
+                    or re.findall(r'^info:\s+DXVK: Using (\d+) compiler threads\s*$',log,re.M)!=['2']):
+                raise ValueError('DXVK did not confirm the requested two compiler workers')
+            stages=re.findall(r'^LSB_GRAPHICS_STAGE mode=warmup stage=present frame=(\d+) edge=(before|after)\s*$',log,re.M)
+            if stages!=[(str(frame),edge) for frame in range(8) for edge in ('before','after')]:
+                raise ValueError('Eight D3D8 draw/present frames were not confirmed')
+            if re.search(r'^LSB_D3D8_.* FAIL\s*$',log,re.M):
+                raise ValueError('D3D8 draw/presentation verification failed')
+            report.update(active=dict(requested),verified=True,check='eight D3D8 draw/present frames passed',
+                turnip_debug='unchanged',compiler_threads=2,buffer_upload='default',
+                graphics_pipeline_libraries=bool(re.search(r'graphicsPipelineLibrary\s*:\s*1\b',log))
+                    and 'DXVK: Graphics pipeline libraries supported' in log)
+            self._filtered_graphics_environment=dict(self.env)
+            self.status(dxvk_compatibility='eight D3D8 draw/present frames passed',graphics_tuning=report)
+        except Stopped:
+            if proc is not None and proc.poll() is None:
+                try:os.killpg(proc.pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+                try:proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:pass # The supervisor's final stop reaps again.
+            if proc is not None:self.logs[-1].thread.join(3)
+            raise
+        except (OSError,ValueError,RuntimeError) as error:
+            if proc is not None and proc.poll() is None:
+                try:os.killpg(proc.pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+                try:proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:report['cleanup_pending']=True
+            if proc is not None:self.logs[-1].thread.join(3)
+            last_stage=''
+            try:
+                log=(LOGS/'graphics-tuning.log').read_text(errors='replace')
+                stages=re.findall(r'^LSB_GRAPHICS_STAGE mode=(\w+) stage=(\w+) frame=(\d+) edge=(before|after)\s*$',log,re.M)
+                if stages:
+                    mode,stage,frame,edge=stages[-1]
+                    last_stage='; last graphics stage: '+mode+' '+stage+' frame '+frame+' '+edge
+                    report['last_stage']={'mode':mode,'stage':stage,'frame':int(frame),'edge':edge}
+            except OSError:pass
+            report.update(error=str(error),launch_blocked=True,
+                note='Requested DXVK 2.7.1, two compiler workers and runtime syscall filtering retained; graphics verification failed')
+            self.status(graphics_tuning=report)
+            raise RuntimeError('Client graphics startup verification failed: '+str(error)+last_stage+
+                '; syscall filtering and the two-worker profile were retained. Stop and retry Play; export Diagnostics if this repeats') from error
+
     def configure_graphics_tuning(self):
+        if self.filtered_graphics_profile():
+            # Internal, current-process proof only. No request/log/cache flag
+            # can skip the finite check or qualify a different environment.
+            if (getattr(self,'_filtered_graphics_environment',None)!=self.env
+                    or self.state.get('dxvk_selected')!='2.7.1'
+                    or not self.state.get('graphics_tuning',{}).get('verified')):
+                raise RuntimeError('Filtered two-worker graphics baseline was not verified; export Diagnostics')
+            return
         # Opt-in controls for the already selected renderer, never a DLL/driver
         # replacement. The original environment is restored together on failure.
         requested={key:self.req.get(key,False) for key in ('turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers')}
