@@ -3,7 +3,7 @@
 No game assets. Compare real X11 readback with a deterministic image; the Android
 Surface itself still needs device acceptance. Socket messages contain no pixels.
 """
-import ctypes,json,mmap,os,socket,stat,struct,subprocess,time
+import ctypes,json,mmap,os,re,socket,stat,struct,subprocess,time
 from pathlib import Path
 from native_metadata_probe import verify_metadata
 
@@ -18,13 +18,15 @@ def verify_native_surface(folder,display,x,d,window,gc):
     x.XSetForeground.argtypes=[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_ulong]
     x.XFillRectangle.argtypes=[ctypes.c_void_p,ctypes.c_ulong,ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_uint,ctypes.c_uint]
     # XGetImage fallback is tested separately from the required MIT-SHM path.
-    for fps,no_shm,poll in ((30,False,False),(30,True,False),(60,False,False),(60,True,False),(60,False,True)):
+    for fps,no_shm,poll,mode in ((30,False,False,'relative'),(30,True,False,'relative'),(60,False,False,'relative'),(60,True,False,'relative'),(60,False,True,'relative'),(60,False,False,'capture90'),(60,False,False,'deadline')):
+        capture_fps=90 if mode=='capture90' else fps
+        pacing='deadline' if mode=='deadline' else 'relative'
         sock=folder/'native.sock';pixels=folder/'framebuffer.bin'
         sock.unlink(missing_ok=True)
-        log=folder/(('native-xgetimage' if no_shm else 'native-shm')+('-60' if fps==60 else '')+('-poll' if poll else '')+'.log')
+        log=folder/(('native-xgetimage' if no_shm else 'native-shm')+('-60' if fps==60 else '')+('-poll' if poll else '')+('-'+mode if mode!='relative' else '')+'.log')
         requests=0
         with log.open('w') as output:
-            process=subprocess.Popen([str(helper),str(sock),str(pixels),str(fps)]+(['--no-shm'] if no_shm else [])+(['--poll-metadata'] if poll else []),env=dict(os.environ,DISPLAY=display),stdout=output,stderr=subprocess.STDOUT)
+            process=subprocess.Popen([str(helper),str(sock),str(pixels),str(fps)]+(['--no-shm'] if no_shm else [])+(['--poll-metadata'] if poll else [])+(['--capture-rate=90'] if mode=='capture90' else ['--deadline-pacing'] if mode=='deadline' else []),env=dict(os.environ,DISPLAY=display),stdout=output,stderr=subprocess.STDOUT)
             try:
                 deadline=time.monotonic()+10
                 while not sock.exists():
@@ -71,7 +73,7 @@ def verify_native_surface(folder,display,x,d,window,gc):
                                 for px in range(200):assert struct.unpack_from('<I',mapped,(py*1280+px)*4)[0]&0xffffff==colour
                             snapshot=mapped[:];start=time.monotonic()
                             for _ in range(5):assert frame()[7]&2,'Idle image should retain the Surface'
-                            assert time.monotonic()-start>=4/fps,'Producer ignored frame cap'
+                            assert time.monotonic()-start>=4/capture_fps,'Producer ignored capture cap'
                             assert mapped[:]==snapshot,'Unchanged response modified pixels'
                             # XDamage fires even when the same colour is repainted.
                             # Exercise full-image comparison against the mapping,
@@ -86,6 +88,8 @@ def verify_native_surface(folder,display,x,d,window,gc):
                                 assert not frame()[7]&2
                             for _ in range(12):assert frame()[7]&2
                 assert 'cap='+str(fps) in log.read_text()
+                configurations=re.findall(r'^LSB_NATIVE_CONFIG pid=(\d+) display_fps=(\d+) capture_fps=(\d+) pacing=(relative|deadline)$',log.read_text(),re.M)
+                assert configurations==[(str(process.pid),str(fps),str(capture_fps),pacing)],configurations
                 deadline=time.monotonic()+5
                 while True:
                     records=[]
@@ -103,12 +107,13 @@ def verify_native_surface(folder,display,x,d,window,gc):
                 else:assert skips>=32 and counts['pointer_queries']<requests-31,(counts,skips)
                 counts['hidden_pointer_skips']=skips
                 assert all(r['metadata_policy']==('poll' if poll else 'events') for r in records)
+                assert all(r['display_fps']==fps and r['capture_fps']==capture_fps and r['pacing']==pacing for r in records)
                 if poll:
                     assert counts['geometry_queries']==requests and counts['cursor_queries']==counts['captures'],counts
                 else:
                     assert 6<=counts['geometry_queries']<=10,counts # initial + two real resizes per connection
                     assert 0<counts['cursor_queries']<counts['captures']/2,counts
-                print('PASS: native shared-file exact pixels, changed/idle/duplicate frames, ownership, reconnect, permissions and '+str(fps)+' Hz cap; '+('XGetImage' if no_shm else 'MIT-SHM'),flush=True)
+                print('PASS: native shared-file exact pixels, changed/idle/duplicate frames, ownership, reconnect, permissions and '+str(fps)+' Hz display / '+str(capture_fps)+' Hz '+pacing+' capture; '+('XGetImage' if no_shm else 'MIT-SHM'),flush=True)
                 print('PASS: live cursor position, shape, hotspot, transparency, clipping, RandR resize and metadata '+('poll' if poll else 'cache')+' '+json.dumps(counts),flush=True)
             finally:
                 process.terminate()

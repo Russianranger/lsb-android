@@ -26,7 +26,11 @@ FILTERED_TRIALS={
     'tiler_mode':('DXVK_CONFIG','dxvk.tilerMode = False'),
     'short_jit':('FEX_MULTIBLOCK','0'),
     'immediate_present':('DXVK_CONFIG','d3d9.presentInterval = 0'),
+    'capture90':('native_capture_rate','90'),
+    'capture_deadline':('native_pacing','deadline'),
+    'frame_latency':('DXVK_CONFIG','d3d9.maxFrameLatency = 1'),
 }
+NATIVE_TRIALS={'capture90','capture_deadline'}
 
 
 def atomic(path, data):
@@ -390,7 +394,10 @@ class Supervisor:
             and self.req['renderer']=='turnip26' and self.req.get('dxvk_version','2.5.3')=='2.7.1'
             and self.req.get('performance_trial','none') in ('none','syscall_filter',*FILTERED_TRIALS)
             and self.req.get('dxvk_two_compilers',False)
-            and not self.req.get('turnip_sysmem',False) and not self.req.get('dxvk_staged_buffers',False))
+            and not self.req.get('turnip_sysmem',False) and not self.req.get('dxvk_staged_buffers',False)
+            and (self.req.get('performance_trial') not in NATIVE_TRIALS
+                or (self.req.get('native_surface',False) and self.req.get('shm_upload',False)
+                    and self.req.get('display_fps',30)==60)))
 
     def select_filtered_dxvk(self,bundle):
         # Qualify the actual two-worker profile once. Previously the filtered
@@ -404,7 +411,7 @@ class Supervisor:
         if trial in FILTERED_TRIALS:
             key,option=FILTERED_TRIALS[trial]
             if key=='DXVK_CONFIG':self.env[key]+=';'+option
-            else:self.env[key]=option
+            elif key=='FEX_MULTIBLOCK':self.env[key]=option
             trial_report={'requested':trial,'active':'none','setting':key,'option':option,
                 'compiler_threads':2,'combined_graphics_check':True,
                 'reset':'Select Baseline and stop/relaunch the client',
@@ -444,10 +451,15 @@ class Supervisor:
                     values=re.findall(r'^info:\s+(?:Found config env:\s+)?'+re.escape(name)+r' = (\S+)\s*$',log,re.M)
                     if not values or any(observed!=value for observed in values):
                         raise ValueError('DXVK did not confirm the selected trial option')
-                elif re.findall(r'^LSB_GRAPHICS_CONFIG multiblock=(\S+)\s*$',log,re.M)!=['0']:
+                elif key=='FEX_MULTIBLOCK' and re.findall(r'^LSB_GRAPHICS_CONFIG multiblock=(\S+)\s*$',log,re.M)!=['0']:
                     raise ValueError('The graphics process did not confirm the short-JIT environment')
-                trial_report.update(active=trial,verified=True,
+                trial_report.update(active='none' if trial in NATIVE_TRIALS else trial,
+                    verified=trial not in NATIVE_TRIALS,graphics_verified=True,
                     check='eight ordered warmup Present frames and 128 pixels in both vertex-processing modes passed')
+                if trial in NATIVE_TRIALS:
+                    trial_report.update(native_check_pending=True,
+                        configuration_proof='Owned helper capture cadence and pacing; Android Surface delivery is reported separately',
+                        capture_mode_proof='MIT-SHM or XGetImage readback is recorded when capture starts; startup configuration does not prove readback mode')
                 if trial=='short_jit':
                     trial_report.update(configuration_proof='Pinned FEX environment loader plus inherited graphics-process value; no internal translator readback',
                         launch_proof='The FEX parent/child execution and environment-hash check must pass again before login')
@@ -581,10 +593,25 @@ class Supervisor:
                     or getattr(self,'_filtered_trial',None)!=trial
                     or not self.state.get('graphics_tuning',{}).get('verified')
                     or self.state.get('runtime_acceleration',{}).get('active')!='syscall_filter'
-                    or proven.get('active')!=trial or not proven.get('verified')):
+                    or proven.get('active') not in (('none',trial) if trial in NATIVE_TRIALS else (trial,))
+                    or not proven.get('graphics_verified' if trial in NATIVE_TRIALS else 'verified')):
                 report.update(launch_blocked=True,note='Selected trial requires current combined graphics proof and independently confirmed host filtering')
                 self.status(performance_trial=report)
                 raise RuntimeError('Selected optimization trial was not verified; select Baseline and relaunch, keeping syscall filtering enabled')
+            if trial in NATIVE_TRIALS:
+                try:
+                    native=self.verify_native_trial()
+                    if (self.state.get('shm_upload_active') is not True
+                            or self.env.get('LSB_X11_UPLOAD')!='1'):
+                        raise ValueError('The native capture trial requires the verified shared-memory upload path')
+                except (OSError,ValueError,RuntimeError) as error:
+                    report.update(verified=False,launch_blocked=True,error=str(error),
+                        note='Native trial proof failed; syscall filtering and the two-worker profile retained')
+                    self.status(performance_trial=report)
+                    raise RuntimeError('Selected native optimization trial was not verified: '+str(error)+
+                        '; syscall filtering and the two-worker profile were retained. Select Baseline and relaunch') from error
+                proven=dict(proven,active=trial,verified=True,native_check_pending=False,native_configuration=native,
+                    upload_proof='Current Vulkan shared-memory upload preflight and enabled upload environment')
             self.status(performance_trial=dict(proven,host_filtering_confirmed=True));return
         if trial in ('retain_pipelines','lighter_scene'):
             report['note']='Retired after Thor lockup or severe camera-pan regression; baseline retained'
@@ -742,18 +769,102 @@ class Supervisor:
 
     def start_native_surface(self):
         if not self.req.get('native_surface',False):return
+        trial=self.req.get('performance_trial','none')
+        selected=trial in NATIVE_TRIALS
+        self._native_surface_process=None
+        self._native_surface_proof=None
         try:
-            import json
             executable=BUNDLE/'x11-frame-bridge'
-            manifest=json.loads((BUNDLE/'presentation-bundle.json').read_text())
-            if manifest.get('format')!=1 or executable.is_symlink() or hashlib.sha256(executable.read_bytes()).hexdigest()!=manifest.get('sha256'):
+            manifest_path=BUNDLE/'presentation-bundle.json'
+            manifest_bytes=manifest_path.read_bytes()
+            manifest=json.loads(manifest_bytes)
+            if (manifest.get('format')!=1 or executable.is_symlink()
+                    or (selected and manifest_path.is_symlink())
+                    or hashlib.sha256(executable.read_bytes()).hexdigest()!=manifest.get('sha256')):
                 raise ValueError('Native display component checksum failed')
-            self.spawn([str(executable),str(SESSION/'native-display.sock'),str(SESSION/'framebuffer.bin'),str(self.req.get('display_fps',30))], 'native-display.log',fixed_output=True)
+            command=[str(executable),str(SESSION/'native-display.sock'),str(SESSION/'framebuffer.bin'),str(self.req.get('display_fps',30))]
+            if trial=='capture90':command.append('--capture-rate=90')
+            elif trial=='capture_deadline':command.append('--deadline-pacing')
+            if selected:
+                if not self.filtered_graphics_profile():raise ValueError('Native trial requires the filtered native Surface, SHM and 60 Hz profile')
+                # A live helper is intentionally never joined. Remove a prior
+                # log before its new owned writer opens the fresh startup log.
+                (LOGS/'native-display.log').unlink(missing_ok=True)
+            proc=self.spawn(command,'native-display.log',fixed_output=True)
+            self._native_surface_process=proc
+            self._native_surface_command=tuple(command)
+            self._native_surface_manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest()
+            if selected:
+                deadline=time.monotonic()+5
+                while True:
+                    self.stopped()
+                    if proc.poll() is not None:raise RuntimeError('Native display helper exited before its configuration was confirmed')
+                    try:
+                        proof=self.native_configuration()
+                        break
+                    except FileNotFoundError:pass
+                    except ValueError as error:
+                        if str(error)!='Native display configuration receipt is missing':raise
+                    if time.monotonic()>=deadline:raise RuntimeError('Native display configuration receipt timed out')
+                    time.sleep(.05)
+                self._native_surface_proof=proof
+                self.status(native_surface_configuration=proof)
             self.status(native_surface_requested=True)
-        except (OSError,ValueError,KeyError) as error:
+        except (OSError,ValueError,KeyError,RuntimeError) as error:
+            if selected:
+                self.status(native_surface_requested=True,native_surface_error=str(error),
+                    performance_trial={'requested':trial,'active':'none','verified':False,
+                        'launch_blocked':True,'error':str(error)})
+                raise RuntimeError('Selected native optimization trial startup failed: '+str(error)+
+                    '; syscall filtering and the two-worker profile were retained. Select Baseline and relaunch') from error
             # The Android viewer falls back to the existing RFB path. A missing
             # optional display helper must never stop the working game launch.
             self.status(native_surface_requested=True,native_surface_fallback=str(error))
+
+    def native_configuration(self):
+        """Read a fixed startup receipt only from the current owned bridge."""
+        trial=self.req.get('performance_trial','none')
+        if trial not in NATIVE_TRIALS:raise ValueError('No native capture trial is selected')
+        proc=getattr(self,'_native_surface_process',None)
+        if proc is None or proc not in self.children or proc.poll() is not None:
+            raise ValueError('Current owned native display helper was not confirmed')
+        command=[str(BUNDLE/'x11-frame-bridge'),str(SESSION/'native-display.sock'),
+            str(SESSION/'framebuffer.bin'),'60',
+            '--capture-rate=90' if trial=='capture90' else '--deadline-pacing']
+        if tuple(proc.args)!=tuple(command) or getattr(self,'_native_surface_command',None)!=tuple(command):
+            raise ValueError('Native display helper command changed')
+        path=LOGS/'native-display.log'
+        if path.is_symlink() or not stat.S_ISREG(path.stat().st_mode) or path.stat().st_size>2*1024*1024:
+            raise ValueError('Invalid native display configuration log')
+        lines=[line for line in path.read_text(errors='replace').splitlines() if line.startswith('LSB_NATIVE_CONFIG')]
+        if not lines:raise ValueError('Native display configuration receipt is missing')
+        if len(lines)!=1:raise ValueError('Repeated native display configuration receipt')
+        match=re.fullmatch(r'LSB_NATIVE_CONFIG pid=(\d+) display_fps=(30|60) capture_fps=(30|60|90) pacing=(relative|deadline)',lines[0])
+        if not match:raise ValueError('Invalid native display configuration receipt')
+        pid,display,capture,pacing=match.groups()
+        expected_capture,expected_pacing=(90,'relative') if trial=='capture90' else (60,'deadline')
+        if (int(pid)!=proc.pid or int(display)!=60 or int(capture)!=expected_capture
+                or pacing!=expected_pacing):
+            raise ValueError('Native display helper did not confirm the selected trial configuration')
+        return {'pid':int(pid),'display_fps':int(display),'capture_fps':int(capture),
+            'pacing':pacing,'log':'native-display.log'}
+
+    def verify_native_trial(self):
+        executable=BUNDLE/'x11-frame-bridge';manifest_path=BUNDLE/'presentation-bundle.json'
+        manifest_bytes=manifest_path.read_bytes();manifest=json.loads(manifest_bytes)
+        if (executable.is_symlink() or manifest_path.is_symlink() or manifest.get('format')!=1
+                or hashlib.sha256(manifest_bytes).hexdigest()!=getattr(self,'_native_surface_manifest_sha256',None)
+                or hashlib.sha256(executable.read_bytes()).hexdigest()!=manifest.get('sha256')):
+            raise ValueError('Current native display component manifest was not confirmed')
+        proof=self.native_configuration()
+        if proof!=getattr(self,'_native_surface_proof',None):
+            raise ValueError('Current native display configuration proof was not confirmed')
+        mapped=SESSION/'framebuffer.bin';details=mapped.stat()
+        if (mapped.is_symlink() or not stat.S_ISREG(details.st_mode) or details.st_size!=1280*720*4
+                or stat.S_IMODE(details.st_mode)!=0o600 or details.st_uid!=os.geteuid()):
+            raise ValueError('Current owner-only native display mapped file was not confirmed')
+        return dict(proof,helper_sha256=manifest['sha256'],mapped_file_bytes=details.st_size,
+            mapped_file_owner_only=True)
 
     def check_update_network(self):
         from network_check import validate

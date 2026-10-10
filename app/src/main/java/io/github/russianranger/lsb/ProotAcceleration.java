@@ -37,11 +37,14 @@ final class ProotAcceleration {
                 &&!r.optBoolean("native_surface")&&!r.optBoolean("shm_upload");
         }
         String trial=r.optString("performance_trial","none");
+        boolean captureTrial="capture90".equals(trial)||"capture_deadline".equals(trial);
         return ("none".equals(trial)||"syscall_filter".equals(trial)
-                ||"tiler_mode".equals(trial)||"short_jit".equals(trial)||"immediate_present".equals(trial))
+                ||"tiler_mode".equals(trial)||"short_jit".equals(trial)||"immediate_present".equals(trial)
+                ||captureTrial||"frame_latency".equals(trial))
             &&"launch".equals(r.optString("action"))&&"fex".equals(r.optString("engine"))
             &&"turnip26".equals(r.optString("renderer"))&&"2.7.1".equals(r.optString("dxvk_version"))
-            &&r.optBoolean("dxvk_two_compilers")&&!r.optBoolean("turnip_sysmem")&&!r.optBoolean("dxvk_staged_buffers");
+            &&r.optBoolean("dxvk_two_compilers")&&!r.optBoolean("turnip_sysmem")&&!r.optBoolean("dxvk_staged_buffers")
+            &&(!captureTrial||(r.optBoolean("native_surface")&&r.optBoolean("shm_upload")&&r.optInt("display_fps",30)==60));
     }
     JSONObject receipt()throws Exception{
         return new JSONObject().put("format",1).put("session_id",session).put("requested",requested?"syscall_filter":"none")

@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "frame.h"
 #include "transfer.h"
+#include "capture-pacing.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/XShm.h>
@@ -25,6 +26,7 @@
 #include <stdatomic.h>
 static int xerror;
 static int poll_metadata;
+static struct lsb_capture_options capture_options;
 static int error_handler(Display *d,XErrorEvent *e){(void)d;xerror=e->error_code;return 0;}
 static uint64_t now_ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (uint64_t)t.tv_sec*1000000000+t.tv_nsec;}
 struct frame_stats {
@@ -34,12 +36,13 @@ struct frame_stats {
 static void report(struct frame_stats *s,int final){
     uint64_t now=now_ns();if(!s->requests||(!final&&now-s->since<5000000000ull))return;
     double frames=s->frames?(double)s->frames:1,requests=(double)s->requests,captures=s->captures?(double)s->captures:1;
-    fprintf(stderr,"{\"transport\":\"shared-file-v1\",\"frames\":%llu,\"seconds\":%.3f,\"capture_ms_per_frame\":%.3f,\"send_ms_per_frame\":%.3f,\"pacing_ms_per_request\":%.3f,\"send_calls_per_frame\":%.3f,\"mapped_bytes_per_frame\":%.0f,\"requests\":%llu,\"captures\":%llu,\"idle_skips\":%llu,\"duplicate_skips\":%llu,\"metadata_policy\":\"%s\",\"metadata_query_ms_per_request\":%.3f,\"max_metadata_query_ms\":%.3f,\"cursor_fetch_ms\":%.3f,\"max_capture_ms\":%.3f,\"geometry_queries\":%llu,\"pointer_queries\":%llu,\"cursor_queries\":%llu,\"resize_events\":%llu,\"cursor_events\":%llu,\"hidden_pointer_skips\":%llu}\n",
+    fprintf(stderr,"{\"transport\":\"shared-file-v1\",\"frames\":%llu,\"seconds\":%.3f,\"capture_ms_per_frame\":%.3f,\"send_ms_per_frame\":%.3f,\"pacing_ms_per_request\":%.3f,\"send_calls_per_frame\":%.3f,\"mapped_bytes_per_frame\":%.0f,\"requests\":%llu,\"captures\":%llu,\"idle_skips\":%llu,\"duplicate_skips\":%llu,\"metadata_policy\":\"%s\",\"metadata_query_ms_per_request\":%.3f,\"max_metadata_query_ms\":%.3f,\"cursor_fetch_ms\":%.3f,\"max_capture_ms\":%.3f,\"geometry_queries\":%llu,\"pointer_queries\":%llu,\"cursor_queries\":%llu,\"resize_events\":%llu,\"cursor_events\":%llu,\"hidden_pointer_skips\":%llu,\"display_fps\":%d,\"capture_fps\":%d,\"pacing\":\"%s\"}\n",
         (unsigned long long)s->frames,(now-s->since)/1e9,s->capture_ns/1e6/captures,s->send_ns/1e6/frames,s->pace_ns/1e6/requests,s->calls/frames,s->bytes/frames,
         (unsigned long long)s->requests,(unsigned long long)s->captures,(unsigned long long)s->idle,(unsigned long long)s->duplicates,
         poll_metadata?"poll":"events",s->query_ns/1e6/requests,s->max_query_ns/1e6,s->cursor_ns/1e6,s->max_capture_ns/1e6,
         (unsigned long long)s->geometry_queries,(unsigned long long)s->pointer_queries,(unsigned long long)s->cursor_queries,
-        (unsigned long long)s->resize_events,(unsigned long long)s->cursor_events,(unsigned long long)s->hidden_pointer_skips);fflush(stderr);
+        (unsigned long long)s->resize_events,(unsigned long long)s->cursor_events,(unsigned long long)s->hidden_pointer_skips,
+        capture_options.display_fps,capture_options.capture_fps,capture_options.deadline?"deadline":"relative");fflush(stderr);
     memset(s,0,sizeof(*s));s->since=now;
 }
 static int unchanged(int fd,uint32_t *header,int shared,struct frame_stats *stats){
@@ -66,14 +69,9 @@ static int cursor_visible(const XFixesCursorImage *c){
 }
 int main(int argc,char **argv){
     signal(SIGPIPE,SIG_IGN);
-    if(argc<4||argc>6){fprintf(stderr,"Usage: x11-frame-bridge socket framebuffer fps [--no-shm] [--poll-metadata]\n");return 2;}
-    int no_shm=0;
-    for(int i=4;i<argc;i++){
-        if(!strcmp(argv[i],"--no-shm")&&!no_shm)no_shm=1;
-        else if(!strcmp(argv[i],"--poll-metadata")&&!poll_metadata)poll_metadata=1;
-        else return 2;
-    }
-    int fps=atoi(argv[3]);if(fps!=30&&fps!=60)return 2;
+    if(lsb_capture_options(argc,argv,&capture_options)){fprintf(stderr,"Usage: x11-frame-bridge socket framebuffer fps [--no-shm] [--poll-metadata] [--capture-rate=90 | --deadline-pacing]\n");return 2;}
+    int fps=capture_options.display_fps,no_shm=capture_options.no_shm;
+    poll_metadata=capture_options.poll_metadata;
     signal(SIGPIPE,SIG_IGN);XSetErrorHandler(error_handler);
     Display *d=XOpenDisplay(NULL);if(!d){fprintf(stderr,"No X display\n");return 3;}
     int fixes_event,fixes_error;if(!XFixesQueryExtension(d,&fixes_event,&fixes_error)){fprintf(stderr,"XFixes cursor capture required\n");return 3;}
@@ -92,6 +90,7 @@ int main(int argc,char **argv){
     XFixesSelectCursorInput(d,screen,XFixesDisplayCursorNotifyMask);
     XSelectInput(d,screen,StructureNotifyMask);
     fprintf(stderr,"Change tracking: %s; exact pixel comparison enabled\n",damage_ready?"XDamage":"periodic capture fallback");
+    fprintf(stderr,"LSB_NATIVE_CONFIG pid=%lu display_fps=%d capture_fps=%d pacing=%s\n",(unsigned long)getpid(),fps,capture_options.capture_fps,capture_options.deadline?"deadline":"relative");
     uint32_t sequence=0;fprintf(stderr,"LSB native Surface bridge ready, cap=%d; X11 readback retained\n",fps);fflush(stderr);
     for(;;){
         int fd=accept(listener,NULL,NULL);if(fd<0){if(errno==EINTR)continue;break;}
@@ -100,10 +99,14 @@ int main(int argc,char **argv){
         int published=0,geometry_dirty=1,cursor_dirty=1,cursor_shown=1;
         XWindowAttributes a={0};XFixesCursorImage *cursor_image=NULL;
         uint64_t last_capture=0;int pointer_x=-1,pointer_y=-1;struct frame_stats stats={.since=now_ns()};
+        struct lsb_capture_schedule schedule={0};
         unsigned char request;
         while(recv(fd,&request,1,0)==1&&request==1){
-            uint64_t elapsed=now_ns()-last,interval=1000000000u/(unsigned)fps;
-            uint64_t pacing=now_ns();if(last&&elapsed<interval){struct timespec wait={.tv_nsec=(long)(interval-elapsed)};while(nanosleep(&wait,&wait)&&errno==EINTR){}}stats.pace_ns+=now_ns()-pacing;last=now_ns();
+            uint64_t elapsed=now_ns()-last,interval=1000000000u/(unsigned)capture_options.capture_fps;
+            uint64_t pacing=now_ns();
+            if(capture_options.deadline){if(lsb_capture_deadline(&schedule,interval))break;}
+            else if(last&&elapsed<interval){struct timespec wait={.tv_nsec=(long)(interval-elapsed)};while(nanosleep(&wait,&wait)&&errno==EINTR){}}
+            stats.pace_ns+=now_ns()-pacing;last=now_ns();
             stats.requests++;
             uint64_t querying=now_ns();
             Window root,child;int rx=pointer_x,ry=pointer_y,wx=0,wy=0;unsigned mask=0;

@@ -13,8 +13,8 @@ import io.github.russianranger.lsb.core.SafeZip;
 final class SessionHistory {
     static final int LIMIT=6, INPUT_LIMIT=1_048_576, ARCHIVE_LIMIT=4_194_304;
     private static final String ID="[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}";
-    private static final String[] SOURCES={"runtime-state.json","client-launch.json","native-display-performance.json","display-performance.json","proot-acceleration.json"};
-    private static final String[] KEYS={"runtime","client_launch","native_display","display","proot_acceleration"};
+    private static final String[] SOURCES={"runtime-state.json","client-launch.json","native-display-performance.json","display-performance.json","proot-acceleration.json","native-trial-display.json"};
+    private static final String[] KEYS={"runtime","client_launch","native_display","display","proot_acceleration","native_trial_display"};
     private static JSONObject read(File file,int limit)throws Exception {
         if(Files.isSymbolicLink(file.toPath())||!file.isFile()||file.length()>limit)throw new IOException("Missing or oversized session receipt");
         return new JSONObject(new String(Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8));
@@ -68,7 +68,8 @@ final class SessionHistory {
                 .put("action",runtime.optString("action")).put("phase",runtime.optString("phase"))
                 .put("graphics_tuning",runtime.optJSONObject("graphics_tuning"))
                 .put("performance_trial",runtime.optJSONObject("performance_trial"))
-                .put("proot_acceleration",record.optJSONObject("proot_acceleration")));
+                .put("proot_acceleration",record.optJSONObject("proot_acceleration"))
+                .put("native_trial_display",record.optJSONObject("native_trial_display")));
             SafeZip.entry(zip,path,Files.readAllBytes(f.toPath()));
         }
         SafeZip.entry(zip,"runtime/sessions/index.json",new JSONObject().put("format",1).put("limit",LIMIT)

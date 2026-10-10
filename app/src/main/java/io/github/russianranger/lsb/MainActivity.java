@@ -633,25 +633,25 @@ public final class MainActivity extends Activity {
         setting(proven,"Native Surface display · shared memory","native_surface",true,"Confirmed working capture and direct Android display; bypasses compressed bitmap delivery.");
         setting(proven,"Shared-memory Vulkan presentation","shm_upload",true,"Verified active in the successful run. Reduces transfer traffic, with automatic fallback if its startup check fails. Its individual FPS benefit is not isolated.");
         CheckBox compilerWorkers=setting(proven,"Two shader compiler workers","dxvk_two_compilers",false,"Improved world-play smoothness on Thor in the latest comparisons. Recommended with Turnip system-memory rendering off. Stop and relaunch after changing this setting.");
-        CheckBox acceleration=setting(proven,"Runtime syscall filtering","proot_acceleration",true,"The successful Trial F optimization, now enabled by default. Available with FEX, Turnip 26, DXVK 2.7.1 and two workers on Baseline or one G, H or I trial; keep past rendering experiments off. G, H and I require confirmed filtering; Baseline retains compatibility mode if filtering is unavailable. Stop and relaunch to apply.");
+        CheckBox acceleration=setting(proven,"Runtime syscall filtering","proot_acceleration",true,"The successful Trial F optimization, now enabled by default. Available with FEX, Turnip 26, DXVK 2.7.1 and two workers on Baseline or one J, K or L trial; keep past rendering experiments off. J, K and L require confirmed filtering; Baseline retains compatibility mode if filtering is unavailable. Stop and relaunch to apply.");
         proven.addView(label("The button returns trials to Baseline, enables syscall filtering and two compiler workers, and turns off Turnip system-memory rendering and staged geometry uploads. Your Turnip driver, display and other settings stay as selected.",13,MUTED));
         proven.addView(label("Always applied: corrected FEX x87 condition flags in runtime v3, Android shared-memory capture, and removal of recurring startup-observer stalls. Stop and relaunch after changing runtime or display options.",13,MUTED));
         LinearLayout trials=card("Optimization trials");
-        trials.addView(label("Choose one test, then stop and relaunch. Use FEX, Turnip 26, DXVK 2.7.1, two shader workers and runtime syscall filtering; keep past rendering experiments and startup capture off. Compare the same area and camera movement. These tests preserve rendering resolution and the 30 FPS game cap; keep your display at 60 Hz.",15,TEXT));
-        final String[] trialValues={"none","tiler_mode","short_jit","immediate_present"};
+        trials.addView(label("Choose one test, then stop and relaunch. Use FEX, Turnip 26, DXVK 2.7.1, two shader workers and runtime syscall filtering; keep past rendering experiments and startup capture off. J and K also require Native Surface, shared-memory Vulkan presentation and a 60 Hz display. Compare the same area and camera movement. These tests preserve rendering resolution and the 30 FPS game cap.",15,TEXT));
+        final String[] trialValues={"none","capture90","capture_deadline","frame_latency"};
         final String[] trialHelp={
-            "The tested baseline keeps two shader compiler workers and runtime syscall filtering enabled. G, H and I each change one setting and never combine. Stop and relaunch after switching.",
-            "G changes how DXVK groups rendering work. It may reduce CPU overhead, but can increase GPU work on the Thor. Two shader workers and syscall filtering stay enabled; rendering checks must pass.",
-            "H asks FEX to compile smaller pieces of game code at a time. It may reduce compilation pauses, but can lower steady gameplay performance. Two shader workers and syscall filtering stay enabled; execution and rendering checks must pass.",
-            "I removes the driver VSync wait. It may reduce waiting, but can change frame pacing. Your game frame cap and display refresh setting stay as selected; two shader workers and syscall filtering remain enabled; rendering checks must pass."
+            "The tested baseline keeps two shader compiler workers and runtime syscall filtering enabled. J, K and L each change one setting and never combine. Stop and relaunch after switching.",
+            "J samples completed frames up to 90 times per second while the display remains at 60 Hz and the game remains capped at 30 FPS. It may reduce missed frames, but can increase CPU use, heat and battery use. Native Surface and shared-memory presentation must pass their startup checks.",
+            "K samples completed frames on a steady 60 Hz schedule. It may reduce accumulated capture delays and uneven frame delivery. The display refresh, game frame cap and image quality stay as selected. Native Surface and shared-memory presentation must pass their startup checks.",
+            "L keeps fewer rendered frames waiting in the queue. It may improve frame pacing and input response, but can reduce overlap between CPU and GPU work and lower FPS. The display refresh, game frame cap and image quality stay as selected. Rendering checks must pass."
         };
         Spinner trial=new Spinner(this);trial.setContentDescription("Performance trial");
-        trial.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Baseline · proven settings","G · Render-pass heuristics","H · Shorter compilation units","I · Remove driver VSync wait"}));
+        trial.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Baseline · proven settings","J · Faster frame sampling","K · Steady sampling schedule","L · Shorter render queue"}));
         String savedTrial=getSharedPreferences("runtime",0).getString("performance_trial","none");
         int selectedTrial=Arrays.asList(trialValues).indexOf(savedTrial);
         if(selectedTrial<0)selectedTrial=0;
         if(getSharedPreferences("runtime",0).getBoolean("performance_trial_retired",false)){
-            trials.addView(label("Your saved trial has been retired and was reset to Baseline. Trials A, D and E did not establish a consistent improvement. Choose G, H or I separately for this comparison.",14,ACCENT));
+            trials.addView(label("Your saved trial has been retired and was reset to Baseline. Earlier trials did not establish a useful improvement. Choose J, K or L separately for this comparison. Saved comparison results remain available in support exports.",14,ACCENT));
         }
         trial.setSelection(selectedTrial);trials.addView(trial);
         final TextView trialDescription=label(trialHelp[selectedTrial],14,MUTED);trialDescription.setContentDescription("Performance trial details");trials.addView(trialDescription);
@@ -663,11 +663,12 @@ public final class MainActivity extends Activity {
                 if(!value.equals(getSharedPreferences("runtime",0).getString("performance_trial","none")))getSharedPreferences("runtime",0).edit().putString("performance_trial",value).remove("performance_trial_retired").apply();
             }
         });
-        trials.addView(label("G, H and I are optional comparisons with no demonstrated FPS gain yet. Startup checks validate the selected trial with filtering and two workers; a failed check stops launch. Select Baseline for normal play. Support ZIPs retain six sessions with their effective settings and timing history.",13,MUTED));
+        trials.addView(label("J, K and L are optional comparisons with no demonstrated FPS gain yet. Startup checks validate the selected trial with filtering and two workers; a failed check stops launch. Select Baseline for normal play. Support ZIPs retain six sessions with their effective settings and timing history.",13,MUTED));
         LinearLayout past=card("Past experiments");
         past.addView(label("These rendering experiments have no demonstrated benefit in the latest comparisons. Keep them off when using the tested shader settings; saved choices remain available for troubleshooting.",15,TEXT));
         past.addView(label("Retired B · Retain shader pipelines: froze before the menu despite passing its startup pixel check. Retired C · Lighter 3D scene: severe camera-pan slowdowns. Both are disabled; do not repeat these tests.",14,MUTED));
         past.addView(label("Retired A · One compiler worker, D · Cached geometry buffers and E · Fewer shader optimization jobs: comparisons did not establish a consistent improvement. The current trials keep two workers and syscall filtering enabled.",14,MUTED));
+        past.addView(label("Retired G · Render-pass heuristics, H · Shorter compilation units and I · Remove driver VSync wait: the latest comparisons did not show a meaningful FPS gain. Saved results are retained. The current trials keep two workers and syscall filtering enabled.",14,MUTED));
         CheckBox turnipSysmem=setting(past,"Turnip system-memory rendering","turnip_sysmem",false,"Changes how the Turnip GPU driver renders; it does not select a different driver. No demonstrated benefit beyond two compiler workers. Recommended off. Stop and relaunch to apply.");
         CheckBox stagedGeometry=setting(past,"Staged geometry uploads","dxvk_staged_buffers",false,"The recent camera-pan comparison found no improvement. Recommended off. Requires DXVK 2.7.1 and retains the startup pixel check and compatibility fallback.");
         button(proven,"Use tested shader settings",()->{

@@ -33,6 +33,12 @@ final class ClientRuntime {
     private volatile boolean stopRequested;
     private AudioBridge audio;
     private volatile String sessionId;
+    private volatile String nativeTrialFailure="";
+    private volatile DisplayLaunch displayLaunch;
+    private static final class DisplayLaunch {
+        final String id,trial;
+        DisplayLaunch(JSONObject request){id=request.optString("session_id");trial="launch".equals(request.optString("action"))?request.optString("performance_trial","none"):"none";}
+    }
     private final DisplayPerformance performance;
     private final NativePerformance nativePerformance;
     private volatile Thread preparingThread;
@@ -40,7 +46,7 @@ final class ClientRuntime {
     void reservePlay()throws IOException {
         synchronized(WorkService.class){synchronized(this){
             if(alive()||WorkService.busy||SessionBackup.active||!SessionBackup.recoveryError.isEmpty())throw new IOException("Wait for the current operation");
-            active=true;starting=true;playWaiting=true;stopRequested=false;preparingThread=Thread.currentThread();
+            active=true;starting=true;playWaiting=true;stopRequested=false;displayLaunch=null;preparingThread=Thread.currentThread();
             status="Preparing to play…";launchError="";
         }}
     }
@@ -87,6 +93,45 @@ final class ClientRuntime {
     NativePerformance.Stream nativeFrameReports(String id){return nativePerformance.open(id);}
     boolean nativeSurfaceRequested(){try{return new JSONObject(read(new File(run,"request.json"),16384)).optBoolean("native_surface",false);}catch(Exception e){return false;}}
     int activeDisplayFps(){try{return new JSONObject(read(new File(run,"request.json"),16384)).optInt("display_fps",30)==60?60:30;}catch(Exception e){return 30;}}
+    String captureTrialForSession(String id){
+        if(id==null||!id.equals(sessionId))return "none";
+        try{
+            DisplayLaunch launch=displayLaunch;
+            if((launch==null||!id.equals(launch.id))&&!playWaiting&&preparingThread==null){
+                JSONObject request=new JSONObject(read(new File(run,"request.json"),16384));
+                if(id.equals(request.optString("session_id"))){launch=new DisplayLaunch(request);displayLaunch=launch;}
+            }
+            return launch!=null&&id.equals(launch.id)&&captureTrial(launch.trial)?launch.trial:"none";
+        }catch(Exception e){return "none";}
+    }
+    static boolean captureTrial(String trial){return "capture90".equals(trial)||"capture_deadline".equals(trial);}
+    static String captureTrialFailure(String trial){return "Trial "+("capture90".equals(trial)?"J":"K")+" stopped because Native Surface frame delivery failed. Select Baseline or export a support ZIP.";}
+    boolean nativeCaptureTrialRunning(String id,String trial){
+        DisplayLaunch launch=displayLaunch;
+        if(id==null||!id.equals(sessionId)||launch==null||!id.equals(launch.id)||!trial.equals(launch.trial)||!captureTrial(trial)||stopRequested||playWaiting||!alive())return false;
+        try{
+            JSONObject state=new JSONObject(read(new File(run,"status.json"),131072));
+            if(id.equals(state.optString("session_id"))&&Arrays.asList("completed","stopped","cancelled","error").contains(state.optString("phase")))return false;
+        }catch(Exception ignored){}
+        return true;
+    }
+    synchronized boolean stopNativeCaptureTrial(String id,String trial)throws Exception {
+        // Hold the launch ownership lock through stop: a stale viewer cannot
+        // interrupt a replacement run or write its error into new diagnostics.
+        if(!nativeCaptureTrialRunning(id,trial))return false;
+        nativeTrialFailure=captureTrialFailure(trial);launchError=nativeTrialFailure;operationFailed=true;
+        JSONObject receipt=new JSONObject().put("format",1).put("session_id",id).put("performance_trial",trial)
+            .put("status","failed").put("stage","android_native_presentation").put("reason","native_frame_delivery_failed").put("fallback_allowed",false);
+        try{write(new File(run,"native-trial-display.json"),receipt.toString());}catch(IOException ignored){}
+        try{write(new File(logs,"native-trial-display.json"),receipt.toString());}catch(IOException ignored){}
+        try{requestStop();}finally{
+            // Even a failed stop-file write must end the owned trial process.
+            Process target=process;
+            if(target!=null&&target.isAlive()){target.destroy();if(!target.waitFor(5,TimeUnit.SECONDS)){target.destroyForcibly();target.waitFor(5,TimeUnit.SECONDS);}}
+            status=launchError=nativeTrialFailure;OperationProgress.client.update(status);
+        }
+        return true;
+    }
 
     static String read(File p,int max)throws IOException {
         if(p.length()>max)throw new IOException("Metadata exceeds limits");return new String(Files.readAllBytes(p.toPath()),StandardCharsets.UTF_8);
@@ -314,7 +359,7 @@ final class ClientRuntime {
     static void normalizeLegacyTrials(Context context){
         android.content.SharedPreferences prefs=context.getSharedPreferences("runtime",0);
         String trial=prefs.getString("performance_trial","none");
-        if(!"none".equals(trial)&&!"tiler_mode".equals(trial)&&!"short_jit".equals(trial)&&!"immediate_present".equals(trial))
+        if(!"none".equals(trial)&&!"capture90".equals(trial)&&!"capture_deadline".equals(trial)&&!"frame_latency".equals(trial))
             prefs.edit().putString("performance_trial","none").putBoolean("performance_trial_retired",true).apply();
     }
     void applyGraphicsSettings(JSONObject request)throws Exception {
@@ -354,7 +399,7 @@ final class ClientRuntime {
             boolean reserved=playWaiting&&preparingThread==Thread.currentThread();
             if((alive()&&!reserved)||WorkService.busy)throw new IOException("Wait for the current operation");
             if(reserved&&(stopRequested||Thread.currentThread().isInterrupted()))throw new InterruptedIOException("Play cancelled");
-            playWaiting=false;active=true;starting=true;stopRequested=false;preparingThread=Thread.currentThread();
+            playWaiting=false;active=true;starting=true;stopRequested=false;nativeTrialFailure="";displayLaunch=null;preparingThread=Thread.currentThread();
         }}
         launchError="";operationFailed=false;
         try{
@@ -390,6 +435,7 @@ final class ClientRuntime {
             if(useFex)request.put("fex_x87",!updating&&runtimePreferences.getBoolean("fex_x87",false));
             if(action.equals("gamepad-config")){request.put("gamepad",true);try(RandomAccessFile pad=new RandomAccessFile(gamepadState(),"rw")){pad.setLength(64);}}
             write(new File(run,"request.json"),request.toString());
+            displayLaunch=new DisplayLaunch(request);
             write(new File(run,"status.json"),new JSONObject().put("format",1).put("session_id",sessionId).put("action",action).put("phase",initialize?"copying_client":"preparing_runtime").put("game_files_mounted",false).toString());
             if(initialize){
                 PreparedClientStore s=prepared();File active=s.selected("current");
@@ -464,7 +510,8 @@ final class ClientRuntime {
             JSONObject finalState=state().optJSONObject("launch");
             if(initialize||action.equals("verify-client-update"))retainInitialization(candidate);
             if(clientOperation)retainLaunch(candidate);
-            if(finalState!=null&&finalState.optString("phase").equals("completed")&&process.exitValue()==0&&!stopRequested){
+            if(!nativeTrialFailure.isEmpty()){operationFailed=true;status=launchError=nativeTrialFailure;}
+            else if(finalState!=null&&finalState.optString("phase").equals("completed")&&process.exitValue()==0&&!stopRequested){
                 if(action.equals("update-client")){
                     prepared().updatePhase("verification_pending");status="PlayOnline closed. After successful FINAL FANTASY XI File Repair, verify the staged update. The active client is unchanged.";
                 }else if(action.equals("verify-client-update")){
@@ -501,12 +548,13 @@ final class ClientRuntime {
                     .put("error",String.valueOf(error.getMessage())).put("game_files_mounted",false);
                 write(new File(run,"status.json"),failure.toString());write(new File(logs,"runtime-state.json"),failure.toString());
             }catch(Exception ignored){}
+            if(!nativeTrialFailure.isEmpty())throw new IOException(nativeTrialFailure,error);
             throw error;
         }finally{
             if(login!=null)login.close();
             preparingThread=null;Thread.interrupted();
             if(process!=null&&process.isAlive()){process.destroy();if(!process.waitFor(5,TimeUnit.SECONDS)){process.destroyForcibly();process.waitFor(5,TimeUnit.SECONDS);}}
-            try{reapOrphans();}finally{if(acceleration!=null)acceleration.close();if(audio!=null){audio.close();audio=null;}process=null;starting=false;active=false;}
+            try{reapOrphans();}finally{if(acceleration!=null)acceleration.close();if(audio!=null){audio.close();audio=null;}process=null;starting=false;active=false;if(!nativeTrialFailure.isEmpty()){operationFailed=true;status=launchError=nativeTrialFailure;}}
         }
     }
     void requestStop()throws Exception {

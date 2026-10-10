@@ -11,6 +11,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.time.Duration;
+import java.util.concurrent.*;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -51,6 +52,35 @@ public class RuntimeActivityTest {
         activity=Robolectric.buildActivity(RuntimeActivity.class).setup().visible();
         activity.windowFocusChanged(true);
     }
+    private static class OwnedProcess extends Process {
+        boolean alive=true,destroyed;
+        public java.io.OutputStream getOutputStream(){return new java.io.ByteArrayOutputStream();}
+        public java.io.InputStream getInputStream(){return new java.io.ByteArrayInputStream(new byte[0]);}
+        public java.io.InputStream getErrorStream(){return new java.io.ByteArrayInputStream(new byte[0]);}
+        public int waitFor(){return 0;}
+        public boolean waitFor(long timeout,TimeUnit unit){return !alive;}
+        public int exitValue(){if(alive)throw new IllegalThreadStateException();return 0;}
+        public boolean isAlive(){return alive;}
+        public void destroy(){alive=false;destroyed=true;}
+        public Process destroyForcibly(){destroy();return this;}
+    }
+    private RfbConnection nativeViewer(String id,String trial,java.io.ByteArrayOutputStream sent)throws Exception{
+        session(id);ClientRuntime.write(new File(runtime.run,"request.json"),new org.json.JSONObject().put("session_id",id).put("action","launch").put("performance_trial",trial).toString());
+        Files.deleteIfExists(new File(runtime.logs,"native-trial-display.json").toPath());open();RuntimeActivity viewer=activity.get();
+        Object screen=field(RuntimeActivity.class,"screen").get(viewer);field(screen.getClass(),"nativeMode").setBoolean(screen,true);
+        RfbConnection c=new RfbConnection(new java.io.ByteArrayInputStream(new byte[0]),sent,(RfbConnection.Screen)screen,true,true);c.width=1280;c.height=720;((RfbConnection.Screen)screen).resize(c.width,c.height);
+        field(RuntimeActivity.class,"connection").set(viewer,c);
+        Class<?> type=Class.forName("io.github.russianranger.lsb.RuntimeActivity$DisplaySession");
+        java.lang.reflect.Constructor<?> constructor=type.getDeclaredConstructor(RfbConnection.class,String.class,boolean.class,int.class,String.class);constructor.setAccessible(true);
+        field(RuntimeActivity.class,"displaySession").set(viewer,constructor.newInstance(c,id,true,60,runtime.captureTrialForSession(id)));
+        return c;
+    }
+    private void nativeFailure(RfbConnection c,String id,int generation)throws Exception{
+        java.lang.reflect.Method method=RuntimeActivity.class.getDeclaredMethod("fallbackNative",RfbConnection.class,String.class,int.class,String.class);method.setAccessible(true);
+        method.invoke(activity.get(),c,id,generation,"fixture delivery failure");
+    }
+    private ExecutorService input()throws Exception{return (ExecutorService)field(RuntimeActivity.class,"input").get(activity.get());}
+    private boolean nativeStop()throws Exception{return ((Future<Boolean>)field(RuntimeActivity.class,"nativeStop").get(activity.get())).get(5,TimeUnit.SECONDS);}
     private void tick(){shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(200));}
     private void menuItem(int index)throws Exception{
         android.widget.FrameLayout root=(android.widget.FrameLayout)field(RuntimeActivity.class,"layout").get(activity.get());
@@ -190,5 +220,88 @@ public class RuntimeActivityTest {
         assertEquals(10,sent.size());assertEquals(3,sent.toByteArray()[0]);assertEquals(0,sent.toByteArray()[1]);
         field(RuntimeActivity.class,"viewing").setBoolean(viewer,false);sent.reset();
         fallback.invoke(viewer,c,generation,"paused worker");assertEquals(0,sent.size());
+    }
+    @Test public void captureTrialsStopOwnedClientInsteadOfFallingBackDespiteChangedNextLaunchChoices()throws Exception{
+        for(String trial:new String[]{"capture90","capture_deadline"}){
+            String id=java.util.UUID.randomUUID().toString();java.io.ByteArrayOutputStream sent=new java.io.ByteArrayOutputStream();RfbConnection c=nativeViewer(id,trial,sent);
+            OwnedProcess process=new OwnedProcess();field(ClientRuntime.class,"process").set(runtime,process);field(ClientRuntime.class,"stopRequested").setBoolean(runtime,false);
+            runtime.context.getSharedPreferences("runtime",0).edit().putString("performance_trial","none").commit();
+            ClientRuntime.write(new File(runtime.run,"request.json"),new org.json.JSONObject().put("session_id",id).put("action","launch").put("performance_trial","none").toString());
+            RuntimeActivity viewer=activity.get();Object screen=field(RuntimeActivity.class,"screen").get(viewer);int generation=field(RuntimeActivity.class,"connectionGeneration").getInt(viewer);
+            nativeFailure(c,id,generation-1);assertNull(field(RuntimeActivity.class,"nativeStop").get(viewer));assertFalse(new File(runtime.logs,"native-trial-display.json").exists());
+            ClientRuntime.write(new File(runtime.run,"status.json"),new org.json.JSONObject().put("session_id",java.util.UUID.randomUUID().toString()).put("phase","completed").toString());
+            CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
+            input().execute(()->{entered.countDown();try{release.await();}catch(InterruptedException e){Thread.currentThread().interrupt();}});assertTrue(entered.await(5,TimeUnit.SECONDS));
+            try{nativeFailure(c,id,generation);assertTrue("Stopping cannot wait behind blocked RFB input",nativeStop());assertTrue(process.destroyed);}
+            finally{release.countDown();}
+            input().submit(()->{}).get(5,TimeUnit.SECONDS);
+            assertFalse(field(RuntimeActivity.class,"viewing").getBoolean(viewer));assertTrue(field(screen.getClass(),"nativeMode").getBoolean(screen));assertNull(field(screen.getClass(),"bitmap").get(screen));
+            assertTrue(process.destroyed);assertFalse(process.isAlive());assertTrue(field(ClientRuntime.class,"stopRequested").getBoolean(runtime));assertTrue(runtime.operationFailed);
+            assertEquals(ClientRuntime.captureTrialFailure(trial),runtime.launchError);assertEquals(runtime.launchError,runtime.status);
+            // Input cleanup still sends a neutral pointer; no full RFB frame request is sent.
+            assertEquals(6,sent.size());assertEquals(5,sent.toByteArray()[0]);
+            org.json.JSONObject receipt=new org.json.JSONObject(ClientRuntime.read(new File(runtime.logs,"native-trial-display.json"),4096));
+            assertEquals(id,receipt.getString("session_id"));assertEquals(trial,receipt.getString("performance_trial"));assertFalse(receipt.getBoolean("fallback_allowed"));assertEquals("android_native_presentation",receipt.getString("stage"));
+            org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog().dismiss();activity.pause().stop().destroy();activity=null;field(ClientRuntime.class,"process").set(runtime,null);
+        }
+    }
+    @Test public void baselineAndRenderQueueTrialKeepNativeFallbackAfterPreferencesChange()throws Exception{
+        for(String trial:new String[]{"none","frame_latency"}){
+            String id=java.util.UUID.randomUUID().toString();java.io.ByteArrayOutputStream sent=new java.io.ByteArrayOutputStream();RfbConnection c=nativeViewer(id,trial,sent);
+            field(ClientRuntime.class,"stopRequested").setBoolean(runtime,false);runtime.context.getSharedPreferences("runtime",0).edit().putString("performance_trial","capture90").commit();
+            int generation=field(RuntimeActivity.class,"connectionGeneration").getInt(activity.get());nativeFailure(c,id,generation);input().submit(()->{}).get(5,TimeUnit.SECONDS);
+            Object screen=field(RuntimeActivity.class,"screen").get(activity.get());assertFalse(field(screen.getClass(),"nativeMode").getBoolean(screen));assertNotNull(field(screen.getClass(),"bitmap").get(screen));
+            assertEquals(10,sent.size());assertEquals(3,sent.toByteArray()[0]);assertFalse(field(ClientRuntime.class,"stopRequested").getBoolean(runtime));assertFalse(new File(runtime.logs,"native-trial-display.json").exists());
+            activity.pause().stop().destroy();activity=null;
+        }
+    }
+    @Test public void staleCaptureViewerAndQueuedStopCannotAffectReplacementSession()throws Exception{
+        String id=java.util.UUID.randomUUID().toString(),next=java.util.UUID.randomUUID().toString();java.io.ByteArrayOutputStream sent=new java.io.ByteArrayOutputStream();RfbConnection c=nativeViewer(id,"capture90",sent);
+        RuntimeActivity viewer=activity.get();int generation=field(RuntimeActivity.class,"connectionGeneration").getInt(viewer);field(ClientRuntime.class,"sessionId").set(runtime,next);
+        nativeFailure(c,id,generation);assertTrue(field(RuntimeActivity.class,"viewing").getBoolean(viewer));assertEquals(0,sent.size());assertFalse(new File(runtime.logs,"native-trial-display.json").exists());
+        field(ClientRuntime.class,"sessionId").set(runtime,id);
+        try{
+            OwnedProcess replacement=new OwnedProcess();
+            synchronized(runtime){
+                nativeFailure(c,id,generation);field(ClientRuntime.class,"sessionId").set(runtime,next);runtime.launchError="replacement session";
+                field(ClientRuntime.class,"stopRequested").setBoolean(runtime,false);field(ClientRuntime.class,"process").set(runtime,replacement);
+            }
+            assertFalse(nativeStop());input().submit(()->{}).get(5,TimeUnit.SECONDS);
+            assertTrue(replacement.isAlive());assertFalse(replacement.destroyed);assertFalse(field(ClientRuntime.class,"stopRequested").getBoolean(runtime));assertEquals("replacement session",runtime.launchError);
+            assertFalse(new File(runtime.logs,"native-trial-display.json").exists());field(ClientRuntime.class,"process").set(runtime,null);
+        }finally{org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog().dismiss();}
+    }
+    @Test public void normalClientExitAndExplicitStopDoNotMislabelCaptureTrialsAsNativeFailures()throws Exception{
+        for(String phase:new String[]{"completed","stopped","cancelled","error","active-stop"}){
+            String id=java.util.UUID.randomUUID().toString();java.io.ByteArrayOutputStream sent=new java.io.ByteArrayOutputStream();RfbConnection c=nativeViewer(id,"capture90",sent);
+            OwnedProcess process=new OwnedProcess();field(ClientRuntime.class,"process").set(runtime,process);field(ClientRuntime.class,"stopRequested").setBoolean(runtime,"active-stop".equals(phase));
+            String original="error".equals(phase)?"Original loader failure":"";runtime.launchError=original;
+            ClientRuntime.write(new File(runtime.run,"status.json"),new org.json.JSONObject().put("session_id",id).put("phase",phase).toString());
+            RuntimeActivity viewer=activity.get();int generation=field(RuntimeActivity.class,"connectionGeneration").getInt(viewer);nativeFailure(c,id,generation);
+            Object display=field(RuntimeActivity.class,"displaySession").get(viewer);
+            java.lang.reflect.Method failed=RuntimeActivity.class.getDeclaredMethod("displayConnectionFailed",display.getClass(),int.class,String.class);failed.setAccessible(true);
+            failed.invoke(viewer,display,generation,"expected shutdown EOF");assertEquals("",field(RuntimeActivity.class,"displayError").get(viewer));
+            assertTrue(field(RuntimeActivity.class,"viewing").getBoolean(viewer));assertNull(field(RuntimeActivity.class,"nativeStop").get(viewer));
+            assertTrue(process.isAlive());assertFalse(process.destroyed);assertEquals(original,runtime.launchError);assertEquals(0,sent.size());assertFalse(new File(runtime.logs,"native-trial-display.json").exists());
+            activity.pause().stop().destroy();activity=null;field(ClientRuntime.class,"process").set(runtime,null);
+        }
+    }
+    @Test public void activeCaptureControlConnectionLossStillStopsAfterReaderClearsItsFields()throws Exception{
+        String id=java.util.UUID.randomUUID().toString();java.io.ByteArrayOutputStream sent=new java.io.ByteArrayOutputStream();nativeViewer(id,"capture_deadline",sent);
+        OwnedProcess process=new OwnedProcess();field(ClientRuntime.class,"process").set(runtime,process);field(ClientRuntime.class,"stopRequested").setBoolean(runtime,false);
+        ClientRuntime.write(new File(runtime.run,"status.json"),new org.json.JSONObject().put("session_id",id).put("phase","client_running").toString());
+        RuntimeActivity viewer=activity.get();Object display=field(RuntimeActivity.class,"displaySession").get(viewer);int generation=field(RuntimeActivity.class,"connectionGeneration").getInt(viewer);
+        field(RuntimeActivity.class,"connection").set(viewer,null);field(RuntimeActivity.class,"displaySession").set(viewer,null);
+        java.lang.reflect.Method failed=RuntimeActivity.class.getDeclaredMethod("displayConnectionFailed",display.getClass(),int.class,String.class);failed.setAccessible(true);
+        failed.invoke(viewer,display,generation,"fixture RFB control EOF");assertTrue(nativeStop());
+        assertTrue(process.destroyed);assertEquals(ClientRuntime.captureTrialFailure("capture_deadline"),runtime.launchError);assertFalse(field(RuntimeActivity.class,"viewing").getBoolean(viewer));
+        org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog().dismiss();field(ClientRuntime.class,"process").set(runtime,null);
+    }
+    @Test public void pausedCaptureViewerDoesNotStopTheClientOnAnOldReaderCallback()throws Exception{
+        String id=java.util.UUID.randomUUID().toString();java.io.ByteArrayOutputStream sent=new java.io.ByteArrayOutputStream();RfbConnection c=nativeViewer(id,"capture90",sent);
+        OwnedProcess process=new OwnedProcess();field(ClientRuntime.class,"process").set(runtime,process);runtime.launchError="";
+        RuntimeActivity viewer=activity.get();int generation=field(RuntimeActivity.class,"connectionGeneration").getInt(viewer);activity.pause();nativeFailure(c,id,generation);
+        assertNull(field(RuntimeActivity.class,"nativeStop").get(viewer));assertTrue(process.isAlive());assertEquals("",runtime.launchError);assertFalse(new File(runtime.logs,"native-trial-display.json").exists());
+        field(ClientRuntime.class,"process").set(runtime,null);
     }
 }

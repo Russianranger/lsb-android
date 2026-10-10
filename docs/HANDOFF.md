@@ -1,3 +1,121 @@
+# 0.7.6: three new sampling and queue trials
+
+Continue `codex/filtered-performance-076` from the final 0.7.5 checkpoint.
+Current and future GitHub pushes remain authorized for this repository; keep
+Main, existing releases and earlier review branches intact. No merge or
+official release was requested.
+
+Four 0.7.5 device exports confirm actual filtering, two workers, zone 100 entry
+and clean exits for Baseline/G/H/I. The common 60–150 second steady windows
+show Baseline 28.308, G 28.234, H 28.364 and I 28.214 Surface posts/s, with
+7/10/6/9 gaps over 100 ms and no gaps over 250 ms. A later 90–150 second
+selection agrees. These are delivery counters, not HUD game FPS. H's tiny lead
+does not justify promotion. Keep Baseline default; G/H/I normalize to Baseline
+with a visible notice. Exact mapping, hashes, deduplication, profile receipts
+and limits: [0.7.5 results](thor-trial-results-075.md).
+
+The next independent choices are J Faster frame sampling (`capture90`: bridge
+polls at 90 Hz), K Steady sampling schedule (`capture_deadline`: absolute
+monotonic 60 Hz deadlines with missed-tick skipping and no bursts), and L
+Shorter render queue (`frame_latency`: `d3d9.maxFrameLatency = 1`). J does not
+change the 60 Hz Android display preference or game cap; K keeps the sampling
+rate; L may reduce useful CPU/GPU overlap and FPS. No resolution/quality,
+FEX precision/memory-ordering or accepted filtering/worker changes.
+
+Baseline measures 58.213 completed replies/s: 28.308 posted and 29.905 unchanged.
+Its maximum Surface-post call is 31.698 ms, and all seven long gaps contain
+five or six unchanged replies. These motivate sampling/queue hypotheses, not
+an established cause of upstream render stalls or a proven device benefit.
+
+J/K/L require the exact filtered FEX/Turnip 26/DXVK 2.7.1/two-worker profile.
+J/K additionally require native Surface, accepted Vulkan SHM upload, the native
+mapped-file display transport and the 60 Hz preference. MIT-SHM X11 readback
+may use the supported, logged `XGetImage` fallback; no first viewer capture
+is required before login. Current owned-helper rate/schedule proof verifies
+active capture/pacing configuration, not physical Android Surface or GPU
+performance. The viewer can open later. That proof or consumed L configuration,
+the combined eight warmup frames/128 pixel samples and independent host-filter evidence
+must qualify before login. Failed trials cannot authorize an unverified
+launch or silently disable the stability feature.
+Actual JNI/socket/Surface frame errors that would send active J/K to RFB
+instead stop the trial. Normal pause/resume, rotation, clean game exit and Stop
+remain supported; expected helper closure during exit/Stop must not be
+misreported as a trial failure.
+
+0.7.5 follow-through: push run `38019029060` passes all required jobs, including
+broad runtime/FEX/PlayOnline. PR run `38019032575` retains a later modern-Mesa
+Docker FEX/DXVK 2.7.1 cancellation probe failure after both Turnip cycles
+passed: the existing 60-second D3D8 check times out, then `integration.py:146`
+reports `Cancellation fixture did not start`. Its PlayOnline Box64
+filtered-viewer result lacks reviewable evidence. Other PR jobs pass. Preserve those findings and the older checkpoint
+below; they do not qualify the changed 0.7.6 helper/profile.
+
+0.7.6/code 80 corrected source `ea16761d9f3af582c467d34c308d1f850b64aeef`,
+tree `4dd7fe2257fb01abc2238d6e1c81b9d1a9f3a6f2`, is published in stacked
+draft [PR #6](https://github.com/Russianranger/lsb-android/pull/6). Push run
+`38025981142` / verify `114136881175` and PR run `38025983219` / verify
+`114136897314` pass 217 runtime, 138 server and 187 Android tests. Core/import,
+strict native Surface/pacing and concrete late-phase regression/real waits
+pass. Wide J and narrow L UI previews remain readable; DEX is unchanged by the
+native correction. The replacement original-signed APK is verified:
+18,605,784 bytes, SHA-256
+`a3b9ec5a2b7f55786820d37469fe8a5c75b56d292dcd6cd67bfb81325505f055`.
+All 74 payload entries match the CI APK; original certificate, v2/v3,
+16 KiB alignment, ZIP integrity and source/helper/uploader identities pass.
+Five payload entries change from 0.7.5 (manifest, DEX, supervisor, native bridge
+and its presentation manifest); 69 are unchanged.
+Only the helper/manifest change from the superseded 0.7.6 APK. CI artifact
+`11659173993`, CI APK SHA-256
+`01eb55ef5d6831c8a93cfd1e309bed8662b0941afe35487eb062188a464c62ab`.
+
+The superseded source's focused push passed, but PR job `114135830180` / run
+`38025471152` failed K's unchanged five-idle-response timing assertion after six
+earlier arms, including J, pass. Review confirms a real late-request defect:
+an initialized late request can return immediately before the next request
+arrives near a future phase deadline. Fix immediate service to fresh connections
+only; later late requests must wait for the first future deadline. The corrected
+source/APK checks above pass. Do not deliver that earlier APK, weaken the timing
+assertion or rerun unchanged code to mask this failure.
+
+Corrected focused ARM64 qualification is **mixed**. PR job `114137528058` / run
+`38025983219` passes all seven actual-filtered native arms and all five fresh
+Baseline/Baseline/J/K/L sessions: 720 child pixels, 7,560 draws, 50 native
+requests, privacy checks and clean exits. Independently checked evidence ZIP
+SHA-256: `424e66a03fccdb8d7437e9adda00fb04aff0115709389e466f6b021a1336128a`.
+Push job `114137396082` / run `38025981142` passes all seven native arms but
+blocks its first Baseline launch: DXVK 2.7.1 consumes two workers, Presents
+0 and 1 return, then Present 2 stalls. The unchanged 45-second production wait
+rejects launch; the runtime ends about 66 seconds after launch starts and no
+gameplay cycles run.
+Baseline's relative-60-Hz consumer has already completed ten requests in
+0.184 seconds (one capture, nine unchanged), with K inactive. Independent review
+finds no source-level link from the new choices to the hang; its cause is
+unestablished, not proven harmless or CI-only.
+
+Fresh corrected PR broad FEX job `114137528126` / run `38025983219` fails
+the modern-Mesa, unfiltered DXVK 2.7.1 observed-D3D8 startup trace in the
+second Turnip cycle, after normal 128-pixel startup and first-cycle passes.
+The dedicated actual-filtered software gate passes; the later compatibility
+stage does not run. At 05:18 UTC, five corrected-head broad jobs remain pending:
+push Box64/FEX/PlayOnline and PR Box64/PlayOnline. Preserve these separate
+outcomes and do not substitute earlier-source passes.
+
+No deadlines/checks are weakened and no unchanged rerun hides the result.
+Deliver only as an **opt-in device test build**, keeping Baseline
+default and explicitly reporting mixed qualification; no repeatability,
+complete-workflow, FPS or stability gain claim is justified.
+
+Do not substitute the prior 0.7.5 passes for this changed
+bridge/profile. Native CI requires its known MIT-SHM fixture; production's
+logged `XGetImage` readback fallback remains supported. Test Baseline, then J/K/L separately
+over the same 3–5 minute route, preserving borders/view/cap/cache/power mode;
+Stop/export each run. No runtime reinstall, reimport or server rebuild.
+See [new trial rationale](thor-performance-trials-076.md) and
+[phone instructions](TESTING-0.7.6.md). Keep the original signing key private
+outside Git. No FPS gain is claimed until the new device comparison.
+
+---
+
 # 0.7.5: three isolated filtered gameplay performance trials
 
 Continue `codex/filtered-performance-075`, based on startup fix

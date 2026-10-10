@@ -160,8 +160,8 @@ public class PlaySetupTest {
         org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
         try{
             View content=advanced(c.get());Spinner trial=(Spinner)described(content,"Performance trial");assertNotNull(trial);assertEquals(4,trial.getAdapter().getCount());
-            assertEquals("Baseline · proven settings",trial.getAdapter().getItem(0));
-            String[] names={"tiler_mode","short_jit","immediate_present"};String[] labels={"G · Render-pass heuristics","H · Shorter compilation units","I · Remove driver VSync wait"};
+            assertEquals("Baseline · proven settings",trial.getAdapter().getItem(0));assertEquals("none",p.getString("performance_trial","none"));
+            String[] names={"capture90","capture_deadline","frame_latency"};String[] labels={"J · Faster frame sampling","K · Steady sampling schedule","L · Shorter render queue"};
             Map<String,?> before=new HashMap<>(p.getAll());
             for(int i=0;i<names.length;i++){
                 assertEquals(labels[i],trial.getAdapter().getItem(i+1));trial.setSelection(i+1);
@@ -174,6 +174,7 @@ public class PlaySetupTest {
             }
             FantasyTiles tiles=(FantasyTiles)field(c.get(),"tiles");tiles.select("Proven fixes");
             ((CheckBox)text(content,"Runtime syscall filtering")).setChecked(false);((CheckBox)text(content,"Two shader compiler workers")).setChecked(false);
+            ((CheckBox)text(content,"60 Hz display refresh")).setChecked(false);
             tiles.select("Past experiments");
             ((CheckBox)text(content,"Turnip system-memory rendering")).setChecked(true);((CheckBox)text(content,"Staged geometry uploads")).setChecked(true);
             tiles.select("Proven fixes");
@@ -182,12 +183,12 @@ public class PlaySetupTest {
             assertTrue(p.getBoolean("proot_acceleration",false));assertTrue(p.getBoolean("dxvk_two_compilers",false));
             assertFalse(p.getBoolean("turnip_sysmem",true));assertFalse(p.getBoolean("dxvk_staged_buffers",true));
             assertTrue(((CheckBox)text(content,"Runtime syscall filtering")).isChecked());assertTrue(((CheckBox)text(content,"Two shader compiler workers")).isChecked());
-            assertEquals(60,p.getInt("display_fps",0));assertEquals("windowed720",p.getString("display_profile",""));
+            assertEquals(30,p.getInt("display_fps",0));assertEquals("windowed720",p.getString("display_profile",""));
         }finally{c.pause().stop().destroy();}
     }
     @Test public void retiredSavedTrialsReturnToBaselineWithoutChangingAnExplicitFilterDisable()throws Exception{
         readyClient();context.getSharedPreferences("setup",0).edit().putString("mode","external").commit();SharedPreferences p=context.getSharedPreferences("runtime",0);
-        for(String retired:new String[]{"one_compiler","cached_dynamic","gpl_fast","unknown"}){
+        for(String retired:new String[]{"one_compiler","cached_dynamic","gpl_fast","tiler_mode","short_jit","immediate_present","unknown"}){
             p.edit().putString("performance_trial",retired).putBoolean("proot_acceleration",false).putBoolean("dxvk_two_compilers",true).commit();
             org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
             try{
@@ -196,10 +197,10 @@ public class PlaySetupTest {
                 View content=advanced(c.get());
                 assertEquals(0,((Spinner)described(content,"Performance trial")).getSelectedItemPosition());
                 assertFalse(p.getBoolean("proot_acceleration",true));assertTrue(p.getBoolean("dxvk_two_compilers",false));
-                assertNotNull(text(content,"Your saved trial has been retired and was reset to Baseline. Trials A, D and E did not establish a consistent improvement. Choose G, H or I separately for this comparison."));
+                assertNotNull(text(content,"Your saved trial has been retired and was reset to Baseline. Earlier trials did not establish a useful improvement. Choose J, K or L separately for this comparison. Saved comparison results remain available in support exports."));
             }finally{c.pause().stop().destroy();}
         }
-        for(String retained:new String[]{"tiler_mode","short_jit","immediate_present"}){
+        for(String retained:new String[]{"capture90","capture_deadline","frame_latency"}){
             p.edit().putString("performance_trial",retained).commit();
             org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
             try{advanced(c.get());assertEquals(retained,p.getString("performance_trial",""));assertFalse(p.getBoolean("proot_acceleration",true));}
