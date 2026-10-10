@@ -81,6 +81,10 @@ static BOOL matches(DWORD a,DWORD b){
 }
 
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR args,int show){
+    wchar_t multiblock[4]={0};
+    if(GetEnvironmentVariableW(L"FEX_MULTIBLOCK",multiblock,4)==1 && multiblock[0]==L'0'){
+        puts("LSB_TEXTURE_CONFIG multiblock=0");fflush(stdout);
+    }
     (void)previous;(void)show;
     HWND window=CreateWindowW(L"STATIC",L"Synthetic texture submissions",WS_POPUP|WS_VISIBLE,0,0,1280,720,NULL,NULL,instance,NULL);
     if(!window)return 10;

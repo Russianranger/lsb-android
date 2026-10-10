@@ -20,13 +20,28 @@ static BOOL filtered_graphics(void){
     HANDLE output=CreateFileW(L"Z:\\session\\filtered-graphics.log",GENERIC_WRITE,FILE_SHARE_READ,
         &security,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
     if(output==INVALID_HANDLE_VALUE)return FALSE;
+    /* DXVK writes independently of Windows standard handles. Production
+     * disables account-facing log files. Give only this synthetic child a
+     * dedicated log directory; preserve all inherited rendering options. */
+    WCHAR previous_log_path[1024];
+    DWORD previous_length=GetEnvironmentVariableW(L"DXVK_LOG_PATH",previous_log_path,1024);
+    if(previous_length>=1024 ||
+       (!CreateDirectoryW(L"Z:\\session\\filtered-child-dxvk",NULL)&&GetLastError()!=ERROR_ALREADY_EXISTS) ||
+       !SetEnvironmentVariableW(L"DXVK_LOG_PATH",L"Z:\\session\\filtered-child-dxvk")){
+        CloseHandle(output);return FALSE;
+    }
     STARTUPINFOW startup={0};PROCESS_INFORMATION process={0};
     startup.cb=sizeof(startup);startup.dwFlags=STARTF_USESTDHANDLES;
     startup.hStdInput=GetStdHandle(STD_INPUT_HANDLE);startup.hStdOutput=startup.hStdError=output;
     WCHAR command[]=L"Z:\\fixtures\\texture-submission.exe";
     BOOL started=CreateProcessW(NULL,command,NULL,NULL,TRUE,0,NULL,NULL,&startup,&process);
+    BOOL restored=SetEnvironmentVariableW(L"DXVK_LOG_PATH",previous_length?previous_log_path:NULL);
     CloseHandle(output);
     if(!started)return FALSE;
+    if(!restored){
+        TerminateProcess(process.hProcess,99);
+        CloseHandle(process.hThread);CloseHandle(process.hProcess);return FALSE;
+    }
     DWORD waited=WaitForSingleObject(process.hProcess,60000),code=1;
     if(waited==WAIT_TIMEOUT)TerminateProcess(process.hProcess,99);
     BOOL ok=waited==WAIT_OBJECT_0&&GetExitCodeProcess(process.hProcess,&code)&&!code;

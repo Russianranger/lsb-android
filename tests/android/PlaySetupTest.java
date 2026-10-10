@@ -31,6 +31,16 @@ public class PlaySetupTest {
         if(root instanceof ViewGroup)for(int i=0;i<((ViewGroup)root).getChildCount();i++){TextView v=text(((ViewGroup)root).getChildAt(i),label);if(v!=null)return v;}
         return null;
     }
+    private static View described(View root,String label){
+        if(label.contentEquals(root.getContentDescription()==null?"":root.getContentDescription()))return root;
+        if(root instanceof ViewGroup)for(int i=0;i<((ViewGroup)root).getChildCount();i++){View v=described(((ViewGroup)root).getChildAt(i),label);if(v!=null)return v;}
+        return null;
+    }
+    private static View advanced(MainActivity activity)throws Exception{
+        Method method=MainActivity.class.getDeclaredMethod("navigate",String.class,String.class);method.setAccessible(true);method.invoke(activity,"Advanced","Optimization trials");
+        View content=(View)field(activity,"content");content.measure(View.MeasureSpec.makeMeasureSpec(920,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
+        content.layout(0,0,920,content.getMeasuredHeight());return content;
+    }
     @Before public void before()throws Exception{
         context=RuntimeEnvironment.getApplication();WorkService.busy=false;SessionBackup.active=false;SessionBackup.recoveryError="";RuntimeService.clearLogin();
         ClientRuntime.resetAfterRestore();ServerRuntime.resetAfterRestore();
@@ -137,6 +147,59 @@ public class PlaySetupTest {
         assertTrue(RuntimePresets.gameplayLabel(context).startsWith("Thor tested"));assertEquals("fex",SetupGuide.next(context).id);
         RuntimePresets.updater(context,"fex");RuntimePresets.gameplay(context,"box64");assertEquals("fex",p.getString("updater_engine",""));assertFalse(p.getBoolean("fex",true));assertTrue(p.getBoolean("dxvk_271",false));
         assertEquals("updated client",FilesEx.read(sentinel,128));
+    }
+    @Test public void threeTrialChoicesStoreOneIndependentSettingAndBaselineRestoresProvenToggles()throws Exception{
+        readyClient();context.getSharedPreferences("setup",0).edit().putString("mode","external").commit();
+        SharedPreferences p=context.getSharedPreferences("runtime",0);
+        p.edit().putBoolean("fex",true).putBoolean("dxvk_271",true).putBoolean("dxvk_two_compilers",true)
+            .putBoolean("proot_acceleration",true).putInt("display_fps",60).putString("display_profile","windowed720")
+            .putBoolean("turnip_sysmem",false).putBoolean("dxvk_staged_buffers",false).commit();
+        org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
+        try{
+            View content=advanced(c.get());Spinner trial=(Spinner)described(content,"Performance trial");assertNotNull(trial);assertEquals(4,trial.getAdapter().getCount());
+            assertEquals("Baseline · proven settings",trial.getAdapter().getItem(0));
+            String[] names={"tiler_mode","short_jit","immediate_present"};String[] labels={"G · Render-pass heuristics","H · Shorter compilation units","I · Remove driver VSync wait"};
+            Map<String,?> before=new HashMap<>(p.getAll());
+            for(int i=0;i<names.length;i++){
+                assertEquals(labels[i],trial.getAdapter().getItem(i+1));trial.setSelection(i+1);
+                trial.getOnItemSelectedListener().onItemSelected(trial,null,i+1,i+1);
+                assertEquals(names[i],p.getString("performance_trial","none"));
+                for(String key:before.keySet())if(!key.equals("performance_trial"))assertEquals(key,before.get(key),p.getAll().get(key));
+                JSONObject request=new JSONObject();client.applyGraphicsSettings(request);
+                assertEquals(names[i],request.getString("performance_trial"));assertTrue(request.getBoolean("proot_acceleration"));assertTrue(request.getBoolean("dxvk_two_compilers"));
+                assertEquals(60,request.getInt("display_fps"));assertEquals("2.7.1",request.getString("dxvk_version"));
+            }
+            FantasyTiles tiles=(FantasyTiles)field(c.get(),"tiles");tiles.select("Proven fixes");
+            ((CheckBox)text(content,"Runtime syscall filtering")).setChecked(false);((CheckBox)text(content,"Two shader compiler workers")).setChecked(false);
+            tiles.select("Past experiments");
+            ((CheckBox)text(content,"Turnip system-memory rendering")).setChecked(true);((CheckBox)text(content,"Staged geometry uploads")).setChecked(true);
+            tiles.select("Proven fixes");
+            text(content,"Use tested shader settings").performClick();
+            assertEquals("none",p.getString("performance_trial",""));assertEquals(0,trial.getSelectedItemPosition());
+            assertTrue(p.getBoolean("proot_acceleration",false));assertTrue(p.getBoolean("dxvk_two_compilers",false));
+            assertFalse(p.getBoolean("turnip_sysmem",true));assertFalse(p.getBoolean("dxvk_staged_buffers",true));
+            assertTrue(((CheckBox)text(content,"Runtime syscall filtering")).isChecked());assertTrue(((CheckBox)text(content,"Two shader compiler workers")).isChecked());
+            assertEquals(60,p.getInt("display_fps",0));assertEquals("windowed720",p.getString("display_profile",""));
+        }finally{c.pause().stop().destroy();}
+    }
+    @Test public void retiredSavedTrialsReturnToBaselineWithoutChangingAnExplicitFilterDisable()throws Exception{
+        readyClient();context.getSharedPreferences("setup",0).edit().putString("mode","external").commit();SharedPreferences p=context.getSharedPreferences("runtime",0);
+        for(String retired:new String[]{"one_compiler","cached_dynamic","gpl_fast","unknown"}){
+            p.edit().putString("performance_trial",retired).putBoolean("proot_acceleration",false).putBoolean("dxvk_two_compilers",true).commit();
+            org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
+            try{
+                View content=advanced(c.get());assertEquals("none",p.getString("performance_trial",""));
+                assertEquals(0,((Spinner)described(content,"Performance trial")).getSelectedItemPosition());
+                assertFalse(p.getBoolean("proot_acceleration",true));assertTrue(p.getBoolean("dxvk_two_compilers",false));
+                assertNotNull(text(content,"Your saved trial has been retired and was reset to Baseline. Trials A, D and E did not establish a consistent improvement. Choose G, H or I separately for this comparison."));
+            }finally{c.pause().stop().destroy();}
+        }
+        for(String retained:new String[]{"tiler_mode","short_jit","immediate_present"}){
+            p.edit().putString("performance_trial",retained).commit();
+            org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
+            try{advanced(c.get());assertEquals(retained,p.getString("performance_trial",""));assertFalse(p.getBoolean("proot_acceleration",true));}
+            finally{c.pause().stop().destroy();}
+        }
     }
     @Test public void localGuideResumesEachBuildReceiptAndExternalSkipsServer()throws Exception{
         readyClient();context.getSharedPreferences("setup",0).edit().putString("mode","local").commit();assertEquals("server_runtime",SetupGuide.next(context).id);

@@ -108,6 +108,124 @@ class Contracts(unittest.TestCase):
    self.assertEqual(s.install_dxvk.call_args_list,[unittest.mock.call('2.7.1'),unittest.mock.call('2.5.3')])
    self.assertEqual(s.state['dxvk_selected'],'2.5.3');self.assertIn('dxvk_fallback',s.state)
    self.assertEqual(s.env,previous);self.assertIsNone(s._filtered_graphics_environment)
+ def filtered_trial_log(self,trial):
+  log=self.filtered_graphics_log()+'info: DXVK: Using 2 compiler threads\n'*2
+  log+='LSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\nLSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'
+  key,option=module.FILTERED_TRIALS[trial]
+  return log+('info: Found config env: '+option+'\ninfo: '+option+'\n' if key=='DXVK_CONFIG' else 'LSB_GRAPHICS_CONFIG multiblock=0\n')
+ def filtered_trial_fixture(self,folder,trial,log=None):
+  s,bundle=self.filtered_graphics_fixture(folder,{'performance_trial':trial},self.filtered_trial_log(trial) if log is None else log)
+  receipt={'format':1,'session_id':s.req['session_id'],'requested':'syscall_filter',
+           'preflight_passed':True,'launch_observed':True,'mode':'syscall_filter'}
+  (folder/'proot-acceleration.json').write_text(json.dumps(receipt))
+  return s,bundle
+ def test_new_trials_change_one_option_and_use_one_combined_filtered_process(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for trial in module.FILTERED_TRIALS:
+    with self.subTest(trial=trial):
+     s,bundle=self.filtered_trial_fixture(folder,trial);before=dict(s.env)
+     seen=[];s.spawn.side_effect=lambda *args,**kwargs:(seen.append(dict(s.env)) or Mock(poll=lambda:0))
+     s.select_dxvk(bundle);s.configure_graphics_tuning();s.configure_runtime_acceleration();s.configure_performance_trial()
+     s.spawn.assert_called_once_with(['/opt/wine/bin/wine',r'P:\graphics-check.exe','--filtered-trial'],'graphics-tuning.log',fixed_output=True)
+     self.assertEqual(s.wait.call_args.args[1:],(45,'Filtered two-worker DXVK 2.7.1 draw and presentation check'))
+     expected=dict(before,DXVK_CONFIG=before['DXVK_CONFIG']+';dxvk.numCompilerThreads = 2')
+     key,option=module.FILTERED_TRIALS[trial]
+     if key=='DXVK_CONFIG':expected[key]+=';'+option
+     else:expected[key]=option
+     self.assertEqual(seen,[expected]);self.assertEqual(s.env,expected)
+     self.assertEqual(s.state['runtime_acceleration']['active'],'syscall_filter')
+     report=s.state['performance_trial'];self.assertEqual(report['active'],trial);self.assertTrue(report['verified'])
+     self.assertEqual((report['setting'],report['option']),(key,option));self.assertEqual(report['compiler_threads'],2)
+     self.assertIn('Baseline',report['reset']);self.assertTrue(report['combined_graphics_check'])
+     self.assertTrue(s.state['graphics_tuning']['verified']);self.assertNotIn('dxvk_fallback',s.state)
+     if trial=='short_jit':
+      self.assertIn('no internal translator readback',report['configuration_proof'])
+      self.assertIn('before login',report['launch_proof'])
+ def test_new_trials_reject_incomplete_or_contradictory_graphics_receipts(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for trial in module.FILTERED_TRIALS:
+    good=self.filtered_trial_log(trial)
+    failures={'timeout':good,'missing-pixels':good.replace('LSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n',''),
+              'duplicate-pixels':good+'LSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n',
+              'wrong-pixels':good.replace('samples=64','samples=63'),
+              'missing-worker':good.replace('info: DXVK: Using 2 compiler threads\n','',1),
+              'wrong-worker':good.replace('Using 2 compiler threads','Using 1 compiler threads',1),
+              'missing-frame':good.replace('frame=7 edge=after\n',''),
+              'wrong-version':good.replace('v2.7.1','v2.5.3'),
+              'failure':good+'LSB_D3D8_PIXEL mode=swvp frame=0 FAIL\n'}
+    key,option=module.FILTERED_TRIALS[trial]
+    if key=='DXVK_CONFIG':
+     failures['missing-option']='\n'.join(line for line in good.splitlines() if option not in line)+'\n'
+     name,value=option.split(' = ');failures['contradictory-option']=good+'info: '+name+' = '+('True' if value=='False' else '1')+'\n'
+    else:
+     failures.update({'missing-option':good.replace('LSB_GRAPHICS_CONFIG multiblock=0\n',''),
+                      'wrong-option':good.replace('multiblock=0','multiblock=1'),
+                      'duplicate-option':good+'LSB_GRAPHICS_CONFIG multiblock=0\n'})
+    for failure,log in failures.items():
+     with self.subTest(trial=trial,failure=failure):
+      s,bundle=self.filtered_trial_fixture(pathlib.Path(t),trial,log)
+      if failure=='timeout':s.wait.side_effect=RuntimeError('timed out')
+      with self.assertRaisesRegex(RuntimeError,'syscall filtering and the two-worker profile were retained'):s.select_dxvk(bundle)
+      report=s.state['performance_trial'];self.assertEqual(report['active'],'none');self.assertFalse(report['verified'])
+      self.assertTrue(report['launch_blocked']);self.assertTrue(s.req['proot_acceleration'])
+      self.assertTrue(s.req['dxvk_two_compilers']);self.assertEqual(s.install_dxvk.call_args_list,[unittest.mock.call('2.7.1')])
+      self.assertIsNone(s._filtered_graphics_environment);self.assertNotIn('dxvk_fallback',s.state)
+ def test_new_trials_cannot_reuse_stale_proof_or_run_after_filter_decline(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for trial in module.FILTERED_TRIALS:
+    for failure in ('missing','environment','trial','verified','active','filter','declined-host'):
+     with self.subTest(trial=trial,failure=failure):
+      s,bundle=self.filtered_trial_fixture(folder,trial)
+      if failure!='missing':s.select_dxvk(bundle);s.configure_runtime_acceleration()
+      if failure=='environment':s.env['DXVK_CONFIG']+=';dxvk.numCompilerThreads = 1'
+      elif failure=='trial':s._filtered_trial='different'
+      elif failure=='verified':s.state['performance_trial']['verified']=False
+      elif failure=='active':s.state['performance_trial']['active']='none'
+      elif failure=='filter':s.state.pop('runtime_acceleration')
+      elif failure=='declined-host':s.state['runtime_acceleration']['active']='none'
+      calls=s.spawn.call_count
+      with self.assertRaisesRegex(RuntimeError,'trial was not verified'):s.configure_performance_trial()
+      self.assertEqual(s.spawn.call_count,calls);self.assertTrue(s.state['performance_trial']['launch_blocked'])
+ def test_new_trials_do_not_activate_on_ineligible_profiles(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   for trial in module.FILTERED_TRIALS:
+    for change in ({'proot_acceleration':False},{'engine':'box64'},{'renderer':'turnip24'},
+                   {'action':'update-client'},{'dxvk_version':'2.5.3'},{'dxvk_two_compilers':False},
+                   {'turnip_sysmem':True},{'dxvk_staged_buffers':True}):
+     with self.subTest(trial=trial,change=change):
+      s,bundle=self.filtered_graphics_fixture(pathlib.Path(t),dict(performance_trial=trial,**change))
+      before=dict(s.env);self.assertFalse(s.filtered_graphics_profile())
+      with self.assertRaisesRegex(RuntimeError,'requires the filtered'):s.configure_performance_trial()
+      with self.assertRaisesRegex(RuntimeError,'requires the filtered'):s.select_dxvk(bundle)
+      self.assertEqual(s.state['performance_trial']['active'],'none');self.assertTrue(s.state['performance_trial']['launch_blocked'])
+      self.assertEqual(s.env,before);s.spawn.assert_not_called();s.install_dxvk.assert_not_called()
+ def test_new_trial_declined_host_receipt_blocks_after_graphics_pass_but_baseline_does_not(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)):
+   folder=pathlib.Path(t)
+   for trial in module.FILTERED_TRIALS:
+    s,bundle=self.filtered_trial_fixture(folder,trial);s.select_dxvk(bundle)
+    receipt=json.loads((folder/'proot-acceleration.json').read_text())
+    receipt.update(preflight_passed=False,launch_observed=False,mode='compatibility')
+    (folder/'proot-acceleration.json').write_text(json.dumps(receipt))
+    s.configure_runtime_acceleration();self.assertEqual(s.state['runtime_acceleration']['active'],'none')
+    with self.assertRaisesRegex(RuntimeError,'trial was not verified'):s.configure_performance_trial()
+    self.assertEqual(s.state['performance_trial']['active'],'none');self.assertTrue(s.state['performance_trial']['launch_blocked'])
+    self.assertEqual(s.spawn.call_count,1)
+ def test_ineligible_new_trial_stops_before_runtime_initialization(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)),patch.object(module,'SESSION',pathlib.Path(t)),patch.object(module,'PREFIX',pathlib.Path(t)),patch.object(module,'verify_bundle') as verify:
+   s,_=self.filtered_graphics_fixture(pathlib.Path(t),{'performance_trial':'short_jit','proot_acceleration':False})
+   with self.assertRaisesRegex(RuntimeError,'requires the filtered'):s.start()
+   verify.assert_not_called();s.spawn.assert_not_called();self.assertTrue(s.state['performance_trial']['launch_blocked'])
+ def test_new_trial_cancellation_reaps_owned_process_without_activation(self):
+  with tempfile.TemporaryDirectory() as t,patch.object(module,'LOGS',pathlib.Path(t)),patch.object(module.os,'killpg') as kill:
+   for trial in module.FILTERED_TRIALS:
+    s,bundle=self.filtered_trial_fixture(pathlib.Path(t),trial);s.wait.side_effect=module.Stopped()
+    proc=s.spawn.return_value;proc.poll.return_value=None;proc.pid=4312
+    with self.assertRaises(module.Stopped):s.select_dxvk(bundle)
+    kill.assert_called_with(4312,module.signal.SIGKILL);proc.wait.assert_called_once()
+    self.assertEqual(s.state['performance_trial']['active'],'none');self.assertIsNone(s._filtered_graphics_environment)
  def test_pixel_check_requires_both_modes_and_rejects_failure_receipts(self):
   sw='LSB_D3D8_PIXELS mode=swvp frames=4 samples=64 PASS\n'
   hw='LSB_D3D8_PIXELS mode=hwvp frames=4 samples=64 PASS\n'

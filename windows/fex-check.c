@@ -21,7 +21,7 @@ static int cpu_features(int child){
 
 /* Only fixed runtime controls; never enumerate the environment or print values. */
 static const char *env_keys[]={"FEX_X87REDUCEDPRECISION","FEX_X87STRICTREDUCEDPRECISION",
-    "DXVK_HUD","DXVK_CONFIG","MESA_VK_WSI_DEBUG","TU_DEBUG","WINEDLLOVERRIDES"};
+    "DXVK_HUD","DXVK_CONFIG","MESA_VK_WSI_DEBUG","TU_DEBUG","WINEDLLOVERRIDES","FEX_MULTIBLOCK"};
 static uint64_t environment_hash(void) {
     uint64_t hash=14695981039346656037ULL;
     for(unsigned i=0;i<sizeof(env_keys)/sizeof(env_keys[0]);i++) {

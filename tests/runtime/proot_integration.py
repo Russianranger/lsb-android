@@ -24,7 +24,7 @@ PREFLIGHT = b'LSB_PROOT_PREFLIGHT_V1 PASS\n'
 def observe(arguments):
     proof, stage, private, logs = Path(arguments[0]), arguments[1], Path(arguments[2]), Path(arguments[3])
     command = arguments[4:]
-    assert stage in ('preflight', 'launch-1', 'launch-2') and command
+    assert (stage == 'preflight' or re.fullmatch(r'launch-[1-5]', stage)) and command
     assert os.geteuid() == 0, 'Host filter observer must own the protected proof'
     proof.mkdir(parents=True, exist_ok=True)
     os.chown(proof, 0, 0)
@@ -109,8 +109,9 @@ def host_proof():
         raise AssertionError('Guest can rewrite the host filter proof')
 
 
-def launch(cycle):
-    assert cycle in ('1', '2')
+def launch(cycle, trial='none'):
+    assert cycle in ('1', '2', '3', '4', '5')
+    assert trial in ('none', 'tiler_mode', 'short_jit', 'immediate_present')
     for directory in ('/prefix', '/session', '/client', '/logs'):
         Path(directory).mkdir(exist_ok=True)
     host_proof()
@@ -119,6 +120,8 @@ def launch(cycle):
     else:
         assert Path('/prefix/lsb-prefix-ready.json').is_file(), 'First filtered launch did not leave a ready prefix'
     session, logs = Path('/session'), Path('/logs')
+    child_dxvk_directory = session / 'filtered-child-dxvk'
+    shutil.rmtree(child_dxvk_directory, ignore_errors=True)
     for name in ('stop', 'status.json', 'loader-process.json', 'loader-check.json',
                  'login-fixture.json', 'filtered-graphics.log'):
         (session / name).unlink(missing_ok=True)
@@ -128,7 +131,7 @@ def launch(cycle):
                'action': 'launch', 'renderer': 'turnip26', 'audio': False,
                'fex_x87': True, 'dxvk_version': '2.7.1', 'dxvk_two_compilers': True,
                'turnip_sysmem': False, 'dxvk_staged_buffers': False,
-               'performance_trial': 'none', 'proot_acceleration': True,
+               'performance_trial': trial, 'proot_acceleration': True,
                'native_surface': True, 'display_fps': 60, 'shm_upload': True}
     receipt = {'format': 1, 'session_id': request['session_id'], 'requested': 'syscall_filter',
                'preflight_passed': True, 'launch_observed': True, 'mode': 'syscall_filter',
@@ -139,6 +142,14 @@ def launch(cycle):
     # only through the ordinary production pipe; no game or server is contacted.
     payload = b'LSBLOGIN1\n127.0.0.1\nLSB_private_account\nLSB "quoted" & % ! \\ tail\\\n'
     process = subprocess.run([sys.executable, '/opt/lsb/supervisor.py'], input=payload, timeout=300)
+    # Keep the actual synthetic child's DXVK log distinct from its pixel
+    # stdout and the production warmup. Clear it each cycle so an earlier
+    # successful device cannot stand in for the current Windows child.
+    child_dxvk_files = sorted(child_dxvk_directory.glob('*.log'))
+    for path in child_dxvk_files:
+        data = path.read_bytes()
+        assert b'LSB_private_account' not in data and b'quoted' not in data and 'quoted'.encode('utf-16le') not in data, path
+        shutil.copyfile(path, logs / ('filtered-child-dxvk-' + cycle + '-' + path.name))
     state = json.loads((session / 'status.json').read_text())
     assert process.returncode == 0 and state['phase'] == 'completed', state
     assert state['session_id'] == request['session_id']
@@ -151,6 +162,8 @@ def launch(cycle):
     assert tuning['active'] == {'turnip_sysmem': False, 'dxvk_two_compilers': True, 'dxvk_staged_buffers': False}, tuning
     assert tuning['compiler_threads'] == 2 and 'fallback' not in tuning, tuning
     assert tuning.get('verified') is True and tuning.get('combined_dxvk_check') is True, tuning
+    performance = state['performance_trial']
+    assert performance['requested'] == trial and performance['active'] == trial, performance
     assert state['native_surface_requested'] and 'native_surface_fallback' not in state and state['shm_upload_active'], state
     launch_report = json.loads((logs / 'client-launch.json').read_text())
     assert launch_report['session_id'] == request['session_id'] and launch_report['status'] == 'exited', launch_report
@@ -158,11 +171,20 @@ def launch(cycle):
     assert launch_report['authentication_verified'] is False and launch_report['world_entry_verified'] is False
     assert json.loads((session / 'login-fixture.json').read_text())['arguments_and_cwd_match']
     child = (session / 'filtered-graphics.log').read_text(errors='replace')
-    assert re.findall(r'^info:\s+DXVK: v(\S+)\s*$', child, re.M) == ['2.7.1'], child[-4000:]
-    assert re.findall(r'^info:\s+DXVK: Using (\d+) compiler threads\s*$', child, re.M) == ['2'], child[-4000:]
-    assert re.search(r'^info:\s+(?:Found config env:\s+)?dxvk\.numCompilerThreads = 2\s*$', child, re.M), child[-4000:]
+    child_dxvk_path = child_dxvk_directory / 'texture-submission_d3d9.log'
+    assert child_dxvk_path.is_file(), ('Synthetic child DXVK log absent', [path.name for path in child_dxvk_files])
+    child_dxvk = child_dxvk_path.read_text(errors='replace')
+    assert re.findall(r'^info:\s+DXVK: v(\S+)\s*$', child_dxvk, re.M) == ['2.7.1'], child_dxvk[-4000:]
+    assert re.findall(r'^info:\s+DXVK: Using (\d+) compiler threads\s*$', child_dxvk, re.M) == ['2'], child_dxvk[-4000:]
+    assert re.search(r'^info:\s+(?:Found config env:\s+)?dxvk\.numCompilerThreads = 2\s*$', child_dxvk, re.M), child_dxvk[-4000:]
     assert re.search(r'^LSB_TEXTURE_SUBMISSIONS formats=3 frames=4 draws=1512 samples=144 x87=[0-9a-f]{4} PASS\s*$', child, re.M), child[-4000:]
     assert 'LSB_TEXTURE_PATHS up=504 indexed16=504 indexed32=504' in child and ' FAIL' not in child, child[-4000:]
+    option = {'tiler_mode': 'dxvk.tilerMode = False',
+              'immediate_present': 'd3d9.presentInterval = 0'}.get(trial)
+    if option:
+        assert re.search(r'^info:\s+(?:Found config env:\s+)?' + re.escape(option) + r'\s*$', child_dxvk, re.M), child_dxvk[-4000:]
+    if trial == 'short_jit':
+        assert re.findall(r'^LSB_TEXTURE_CONFIG multiblock=0\s*$', child, re.M) == [''], child[-4000:]
     # No old automatic-worker device may be opened ahead of the verified
     # two-worker check. Keep all finite production budgets and legacy gates.
     assert not (logs / 'dxvk-compatibility.log').exists(), 'Filtered startup still performs redundant unqualified device warmup'
@@ -171,20 +193,20 @@ def launch(cycle):
         if path.is_file():
             data = path.read_bytes()
             assert b'LSB_private_account' not in data and b'quoted' not in data and 'quoted'.encode('utf-16le') not in data, path
-    result = {'format': 1, 'cycle': int(cycle), 'runtime': state, 'launch': launch_report,
+    result = {'format': 1, 'cycle': int(cycle), 'trial': trial, 'runtime': state, 'launch': launch_report,
               'inherited_graphics': {'dxvk': '2.7.1', 'compiler_threads': 2,
                                     'draws': 1512, 'pixel_samples': 144, 'passed': True},
               'interpretation': 'Real filtered ARM64 PRoot/FEX launch and inherited DXVK configuration; independent synthetic texture pixel oracle on CI lavapipe, not Thor/Adreno or live login.'}
     (logs / ('filtered-launch-' + cycle + '.json')).write_text(json.dumps(result, indent=2))
     (logs / ('filtered-graphics-' + cycle + '.log')).write_text(child)
     shutil.copyfile(logs / 'graphics-tuning.log', logs / ('graphics-tuning-' + cycle + '.log'))
-    print('PASS: filtered gameplay launch ' + cycle + ' actual FEX/DXVK 2.7.1, inherited two workers, 144 pixels and clean shutdown', flush=True)
+    print('PASS: filtered gameplay launch ' + cycle + ' trial=' + trial + ' actual FEX/DXVK 2.7.1, inherited two workers, 144 pixels and clean shutdown', flush=True)
 
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['observe']:
         observe(sys.argv[2:])
-    elif len(sys.argv) == 3 and sys.argv[1] == 'launch':
-        launch(sys.argv[2])
+    elif len(sys.argv) in (3, 4) and sys.argv[1] == 'launch':
+        launch(sys.argv[2], sys.argv[3] if len(sys.argv) == 4 else 'none')
     else:
         raise SystemExit('Expected observe <proof> <stage> <private-log> <logs> <command...> or launch <1|2>')

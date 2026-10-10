@@ -1,3 +1,48 @@
+# 0.7.5: three isolated filtered gameplay performance trials
+
+Continue `codex/filtered-performance-075`, based on startup fix
+`dcadcd653f57b2270430b446877f9b144e69e38e`. The user explicitly authorized current
+and future GitHub pushes; no further push confirmation is required. Preserve
+existing main/releases and the stacked 0.7.3 / 0.7.4 review branches.
+
+New support confirms that 0.7.4 starts with the accepted syscall-filter / two
+compiler worker profile and enters zone 100. Steady 90–160 second display history
+shows 26.157 Surface posts/s and 69 gaps over 100 ms, recurring about once a
+second. Responsive unchanged replies place those missing new images upstream
+of the final Android copy, without establishing a CPU, shader, server or thermal
+cause. Actual game uploader has 3,422 SHM calls with no failures or fallback;
+its slot wait is negligible. These are display-delivery measurements, not game
+HUD FPS or route-controlled evidence of a 0.7.4 performance regression.
+
+Exactly three new independent opt-in candidates retain filtering and two workers:
+G `tiler_mode` uses `dxvk.tilerMode = False`; H `short_jit` uses
+`FEX_MULTIBLOCK=0`; I `immediate_present` uses `d3d9.presentInterval = 0`.
+No defaults, graphics-quality, resolution, game-cap, x87 or memory-ordering changes.
+Each selected profile qualifies in one finite process with eight warmup Presents,
+both vertex-processing pixel oracles, consumed DXVK configuration / inherited
+FEX setting and the accepted worker count. Current-process proof qualifies
+activation; requested settings cannot substitute for actual host filtering.
+Unsupported or failed selected trials stop before login. Baseline retains its
+existing compatibility fallback. The FEX environment hash includes MULTIBLOCK
+in both Python and PE, and the synthetic loader child independently inherits it.
+
+The selector offers Baseline / G / H / I. Old A/D/E and unknown selections reset
+to Baseline with a visible notice; historical runtime paths remain readable.
+Do not stack old trials with filtering or repeat retired B/C. Test Baseline,
+then each new choice independently, stopping and exporting support after each
+matched 3–5 minute route. No proven FPS gain is claimed before the Thor test.
+
+Version 0.7.5/code 79. All 213 local runtime contracts and core import/recovery/session
+checks pass. Independent review found no blocker. Android and ARM64 qualification
+of the new trials and original-signed APK delivery are in progress.
+The filtered ARM64 job retains two fresh baseline launches and adds one fresh
+filtered launch per candidate, independent child pixel/setting checks and
+protected host marker proof. CI uses lavapipe; it cannot establish Adreno FPS.
+See [device evidence and rationale](thor-performance-trials-075.md) and
+[phone testing](TESTING-0.7.5.md). Original signing key remains private outside Git.
+
+---
+
 # 0.7.4: preserve syscall filtering during gameplay startup
 
 Continue `codex/filtered-startup-074`, based on the full 0.7.3 development
@@ -27,10 +72,17 @@ experiment paths are retained.
 
 Version 0.7.4/code 78. All 204 runtime unit tests, including 43 supervisor
 contracts, pass locally; the core import/recovery/session archive checks also
-pass. The focused real ARM64 filtered modern-DXVK gameplay job is implemented but
-unrun: publication was automatically rejected for missing explicit authorization.
-The original-signed local APK is ready; see [qualification](QUALIFICATION-0.7.4.md). No device success is claimed
-before a fresh Thor pass. See [focused testing](TESTING-0.7.4.md).
+pass. The user authorized this and future GitHub pushes on October 9, 2026 (Chicago).
+The exact reviewed tree is now published as `dcadcd653f57b2270430b446877f9b144e69e38e`
+in stacked draft PR #4; push run `38017529183` and PR run `38017531043` are running.
+Verify and native Windows jobs pass. The focused gate reaches actual filtered FEX
+startup, clean synthetic child exit and all 144 texture pixels, then fails because
+its redirected Windows output does not contain DXVK Unix logging. The test capture
+is corrected in 0.7.5 with a dedicated credential-free synthetic-child DXVK log;
+no rendering or version/worker/pixel assertions are relaxed.
+The original-signed local APK is ready; see [qualification](QUALIFICATION-0.7.4.md). Fresh Thor support `lsb-support (1)(20261010-023150).zip` confirms a passed
+combined startup check, actual filtering, server world entry and clean exits.
+This supports the startup remedy; the exact prior intermittent hang remains unproven. See [focused testing](TESTING-0.7.4.md).
 
 The original signing checkpoint was recovered privately and its certificate
 matches `f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
