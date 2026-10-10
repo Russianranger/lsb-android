@@ -309,6 +309,13 @@ final class ClientRuntime {
         // An explicitly disabled acceleration preference must remain disabled.
         if("syscall_filter".equals(prefs.getString("performance_trial","none")))
             prefs.edit().putString("performance_trial","none").apply();
+        normalizeLegacyTrials(context);
+    }
+    static void normalizeLegacyTrials(Context context){
+        android.content.SharedPreferences prefs=context.getSharedPreferences("runtime",0);
+        String trial=prefs.getString("performance_trial","none");
+        if(!"none".equals(trial)&&!"tiler_mode".equals(trial)&&!"short_jit".equals(trial)&&!"immediate_present".equals(trial))
+            prefs.edit().putString("performance_trial","none").putBoolean("performance_trial_retired",true).apply();
     }
     void applyGraphicsSettings(JSONObject request)throws Exception {
         migrateProvenAcceleration(context);

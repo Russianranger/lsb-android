@@ -37,7 +37,8 @@ final class ProotAcceleration {
                 &&!r.optBoolean("native_surface")&&!r.optBoolean("shm_upload");
         }
         String trial=r.optString("performance_trial","none");
-        return ("none".equals(trial)||"syscall_filter".equals(trial))
+        return ("none".equals(trial)||"syscall_filter".equals(trial)
+                ||"tiler_mode".equals(trial)||"short_jit".equals(trial)||"immediate_present".equals(trial))
             &&"launch".equals(r.optString("action"))&&"fex".equals(r.optString("engine"))
             &&"turnip26".equals(r.optString("renderer"))&&"2.7.1".equals(r.optString("dxvk_version"))
             &&r.optBoolean("dxvk_two_compilers")&&!r.optBoolean("turnip_sysmem")&&!r.optBoolean("dxvk_staged_buffers");

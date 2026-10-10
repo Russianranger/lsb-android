@@ -6,6 +6,14 @@
 #include "graphics-pixels.h"
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR args,int show){
     (void)previous;(void)show;
+    /* Fixed, credential-free environment inheritance receipt. This proves the
+       PE received the option, not an internal FEX configuration readback. */
+    if(!wcscmp(args,L"--filtered-trial")){
+        wchar_t multiblock[4]={0};
+        if(GetEnvironmentVariableW(L"FEX_MULTIBLOCK",multiblock,4)==1 && multiblock[0]==L'0'){
+            puts("LSB_GRAPHICS_CONFIG multiblock=0");fflush(stdout);
+        }
+    }
     HWND window=CreateWindowW(L"STATIC",L"Graphics compatibility check",WS_POPUP|WS_VISIBLE,0,0,320,240,NULL,NULL,instance,NULL);
     if(!window)return 10;
     IDirect3D8 *api=Direct3DCreate8(D3D_SDK_VERSION);if(!api){DestroyWindow(window);return 11;}
@@ -33,7 +41,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR args,int show){
     }
     if(device){graphics_stage("warmup","release_device",0,"before");IDirect3DDevice8_Release(device);graphics_stage("warmup","release_device",0,"after");}
     int result=FAILED(hr)?12:0;
-    if(!result && (!wcscmp(args,L"--pixels")||!wcscmp(args,L"--trace-pixels"))) {
+    if(!result && (!wcscmp(args,L"--pixels")||!wcscmp(args,L"--trace-pixels")||!wcscmp(args,L"--filtered-trial"))) {
         if(!wcscmp(args,L"--trace-pixels")){
             HMODULE trace=LoadLibraryW(L"P:\\startup-trace.dll");
             typedef void (WINAPI *Attach)(IDirect3D8*);

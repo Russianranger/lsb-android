@@ -92,12 +92,12 @@ public class FantasyTilesTest {
             capture(tiles,"past-experiments-wide.png");
             text(tiles,"◇  Optimization trials").performClick();layout(tiles,920);
             Spinner trial=findTrial(tiles);assertNotNull(trial);assertEquals(0,trial.getSelectedItemPosition());
-            String[] values={"none","one_compiler","cached_dynamic","gpl_fast"};assertEquals(values.length,trial.getCount());
+            String[] values={"none","tiler_mode","short_jit","immediate_present"};assertEquals(values.length,trial.getCount());
             for(int i=1;i<values.length;i++){
                 trial.setSelection(i);org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
                 assertEquals(values[i],prefs.getString("performance_trial","none"));
                 org.json.JSONObject selected=new org.json.JSONObject();runtime.applyGraphicsSettings(selected);assertEquals(values[i],selected.getString("performance_trial"));
-                assertNotNull(text(tiles,new String[]{"","A uses one compiler worker.","D places dynamic geometry buffers","E skips background compilation"}[i]));
+                assertNotNull(text(tiles,new String[]{"","G changes how DXVK groups rendering work.","H asks FEX to compile smaller pieces of game code","I removes the driver VSync wait."}[i]));
                 layout(tiles,920);capture(tiles,"optimization-trial-"+values[i]+"-wide.png");
                 layout(tiles,400);capture(tiles,"optimization-trial-"+values[i]+"-narrow.png");
             }
@@ -139,7 +139,8 @@ public class FantasyTilesTest {
             ClientRuntime.migrateProvenAcceleration(ctx);runtime.applyGraphicsSettings(request);
             assertFalse(request.getBoolean("proot_acceleration"));assertEquals("none",request.getString("performance_trial"));
             prefs.edit().putString("performance_trial","cached_dynamic").commit();runtime.applyGraphicsSettings(request);
-            assertEquals("cached_dynamic",request.getString("performance_trial"));assertFalse(request.getBoolean("proot_acceleration"));
+            assertEquals("none",request.getString("performance_trial"));assertFalse(request.getBoolean("proot_acceleration"));
+            assertTrue(prefs.getBoolean("performance_trial_retired",false));
         }finally{prefs.edit().clear().commit();instance.set(null,null);}
     }
     private static Spinner findTrial(View v){

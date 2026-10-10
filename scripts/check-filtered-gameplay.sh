@@ -52,21 +52,28 @@ sudo python3 tests/runtime/proot_integration.py observe "$work/filter-control" p
  timeout --kill-after=5s 30s "${host[@]}" "${proot[@]}" \
  /bin/sh -c 'exec "$@" > /session/preflight-private.log 2>&1' sh \
  "${guest[@]}" /usr/bin/python3 /opt/lsb/proot_preflight.py --sysvipc
-for cycle in 1 2; do
+for cycle in 1 2 3 4 5; do
+ trial=none
+ case "$cycle" in
+  3) trial=tiler_mode ;;
+  4) trial=short_jit ;;
+  5) trial=immediate_present ;;
+ esac
  sudo python3 tests/runtime/proot_integration.py observe "$work/filter-control" "launch-$cycle" \
   "$short/session/qualification-private.log" "$work/logs" \
   timeout --kill-after=5s 360s "${host[@]}" "${proot[@]}" \
   /bin/sh -c 'exec "$@" > /session/qualification-private.log 2>&1' sh \
-  "${guest[@]}" /usr/bin/python3 /tests/proot_integration.py launch "$cycle"
+  "${guest[@]}" /usr/bin/python3 /tests/proot_integration.py launch "$cycle" "$trial"
 done
 python3 - <<'PY'
 import json
 from pathlib import Path
 logs = Path('out/filtered-gameplay-test/logs')
-rows = [json.loads((logs / ('filtered-launch-' + str(cycle) + '.json')).read_text()) for cycle in (1, 2)]
-assert rows[0]['runtime']['session_id'] != rows[1]['runtime']['session_id'], 'Relaunch reused a session receipt'
-hosts = [json.loads((logs / ('filter-launch-' + str(cycle) + '.json')).read_text()) for cycle in (1, 2)]
-assert hosts[0]['host_pid'] != hosts[1]['host_pid'], 'Relaunch did not start a fresh host process'
+rows = [json.loads((logs / ('filtered-launch-' + str(cycle) + '.json')).read_text()) for cycle in range(1, 6)]
+assert len({row['runtime']['session_id'] for row in rows}) == 5, 'Relaunch reused a session receipt'
+assert [row['trial'] for row in rows] == ['none', 'none', 'tiler_mode', 'short_jit', 'immediate_present']
+hosts = [json.loads((logs / ('filter-launch-' + str(cycle) + '.json')).read_text()) for cycle in range(1, 6)]
+assert len({row['host_pid'] for row in hosts}) == 5, 'Relaunch did not start a fresh host process'
 assert all(row['host_marker_observed'] and row['exit_code'] == 0 for row in hosts)
-print('PASS: two independent host-filtered FEX/DXVK gameplay launches, 288 independently checked pixels; CI lavapipe, not a phone GPU result', flush=True)
+print('PASS: five independent host-filtered FEX/DXVK gameplay launches: repeated baseline and G/H/I, 720 independently checked pixels; CI lavapipe, not a phone GPU result', flush=True)
 PY

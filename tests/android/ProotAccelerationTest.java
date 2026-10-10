@@ -110,6 +110,29 @@ public class ProotAccelerationTest {
         assertFalse(helper.prepare(command(),request().put("turnip_sysmem",true),()->{},()->{fail("No probe exists");}));
         assertTrue(launched.isEmpty());
     }
+    @Test public void newTrialsKeepFilteringOnlyForTheExactGameplayProfile()throws Exception{
+        for(String trial:new String[]{"none","syscall_filter","tiler_mode","short_jit","immediate_present"}){
+            assertTrue(trial,ProotAcceleration.eligible(request().put("performance_trial",trial)));
+            for(String key:new String[]{"turnip_sysmem","dxvk_staged_buffers"})
+                assertFalse(trial+" "+key,ProotAcceleration.eligible(request().put("performance_trial",trial).put(key,true)));
+            assertFalse(ProotAcceleration.eligible(request().put("performance_trial",trial).put("dxvk_two_compilers",false)));
+            assertFalse(ProotAcceleration.eligible(request().put("performance_trial",trial).put("engine","box64")));
+            assertFalse(ProotAcceleration.eligible(request().put("performance_trial",trial).put("renderer","turnip24")));
+            assertFalse(ProotAcceleration.eligible(request().put("performance_trial",trial).put("dxvk_version","2.5.3")));
+            for(String action:new String[]{"probe","initialize","verify-client-update"})
+                assertFalse(ProotAcceleration.eligible(request().put("performance_trial",trial).put("action",action)));
+        }
+        for(String trial:new String[]{"one_compiler","cached_dynamic","gpl_fast","unknown","tiler_mode,short_jit","immediate_present+tiler_mode"})
+            assertFalse(trial,ProotAcceleration.eligible(request().put("performance_trial",trial)));
+        for(String trial:new String[]{"tiler_mode","short_jit","immediate_present"}){
+            List<ProcessBuilder> launched=new ArrayList<>();
+            Child probe=new Child(ProotAcceleration.MARKER+"\n"+ProotAcceleration.CHECK+"\n",false);
+            ProotAcceleration helper=helper(probe,Files.createTempDirectory("proot-new-trial").toFile(),launched);ProcessBuilder main=command();
+            assertTrue(helper.prepare(main,request().put("performance_trial",trial),()->{},()->{}));
+            assertEquals(1,launched.size());assertFalse(main.environment().containsKey("PROOT_NO_SECCOMP"));
+            assertTrue(helper.receipt().getBoolean("preflight_passed"));
+        }
+    }
     @Test public void updaterProfilesKeepPreflightObservationAndFallbackForBothEngines()throws Exception{
         for(String engine:new String[]{"box64","fex"})for(boolean enabled:new boolean[]{false,true}){
             Child probe=new Child((enabled?ProotAcceleration.MARKER+"\n":"")+ProotAcceleration.CHECK+"\n",false);
@@ -134,7 +157,7 @@ public class ProotAccelerationTest {
                 assertFalse(key,ProotAcceleration.eligible(updater(engine).put(key,true)));
             for(String action:new String[]{"launch","initialize","verify-client-update","probe"})
                 assertFalse(action,ProotAcceleration.eligible(updater(engine).put("action",action)));
-            for(String trial:new String[]{"syscall_filter","one_compiler","cached_dynamic","gpl_fast"})
+            for(String trial:new String[]{"syscall_filter","one_compiler","cached_dynamic","gpl_fast","tiler_mode","short_jit","immediate_present"})
                 assertFalse(trial,ProotAcceleration.eligible(updater(engine).put("performance_trial",trial)));
             assertFalse(ProotAcceleration.eligible(updater(engine).put("dxvk_version","2.7.1")));
             assertFalse(ProotAcceleration.eligible(updater(engine).put("renderer","software")));

@@ -20,6 +20,13 @@ LOGS=Path('/logs')
 BUNDLE=Path('/opt/lsb')
 PROBE=Path('/probe')
 STOP=False
+# Each new trial changes one option inside the independently checked filtered
+# two-worker profile. The old A/D/E trials remain on their previous paths.
+FILTERED_TRIALS={
+    'tiler_mode':('DXVK_CONFIG','dxvk.tilerMode = False'),
+    'short_jit':('FEX_MULTIBLOCK','0'),
+    'immediate_present':('DXVK_CONFIG','d3d9.presentInterval = 0'),
+}
 
 
 def atomic(path, data):
@@ -53,7 +60,7 @@ def validate_request(req):
     if 'network_preflight' in req and (req.get('action')!='update-client' or type(req['network_preflight']) is not bool):raise ValueError('Unsupported network check request')
     if 'repair_diagnostics' in req and (req.get('action')!='update-client' or type(req['repair_diagnostics']) is not bool):raise ValueError('Unsupported repair diagnostics request')
     if 'updater_hardware_graphics' in req and (req.get('action')!='update-client' or type(req['updater_hardware_graphics']) is not bool):raise ValueError('Unsupported updater graphics request')
-    if req.get('performance_trial','none') not in ('none','one_compiler','cached_dynamic','gpl_fast','syscall_filter','retain_pipelines','lighter_scene'):raise ValueError('Unsupported performance trial')
+    if req.get('performance_trial','none') not in ('none','one_compiler','cached_dynamic','gpl_fast','syscall_filter','retain_pipelines','lighter_scene',*FILTERED_TRIALS):raise ValueError('Unsupported performance trial')
     if req.get('engine','box64') not in ('box64','fex'):raise ValueError('Unsupported runtime engine')
     if req.get('display_fps',30) not in (30,60):raise ValueError('Unsupported display frame rate')
     if req.get('dxvk_version','2.5.3') not in ('2.5.3','2.7.1'):raise ValueError('Unsupported DXVK version')
@@ -211,6 +218,9 @@ class Supervisor:
         self.state['runtime_engine']=self.engine
         if self.engine=='fex':
             self.env={k:v for k,v in self.env.items() if not k.startswith('BOX64_')}
+            # Baseline restores the pinned translator's default multiblock
+            # behavior. A prior process's trial must never leak into this one.
+            self.env.pop('FEX_MULTIBLOCK',None)
             # Wine strips .dll but retains .exe when matching load overrides.
             # Disable the automatic debugger explicitly; FEX must return a
             # crashed child's exit status instead of waiting inside winedbg.
@@ -347,6 +357,10 @@ class Supervisor:
 
     def select_dxvk(self,bundle):
         self._filtered_graphics_environment=None
+        if self.req.get('performance_trial','none') in FILTERED_TRIALS and not self.filtered_graphics_profile():
+            # A selected new trial must not enter ordinary DXVK fallback and
+            # then launch while reporting only an inactive option.
+            self.configure_performance_trial()
         if self.filtered_graphics_profile():
             self.select_filtered_dxvk(bundle)
             return
@@ -374,7 +388,7 @@ class Supervisor:
         requested=self.req.get('proot_acceleration',self.req.get('performance_trial')=='syscall_filter')
         return (requested and self.req.get('action')=='launch' and self.engine=='fex'
             and self.req['renderer']=='turnip26' and self.req.get('dxvk_version','2.5.3')=='2.7.1'
-            and self.req.get('performance_trial','none') in ('none','syscall_filter')
+            and self.req.get('performance_trial','none') in ('none','syscall_filter',*FILTERED_TRIALS)
             and self.req.get('dxvk_two_compilers',False)
             and not self.req.get('turnip_sysmem',False) and not self.req.get('dxvk_staged_buffers',False))
 
@@ -385,6 +399,17 @@ class Supervisor:
         # draw/present check and deadline, without that redundant lifecycle.
         self.install_dxvk('2.7.1')
         self.env['DXVK_CONFIG']=';'.join(filter(None,(self.env.get('DXVK_CONFIG'),'dxvk.numCompilerThreads = 2')))
+        trial=self.req.get('performance_trial','none')
+        trial_report=None
+        if trial in FILTERED_TRIALS:
+            key,option=FILTERED_TRIALS[trial]
+            if key=='DXVK_CONFIG':self.env[key]+=';'+option
+            else:self.env[key]=option
+            trial_report={'requested':trial,'active':'none','setting':key,'option':option,
+                'compiler_threads':2,'combined_graphics_check':True,
+                'reset':'Select Baseline and stop/relaunch the client',
+                'log':'graphics-tuning.log'}
+            self.status(performance_trial=trial_report)
         requested={key:self.req.get(key,False) for key in ('turnip_sysmem','dxvk_two_compilers','dxvk_staged_buffers')}
         report={'requested':requested,'active':dict.fromkeys(requested,False),
                 'combined_dxvk_check':True,'verified':False,'log':'graphics-tuning.log'}
@@ -395,25 +420,44 @@ class Supervisor:
             graphics='DXVK 2.7.1 / '+self.state['vulkan'].get('device','unknown'),graphics_tuning=report)
         proc=None
         try:
-            proc=self.spawn(self.wine_command(r'P:\graphics-check.exe'),'graphics-tuning.log',fixed_output=True)
+            proc=self.spawn(self.wine_command(r'P:\graphics-check.exe',*(['--filtered-trial'] if trial_report else [])),'graphics-tuning.log',fixed_output=True)
             self.wait(proc,45,'Filtered two-worker DXVK 2.7.1 draw and presentation check')
             self.logs[-1].thread.join(3)
             log=(LOGS/'graphics-tuning.log').read_text(errors='replace')
             if re.findall(r'^info:\s+DXVK: v(\S+)\s*$',log,re.M)!=['2.7.1']:
                 raise ValueError('DXVK 2.7.1 version was not confirmed')
             if (not re.search(r'^info:\s+(?:Found config env:\s+)?dxvk\.numCompilerThreads = 2\s*$',log,re.M)
-                    or re.findall(r'^info:\s+DXVK: Using (\d+) compiler threads\s*$',log,re.M)!=['2']):
+                    or re.findall(r'^info:\s+DXVK: Using (\d+) compiler threads\s*$',log,re.M)!=['2']*(3 if trial_report else 1)):
                 raise ValueError('DXVK did not confirm the requested two compiler workers')
             stages=re.findall(r'^LSB_GRAPHICS_STAGE mode=warmup stage=present frame=(\d+) edge=(before|after)\s*$',log,re.M)
             if stages!=[(str(frame),edge) for frame in range(8) for edge in ('before','after')]:
                 raise ValueError('Eight D3D8 draw/present frames were not confirmed')
             if re.search(r'^LSB_D3D8_.* FAIL\s*$',log,re.M):
                 raise ValueError('D3D8 draw/presentation verification failed')
+            if trial_report:
+                modes=re.findall(r'^LSB_D3D8_PIXELS mode=(swvp|hwvp) frames=4 samples=64 PASS\s*$',log,re.M)
+                if modes!=['swvp','hwvp']:
+                    raise ValueError('The trial did not confirm all 128 pixels in both vertex-processing modes')
+                key,option=FILTERED_TRIALS[trial]
+                if key=='DXVK_CONFIG':
+                    name,value=option.split(' = ',1)
+                    values=re.findall(r'^info:\s+(?:Found config env:\s+)?'+re.escape(name)+r' = (\S+)\s*$',log,re.M)
+                    if not values or any(observed!=value for observed in values):
+                        raise ValueError('DXVK did not confirm the selected trial option')
+                elif re.findall(r'^LSB_GRAPHICS_CONFIG multiblock=(\S+)\s*$',log,re.M)!=['0']:
+                    raise ValueError('The graphics process did not confirm the short-JIT environment')
+                trial_report.update(active=trial,verified=True,
+                    check='eight ordered warmup Present frames and 128 pixels in both vertex-processing modes passed')
+                if trial=='short_jit':
+                    trial_report.update(configuration_proof='Pinned FEX environment loader plus inherited graphics-process value; no internal translator readback',
+                        launch_proof='The FEX parent/child execution and environment-hash check must pass again before login')
+                self.status(performance_trial=trial_report)
             report.update(active=dict(requested),verified=True,check='eight D3D8 draw/present frames passed',
                 turnip_debug='unchanged',compiler_threads=2,buffer_upload='default',
                 graphics_pipeline_libraries=bool(re.search(r'graphicsPipelineLibrary\s*:\s*1\b',log))
                     and 'DXVK: Graphics pipeline libraries supported' in log)
             self._filtered_graphics_environment=dict(self.env)
+            self._filtered_trial=trial
             self.status(dxvk_compatibility='eight D3D8 draw/present frames passed',graphics_tuning=report)
         except Stopped:
             if proc is not None and proc.poll() is None:
@@ -441,6 +485,9 @@ class Supervisor:
             except OSError:pass
             report.update(error=str(error),launch_blocked=True,
                 note='Requested DXVK 2.7.1, two compiler workers and runtime syscall filtering retained; graphics verification failed')
+            if trial_report:
+                trial_report.update(active='none',verified=False,launch_blocked=True,error=str(error))
+                self.status(performance_trial=trial_report)
             self.status(graphics_tuning=report)
             raise RuntimeError('Client graphics startup verification failed: '+str(error)+last_stage+
                 '; syscall filtering and the two-worker profile were retained. Stop and retry Play; export Diagnostics if this repeats') from error
@@ -518,6 +565,27 @@ class Supervisor:
         trial=self.req.get('performance_trial','none')
         report={'requested':trial,'active':'none'}
         baseline=self.state.get('graphics_tuning',{}).get('active',{})
+        if trial in FILTERED_TRIALS:
+            key,option=FILTERED_TRIALS[trial]
+            report.update(setting=key,option=option,compiler_threads=2,
+                reset='Select Baseline and stop/relaunch the client')
+            if not self.filtered_graphics_profile():
+                report['note']='New trials require the requested filtered FEX/Turnip 26/DXVK 2.7.1 two-worker profile with past experiments off'
+                report['launch_blocked']=True
+                self.status(performance_trial=report)
+                raise RuntimeError('Selected optimization trial requires the filtered FEX/Turnip 26/DXVK 2.7.1 two-worker profile; select Baseline and relaunch, keeping syscall filtering enabled')
+            # The selected option was applied before the combined graphics
+            # process, with current-process proof. Do not launch a second probe.
+            proven=self.state.get('performance_trial',{})
+            if (getattr(self,'_filtered_graphics_environment',None)!=self.env
+                    or getattr(self,'_filtered_trial',None)!=trial
+                    or not self.state.get('graphics_tuning',{}).get('verified')
+                    or self.state.get('runtime_acceleration',{}).get('active')!='syscall_filter'
+                    or proven.get('active')!=trial or not proven.get('verified')):
+                report.update(launch_blocked=True,note='Selected trial requires current combined graphics proof and independently confirmed host filtering')
+                self.status(performance_trial=report)
+                raise RuntimeError('Selected optimization trial was not verified; select Baseline and relaunch, keeping syscall filtering enabled')
+            self.status(performance_trial=dict(proven,host_filtering_confirmed=True));return
         if trial in ('retain_pipelines','lighter_scene'):
             report['note']='Retired after Thor lockup or severe camera-pan regression; baseline retained'
             self.status(performance_trial=report);return
@@ -646,11 +714,11 @@ class Supervisor:
                           check='Host preflight and actual launch activation confirmed; updater graphics settings retained')
             self.status(**{status_key:report});return
         if (self.req.get('action')!='launch' or self.engine!='fex'
-                or self.req.get('performance_trial','none') not in ('none','syscall_filter')
+                or self.req.get('performance_trial','none') not in ('none','syscall_filter',*FILTERED_TRIALS)
                 or self.req['renderer']=='software' or self.state.get('dxvk_selected')!='2.7.1'
                 or not baseline.get('dxvk_two_compilers')
                 or baseline.get('turnip_sysmem') or baseline.get('dxvk_staged_buffers')):
-            report.update(launch_blocked=True,note='Active host filtering requires the confirmed FEX/DXVK 2.7.1 two-worker baseline, no graphics trial and past experiments off')
+            report.update(launch_blocked=True,note='Active host filtering requires the confirmed FEX/DXVK 2.7.1 two-worker baseline or a checked new trial, with past experiments off')
             self.status(**{status_key:report})
             raise RuntimeError('Syscall-filter baseline changed; disable Runtime syscall filtering and relaunch')
         report.update(compiler_threads=2,check='Host preflight and actual launch activation confirmed; two-worker graphics baseline retained')
@@ -708,7 +776,10 @@ class Supervisor:
 
     def start(self):
         for p in (SESSION,PREFIX,LOGS):p.mkdir(parents=True,exist_ok=True)
-        self.status();bundle=verify_bundle(BUNDLE)
+        self.status()
+        if self.req.get('performance_trial','none') in FILTERED_TRIALS and not self.filtered_graphics_profile():
+            self.configure_performance_trial()
+        bundle=verify_bundle(BUNDLE)
         if self.req.get('network_preflight',False):
             self.check_update_network()
         if self.engine=='fex':

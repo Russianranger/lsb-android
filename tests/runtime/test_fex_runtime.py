@@ -1,4 +1,5 @@
-import hashlib,json,struct,sys,tempfile,unittest,uuid
+import hashlib,json,struct,sys,tempfile,unittest,uuid,re
+from unittest.mock import patch
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'runtime'))
 import fex_runtime as fex
@@ -40,6 +41,21 @@ class FexContracts(unittest.TestCase):
         self.assertEqual(fex.environment_hash(a),fex.environment_hash(dict(a,PASSWORD='secret')))
         self.assertNotEqual(fex.environment_hash(a),fex.environment_hash(dict(a,DXVK_HUD='')))
         self.assertNotEqual(fex.environment_hash(a),fex.environment_hash(dict(a,FEX_X87REDUCEDPRECISION='0')))
+        self.assertNotEqual(fex.environment_hash(a),fex.environment_hash(dict(a,FEX_MULTIBLOCK='0')))
+        self.assertNotEqual(fex.environment_hash(dict(a,FEX_MULTIBLOCK='0')),fex.environment_hash(dict(a,FEX_MULTIBLOCK='1')))
+
+    def test_fex_hash_matches_the_exact_pe_control_inventory(self):
+        source=(Path(__file__).resolve().parents[2]/'windows/fex-check.c').read_text()
+        array=re.search(r'const char \*env_keys\[\]=\{(.*?)\};',source,re.S)
+        self.assertIsNotNone(array)
+        self.assertEqual(tuple(re.findall(r'"([A-Z0-9_]+)"',array[1])),fex.ENV_KEYS)
+
+    def test_fex_baseline_clears_prior_short_jit_environment_without_changing_precision(self):
+        req=dict(format=1,renderer='turnip26',engine='fex',audio=False,session_id=str(uuid.uuid4()),fex_x87=True)
+        with patch.dict('os.environ',{'FEX_MULTIBLOCK':'0'}):native=Supervisor(req)
+        self.assertNotIn('FEX_MULTIBLOCK',native.env)
+        self.assertEqual(native.env['FEX_X87REDUCEDPRECISION'],'1')
+        self.assertEqual(native.env['FEX_X87STRICTREDUCEDPRECISION'],'1')
 
     def test_stopped_prefix_registry_selects_only_x86_translator(self):
         with tempfile.TemporaryDirectory() as t:
