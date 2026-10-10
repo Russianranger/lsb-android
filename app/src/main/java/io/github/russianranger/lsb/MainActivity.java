@@ -604,6 +604,7 @@ public final class MainActivity extends Activity {
         button(loader,"Use imported xiloader in prepared client",()->run("Applying imported xiloader",(ctx,p)->ClientRuntime.get(ctx).applyImportedLoader(imported,p))).setEnabled(available&&!imported.isEmpty()&&(different||pending)&&!staged&&!rt.alive()&&!WorkService.busy);
     }
     private void loginCard(ClientStore source)throws Exception {
+        if(!SessionBackup.active&&SessionBackup.recoveryError.isEmpty())ClientRuntime.migrateProvenAcceleration(this);
         ClientRuntime rt=ClientRuntime.get(this);JSONObject state=rt.preparationState();
         JSONObject stagedClient=state.optJSONObject("candidate");boolean updateStaged=stagedClient!=null&&stagedClient.has("update_of");
         LinearLayout card=featuredCard("Play FINAL FANTASY XI");runtimeStatus=label(rt.status,15,ACCENT);card.addView(runtimeStatus);
@@ -648,8 +649,8 @@ public final class MainActivity extends Activity {
         trial.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Baseline · proven settings","G · Render-pass heuristics","H · Shorter compilation units","I · Remove driver VSync wait"}));
         String savedTrial=getSharedPreferences("runtime",0).getString("performance_trial","none");
         int selectedTrial=Arrays.asList(trialValues).indexOf(savedTrial);
-        if(selectedTrial<0){
-            selectedTrial=0;getSharedPreferences("runtime",0).edit().putString("performance_trial","none").apply();
+        if(selectedTrial<0)selectedTrial=0;
+        if(getSharedPreferences("runtime",0).getBoolean("performance_trial_retired",false)){
             trials.addView(label("Your saved trial has been retired and was reset to Baseline. Trials A, D and E did not establish a consistent improvement. Choose G, H or I separately for this comparison.",14,ACCENT));
         }
         trial.setSelection(selectedTrial);trials.addView(trial);
@@ -659,7 +660,7 @@ public final class MainActivity extends Activity {
             public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
                 String value=trialValues[position];
                 trialDescription.setText(trialHelp[position]);
-                if(!value.equals(getSharedPreferences("runtime",0).getString("performance_trial","none")))getSharedPreferences("runtime",0).edit().putString("performance_trial",value).apply();
+                if(!value.equals(getSharedPreferences("runtime",0).getString("performance_trial","none")))getSharedPreferences("runtime",0).edit().putString("performance_trial",value).remove("performance_trial_retired").apply();
             }
         });
         trials.addView(label("G, H and I are optional comparisons with no demonstrated FPS gain yet. Startup checks validate the selected trial with filtering and two workers; a failed check stops launch. Select Baseline for normal play. Support ZIPs retain six sessions with their effective settings and timing history.",13,MUTED));
@@ -670,7 +671,7 @@ public final class MainActivity extends Activity {
         CheckBox turnipSysmem=setting(past,"Turnip system-memory rendering","turnip_sysmem",false,"Changes how the Turnip GPU driver renders; it does not select a different driver. No demonstrated benefit beyond two compiler workers. Recommended off. Stop and relaunch to apply.");
         CheckBox stagedGeometry=setting(past,"Staged geometry uploads","dxvk_staged_buffers",false,"The recent camera-pan comparison found no improvement. Recommended off. Requires DXVK 2.7.1 and retains the startup pixel check and compatibility fallback.");
         button(proven,"Use tested shader settings",()->{
-            getSharedPreferences("runtime",0).edit().putBoolean("dxvk_two_compilers",true).putBoolean("proot_acceleration",true).putBoolean("turnip_sysmem",false).putBoolean("dxvk_staged_buffers",false).putString("performance_trial","none").apply();
+            getSharedPreferences("runtime",0).edit().putBoolean("dxvk_two_compilers",true).putBoolean("proot_acceleration",true).putBoolean("turnip_sysmem",false).putBoolean("dxvk_staged_buffers",false).putString("performance_trial","none").remove("performance_trial_retired").apply();
             trial.setSelection(0);compilerWorkers.setChecked(true);acceleration.setChecked(true);turnipSysmem.setChecked(false);stagedGeometry.setChecked(false);
             toast("Syscall filtering and two compiler workers on; experiments off. Stop and relaunch to apply.");
         });

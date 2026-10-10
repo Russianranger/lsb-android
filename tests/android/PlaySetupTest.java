@@ -37,9 +37,11 @@ public class PlaySetupTest {
         return null;
     }
     private static View advanced(MainActivity activity)throws Exception{
-        Method method=MainActivity.class.getDeclaredMethod("navigate",String.class,String.class);method.setAccessible(true);method.invoke(activity,"Advanced","Optimization trials");
+        Method method=MainActivity.class.getDeclaredMethod("navigate",String.class,String.class);method.setAccessible(true);method.invoke(activity,"Advanced","");
         View content=(View)field(activity,"content");content.measure(View.MeasureSpec.makeMeasureSpec(920,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
-        content.layout(0,0,920,content.getMeasuredHeight());return content;
+        content.layout(0,0,920,content.getMeasuredHeight());
+        View tile=described(content,"Optimization trials, collapsed");assertNotNull("The completed client must expose the Optimization trials tile",tile);tile.performClick();
+        content.measure(View.MeasureSpec.makeMeasureSpec(920,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));content.layout(0,0,920,content.getMeasuredHeight());return content;
     }
     @Before public void before()throws Exception{
         context=RuntimeEnvironment.getApplication();WorkService.busy=false;SessionBackup.active=false;SessionBackup.recoveryError="";RuntimeService.clearLogin();
@@ -58,6 +60,7 @@ public class PlaySetupTest {
         FilesEx.text(new File(client.root,"lsb-runtime.sha256"),ClientRuntime.RUNTIME_SHA);
         FilesEx.text(new File(client.home,"clients/state.properties"),"current="+ID+"\n");
         FilesEx.text(new File(client.home,"clients/"+ID+"/copy-complete"),"1\n");
+        FilesEx.text(new File(client.home,"clients/"+ID+"/source-inventory.json"),"{\"keyFiles\":[]}");
     }
     @Test public void invalidSavedLoginCannotReplaceWorkingCredentialsOrLeakThroughRuntimeExports()throws Exception{
         SavedLogin.save(context,"LOCALHOST","offline-account","offline-password");assertTrue(SavedLogin.matches(context,"localhost"));
@@ -188,7 +191,9 @@ public class PlaySetupTest {
             p.edit().putString("performance_trial",retired).putBoolean("proot_acceleration",false).putBoolean("dxvk_two_compilers",true).commit();
             org.robolectric.android.controller.ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).setup();
             try{
-                View content=advanced(c.get());assertEquals("none",p.getString("performance_trial",""));
+                assertEquals("none",p.getString("performance_trial",""));assertTrue(p.getBoolean("performance_trial_retired",false));
+                JSONObject request=new JSONObject();client.applyGraphicsSettings(request);assertEquals("none",request.getString("performance_trial"));assertFalse(request.getBoolean("proot_acceleration"));
+                View content=advanced(c.get());
                 assertEquals(0,((Spinner)described(content,"Performance trial")).getSelectedItemPosition());
                 assertFalse(p.getBoolean("proot_acceleration",true));assertTrue(p.getBoolean("dxvk_two_compilers",false));
                 assertNotNull(text(content,"Your saved trial has been retired and was reset to Baseline. Trials A, D and E did not establish a consistent improvement. Choose G, H or I separately for this comparison."));
