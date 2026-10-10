@@ -26,15 +26,15 @@ none is an accepted performance improvement yet.
 
 Use the Optimization trials selector in Graphics and compatibility settings.
 Only one choice is active; the three new choices preserve filtering and the
-two-worker baseline. Old A/D/E choices reset to Baseline with a notice; their historical results
-remain documented and they are not part of this comparison.
+two-worker baseline. Old A/D/E choices reset to Baseline with a notice; their
+historical results remain documented and they are not part of this comparison.
 
 | Choice | Single experimental change | Watch for |
 | --- | --- | --- |
 | Baseline | Accepted filtered profile | Reference FPS and recurring pauses |
-| G: non-tiler scheduling | `dxvk.tilerMode = False` | Smoother motion versus increased GPU work or heat |
-| H: smaller FEX translation units | `FEX_MULTIBLOCK = 0` | Shorter first-traversal pauses versus lower sustained FPS |
-| I: immediate presentation | `d3d9.presentInterval = 0` | Better pacing versus tearing or increased power use; possible no change |
+| G · Render-pass heuristics | `dxvk.tilerMode = False` | Smoother motion versus increased GPU work or heat |
+| H · Shorter compilation units | `FEX_MULTIBLOCK = 0` | Shorter first-traversal pauses versus lower sustained FPS |
+| I · Remove driver VSync wait | `d3d9.presentInterval = 0` | Better pacing versus tearing or increased power use; possible no change |
 
 1. Run Baseline, then G, H and I independently. Stop the client before changing
    the selection and relaunch the same character each time. Keep the server
@@ -59,9 +59,15 @@ disabling the host syscall filter.
 
 ## Validation status
 
-Local test, CI and final APK identity results are pending and will be recorded
-with the delivered candidate. Synthetic correctness checks do not establish a
-Thor FPS gain. See [device evidence and trial rationale](thor-performance-trials-075.md).
+The qualified Android verify/build passes 213 runtime contracts, 180 Android
+tests and 138 server tests. The original-signed APK matches all 74 qualified CI
+payload entries and retains the existing signing certificate. The focused
+ARM64 push and PR gates pass all five independent filtered gameplay-fixture launches
+(Baseline twice, then G/H/I), including 720 independent child texture pixels.
+Broader FEX, Box64 and PlayOnline checks remain pending and are recorded alongside known
+legacy trace failures. These correctness checks do not establish a Thor
+FPS gain. See [qualification](QUALIFICATION-0.7.5.md) and
+[device evidence and trial rationale](thor-performance-trials-075.md).
 
 Raw GitHub Actions APKs use disposable signing. Use the separately delivered
 original-signed APK for an in-place update.

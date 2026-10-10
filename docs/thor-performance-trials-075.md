@@ -118,8 +118,9 @@ The accepted FEX precision and CPU-feature behavior, DXVK 2.7.1, Turnip driver,
 two compiler workers, host filter receipts, shared-memory transport, resolution,
 game frame cap and shader caches are preserved. G/H/I are mutually exclusive.
 Old A/D/E selector choices reset to Baseline with a notice; their historical
-runtime paths remain readable and are not combined with these new trials. Retired B/C and the unsuccessful past
-system-memory/staged-buffer experiments remain retired.
+runtime paths remain readable and are not combined with these new trials.
+Retired B/C and the unsuccessful past system-memory/staged-buffer experiments
+remain retired.
 
 Startup validation uses the requested profile from the beginning, including
 the filter and two workers, and requires finite draw/presentation and pixel
@@ -144,6 +145,24 @@ and these candidates do not lower texture quality or rendering resolution.
 
 ## Validation status
 
-Implementation qualification, exact-source CI results and original-signed APK
-identity are pending. They will be added with the delivered candidate; no
-synthetic test establishes an Adreno or real-client FPS improvement.
+The Android verify/build passes 213 runtime contracts, 180 Android tests and
+138 server tests at `cc58aa42ebf3a81d0cd11127275fa0e4b5ca7d16`, run
+`38018524834`, job `114114224212`. The original-signed 0.7.5/code 79 APK matches
+all 74 qualified CI payload entries. Current functional source
+`d9f587f7a07ae8e48d0e91a565429a2368d7646e` changes only a synthetic short-JIT
+child-receipt regex after that Android build; the APK inputs remain unchanged.
+The focused ARM64 push gate passes all five independent host-filtered launches
+at that functional source: Baseline twice, then G/H/I, with 720 independent
+synthetic child texture pixels and all strict setting/worker/version/shutdown
+assertions. Push run `38019029060`, job `114116210327`, produces evidence
+artifact `11657825320`, ZIP SHA-256
+`941c647b3602f0c5c5268deca185d3b0d85908457357bc1bc4f02831bb50795f`.
+The parallel focused PR gate also passes: run `38019032575`, job
+`114116238611`. Independent evidence inspection confirms five distinct filtered
+sessions, all 720 child pixels and 7,560 draws, the three trials' 384 startup
+probe pixels, exact inherited trial settings and clean exit/shutdown. Broader
+FEX/Box64/PlayOnline jobs remain pending; the latest push server-deployment job
+`114115681868` passes. Historical legacy trace
+failures are recorded separately. See
+[exact qualification and APK identity](QUALIFICATION-0.7.5.md). No synthetic
+test establishes an Adreno or real-client FPS improvement.
