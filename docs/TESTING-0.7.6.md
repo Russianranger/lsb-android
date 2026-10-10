@@ -4,7 +4,8 @@ The four 0.7.5 phone runs show no meaningful winner among G/H/I. Baseline
 remains the working default, with actual syscall filtering and two compiler
 workers. Version 0.7.6 tests three different variables: J samples the existing
 display faster, K changes its sampling schedule, and L limits the render queue.
-No device FPS improvement is established for these new trials.
+This is an opt-in device test build with mixed CI qualification. No FPS or
+stability improvement is established for these new trials.
 
 ## Install and keep the working settings
 
@@ -62,16 +63,49 @@ trial activation. If an actual native frame/socket/Surface error would switch
 J/K to the alternate display path, the selected trial stops instead; export
 the failure and return to Baseline. Normal pause, resume, rotation, clean game
 exit and Stop remain supported; normal helper closure during exit/Stop is not
-reported as a trial failure. The experiments
-do not reduce resolution or visual quality, replace the translator/driver,
+reported as a trial failure. The experiments do not reduce resolution or
+visual quality, replace the translator/driver,
 unlock the game's cap or change FEX precision/memory ordering.
 
 ## Qualification status
 
-Implementation tests, real ARM64 integration, original-signed APK identity and
-final artifact evidence are pending. Their results will be recorded before
-delivery. Neither synthetic correctness checks nor a successful startup can
-establish an Adreno or real FFXI FPS gain. See
+Push and PR verify/build jobs pass **217 runtime, 138 server and 187 Android
+tests** at corrected functional source `ea16761d9f3af582c467d34c308d1f850b64aeef`:
+push run `38025981142` and PR run `38025983219`. Core/import, strict native
+Surface/pacing and the concrete late-request regression checks also pass. The
+original-signed 0.7.6/code 80 APK matches all 74 qualified CI payload entries;
+its original certificate, v2/v3 signatures, 16 KiB alignment and ZIP integrity
+pass. Wide J and narrow L launcher previews were checked for readability.
+
+Focused ARM64 qualification is **mixed**. Corrected PR job `114137528058` in
+run `38025983219` passes all seven filtered native arms and five fresh
+Baseline/Baseline/J/K/L sessions: 720 child pixels, 7,560 draws, 50 native
+requests, privacy checks and clean exits. Corrected push job `114137396082` in
+run `38025981142` passes the seven native arms, but blocks its first Baseline
+launch when warmup Present 2 stalls after Presents 0 and 1 return. The unchanged
+45-second production wait rejects launch; no gameplay cycles are qualified
+by that push. Baseline's relative-60-Hz consumer had already completed its ten
+requests and K was inactive. Review finds no source-level link from the new
+choices to the hang, but its cause remains unestablished. This is not evidence
+of harmlessness, repeatability or a complete green workflow.
+
+Fresh PR broad FEX job `114137528126` fails the modern-Mesa, unfiltered
+DXVK 2.7.1 observed-D3D8 startup trace in its second Turnip cycle, after the
+normal 128-pixel startup check and first cycle pass. Its dedicated
+actual-filtered software gate passes; the later compatibility stage does not
+run. At 05:18 UTC, five corrected-head broad jobs remain pending: push
+Box64/FEX/PlayOnline and PR Box64/PlayOnline. Those outcomes are not replaced
+by earlier-source passes.
+
+The earlier `2fc979d` build is superseded: PR job `114135830180` in run
+`38025471152` exposed a real K late-request scheduling defect through its
+unchanged idle-response assertion. The corrected source now keeps immediate
+service only for fresh connections and waits for the first future phase on
+later late requests. Use the verified replacement APK for opt-in device
+testing with Baseline default. No deadline or assertion is weakened and no
+unchanged rerun is used to conceal either failure.
+Neither synthetic correctness checks nor a successful startup can establish
+an Adreno or real FFXI FPS gain. See
 [trial rationale](thor-performance-trials-076.md) and
 [completed 0.7.5 results](thor-trial-results-075.md).
 
