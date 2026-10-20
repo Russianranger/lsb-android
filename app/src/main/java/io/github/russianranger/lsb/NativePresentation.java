@@ -20,12 +20,25 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
     private volatile Thread worker;
     private Thread lastWorker;
     private volatile boolean closed;
+    private volatile int frameRateHint;
     NativePresentation(Context context,File path,File pixelsPath,NativePerformance.Stream reports,Events events){
         super(context);this.path=path;this.pixelsPath=pixelsPath;this.reports=reports;this.events=events;
         getHolder().addCallback(this);
     }
     private static native int frame(Surface surface,int fd,ByteBuffer pixels,long[] measures);
-    @Override public void surfaceCreated(SurfaceHolder holder){start(holder.getSurface());}
+    /** Display refresh vote in frames per second (the configured cap); 0 leaves SurfaceFlinger's own choice. Call before the Surface exists. */
+    void frameRate(int fps){frameRateHint=fps;}
+    // Game content arrives at an irregular 15-60 posts/s. Without a vote, SurfaceFlinger's
+    // layer-history heuristic may move a variable-refresh panel to a lower mode mid-play.
+    // Only a seamless switch is allowed, so the vote never blanks the screen.
+    private static void voteFrameRate(Surface surface,int fps){
+        if(fps<=0||android.os.Build.VERSION.SDK_INT<30||!surface.isValid())return;
+        try{
+            if(android.os.Build.VERSION.SDK_INT>=31)surface.setFrameRate(fps,Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS);
+            else surface.setFrameRate(fps,Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+        }catch(RuntimeException ignored){} // A hint only; presentation never depends on it.
+    }
+    @Override public void surfaceCreated(SurfaceHolder holder){voteFrameRate(holder.getSurface(),frameRateHint);start(holder.getSurface());}
     @Override public void surfaceChanged(SurfaceHolder holder,int format,int w,int h){}
     @Override public void surfaceDestroyed(SurfaceHolder holder){stopWorker();}
     private synchronized void start(Surface surface){
@@ -37,6 +50,9 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
             if(worker!=Thread.currentThread()||closed)return;
             if(old!=null&&old.isAlive()){Thread waiting=Thread.currentThread();post(()->{if(worker==waiting&&!closed)events.failed("Previous Surface reader did not stop");});return;}
             String failureReason=null;stats.resume();
+            // The worker does about 2 ms of work per frame but competes with the translated
+            // game's busy threads for cores; a late wake-up delays every later frame.
+            try{android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY);}catch(RuntimeException ignored){}
             try{
                 System.loadLibrary("lsb-presentation");
                 for(int retry=0;(!path.exists()||!pixelsPath.exists())&&retry<100;retry++){
@@ -48,7 +64,9 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
                     if(local.getPeerCredentials().getUid()!=android.os.Process.myUid())throw new IOException("Native display owner mismatch");
                     try(ParcelFileDescriptor fd=ParcelFileDescriptor.dup(local.getFileDescriptor());FileInputStream backing=new FileInputStream(pixelsPath)){
                         if(backing.getChannel().size()!=CAPACITY)throw new IOException("Invalid native display buffer size");
-                        ByteBuffer pixels=backing.getChannel().map(FileChannel.MapMode.READ_ONLY,0,CAPACITY);long[] times=new long[9];
+                        ByteBuffer pixels=backing.getChannel().map(FileChannel.MapMode.READ_ONLY,0,CAPACITY);
+                        // [0..8] per-frame results; [9],[10] buffer size already applied to this Surface (native cache).
+                        long[] times=new long[11];
                         long lastReport=System.nanoTime();
                         while(worker==Thread.currentThread()&&!closed&&events.current()&&surface.isValid()){
                             long begin=System.nanoTime();

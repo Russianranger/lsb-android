@@ -13,14 +13,23 @@ JNIEXPORT jint JNICALL Java_io_github_russianranger_lsb_NativePresentation_frame
     (void)cls;uint32_t header[8];unsigned char request=1;uint64_t start=now_ns();
     if(send(fd,&request,1,MSG_NOSIGNAL)!=1||receive(fd,header,sizeof(header)))return -1;
     for(int i=0;i<8;i++)header[i]=ntohl(header[i]);
-    if(!lsb_frame_valid(header)||(*env)->GetArrayLength(env,measures)<9)return -2;
+    /* measures[0..8] are outputs; [9],[10] hold the buffer size already applied to this Surface. */
+    if(!lsb_frame_valid(header)||(*env)->GetArrayLength(env,measures)<11)return -2;
     if(header[7]&2)return 1; /* Retain the last Surface buffer; no pixel read/copy/post. */
     void *pixels=(*env)->GetDirectBufferAddress(env,storage);jlong capacity=(*env)->GetDirectBufferCapacity(env,storage);
     if(!pixels||capacity<LSB_MAX_PIXELS*4)return -3;
     atomic_thread_fence(memory_order_acquire);
     uint64_t received=now_ns();ANativeWindow *window=ANativeWindow_fromSurface(env,surface);if(!window)return -4;
     int error=0;
-    if(ANativeWindow_getWidth(window)!=(int32_t)header[1]||ANativeWindow_getHeight(window)!=(int32_t)header[2]||ANativeWindow_getFormat(window)!=WINDOW_FORMAT_RGBA_8888)error=ANativeWindow_setBuffersGeometry(window,(int32_t)header[1],(int32_t)header[2],WINDOW_FORMAT_RGBA_8888);
+    /* ANativeWindow_getWidth/getHeight are answered by the BufferQueue producer over Binder
+     * and report its default size, which follows the view rather than the frame. Apply the
+     * geometry only when the frame size changes; the Java worker owns one measures array per
+     * Surface, so a recreated Surface starts with no applied size and is configured again. */
+    jlong applied[2];(*env)->GetLongArrayRegion(env,measures,9,2,applied);
+    if(applied[0]!=(jlong)header[1]||applied[1]!=(jlong)header[2]){
+        error=ANativeWindow_setBuffersGeometry(window,(int32_t)header[1],(int32_t)header[2],WINDOW_FORMAT_RGBA_8888);
+        if(!error){jlong now[2]={(jlong)header[1],(jlong)header[2]};(*env)->SetLongArrayRegion(env,measures,9,2,now);}
+    }
     ANativeWindow_Buffer buffer;uint64_t locking=now_ns();
     if(!error)error=ANativeWindow_lock(window,&buffer,NULL);
     uint64_t locked=now_ns(),copied=locked,posted=locked;
