@@ -1,3 +1,135 @@
+# Presentation-pacing preview 0.7.7 (2026-10-27)
+
+The standard update remains `io.github.russianranger.lsb`, now **0.7.7 / code
+81**. This advances past the separate 0.7.6/code 80 preview without including
+its experiments. The implementation is `c52c21d` on Beta 0.7 `f6f851d`; follow-ups
+change release metadata, documentation and build verification only. The three
+scaffolding commits `082d2a5`, `281b8bb` and `1e3f0aa` are not ancestors of this
+branch. No APK or private key is present in the branch tree or new history.
+
+## Original-signed device build
+
+`LSB-Android-0.7.7.apk`: **18,581,208 bytes**, SHA-256
+`5c598762a78109bdf1214e951496c4dbb42242e9d066c0b8eb98db8f9e2e64aa`.
+The original `lsb-preview` key was recovered from the separately saved
+`LSB-Android-preview-signing.zip`, kept outside the repository, and checked
+before building. Certificate SHA-256:
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+This also matches the actual published Beta 0.7 APK, independently verified.
+APK v2 and v3 signatures, ZIP CRC/integrity, package/version, minSdk 26,
+targetSdk 35 and `zipalign -c -P 16 -v 4` all pass. The presentation ELF LOAD
+segments have 0x4000 alignment.
+
+Built through the documented direct route with JDK 17, SDK platform 35,
+build-tools 35.0.0, NDK **27.2.12479018**, Ubuntu 24.04 MinGW GCC 13.2 and
+Clang 18.1.3:
+
+```sh
+python3 scripts/build-presentation.py android --ndk "$ANDROID_HOME/ndk/27.2.12479018"
+python3 scripts/build-apk.py \
+  --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
+  --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
+  --keystore /private/path/lsb-android-preview.jks
+```
+
+The unchanged ARM64 guest presentation outputs were recovered from the
+SHA-256-verified c52c21d CI APK. Everything else produced by the direct build
+was compiled or fetched through the existing checksum-pinned scripts. The
+build used `/home/runner/work/lsb-android/lsb-android`, matching GitHub's Linux
+checkout: MinGW derives the default image bases of `probe-com.dll` and
+`startup-trace.dll` from their output paths. Matching that path reproduces the
+shipped helper bytes without changing the helper sources or replacing build
+outputs afterward. `prepare-runtime.py` now emits bundle metadata in the
+existing Beta 0.7 key order; the values and component hashes are unchanged.
+
+## Exact payload comparisons
+
+The published Beta 0.7 reference is **18,581,208 bytes**, SHA-256
+`8ab58ee5dd504a5cb63c106bab86a3841b33cb4821ef2faa4cf50c591101dbaa`.
+Both APKs contain the same **74 non-signature entries**. Exactly **71 match
+byte-for-byte**; only these three differ:
+
+| Entry | Difference |
+| --- | --- |
+| `AndroidManifest.xml` | Only versionName 0.7.0 -> 0.7.7 and versionCode 74 -> 81; decoded XML otherwise identical. |
+| `classes.dex` | c52c21d Surface priority/refresh vote and cap plumbing. |
+| `lib/arm64-v8a/liblsb-presentation.so` | c52c21d cached Surface geometry. |
+
+All runtime, driver, DXVK, FEX/Box64-related assets, server assets, guest
+presentation helpers and Windows launcher/helper bytes match Beta 0.7. No
+client-data or imported-loader change, runtime migration or database migration
+is included.
+
+The supplied c52c21d CI APK has SHA-256
+`7f4dd2c1cab1d86dea89f06da626d46315fd88a32f2c5a37993cce4a3273b5a5`.
+**72/74 entries match it exactly**, including `classes.dex` and the rebuilt
+presentation library. The two differences are the required manifest version
+bump and `assets/runtime/bundle.json` key order. Parsed bundle metadata is
+identical; preserving Beta 0.7's bytes resolves the old CI artifact's ordering
+drift. Thus a literal 74/74 match to that older version is not claimed.
+
+**Final-version CI parity: 74/74.** At `a274acc01e98e3f0cdc6e5d2bffe0e3c932208e5`,
+[PR run 40627340875](https://github.com/Russianranger/lsb-android/actions/runs/40627340875)
+produced `runtime-device-build` artifact **12789199653**. Its reported ZIP
+SHA-256 is `fc8acc0a46c1abe5ca73dd62509e4cb8bc67d413b0e63ef39a1167592959777d`;
+CI APK SHA-256 is
+`6539321bed1a0bb73019967ea84362a2d85ddb92a5f972c0ffae653f72e4de25`.
+The successful verification job **122615430549** records the complete entry
+inventory as `APK_PAYLOAD_SHA256`. All **74 names and SHA-256 values** were
+compared programmatically with the independently built original-signed APK:
+exact equality, with no exclusions beyond signature metadata. CI also rejects
+duplicate ZIP entries and checks CRC integrity. Artifact download was unavailable
+in this environment; parity was verified using the CI-produced per-entry hashes
+retrieved from the authenticated job log, not a direct download of that final
+artifact ZIP. The workflow now retains this audit step for future deliveries.
+
+## Automated checks and device boundary
+
+Local core/import/recovery checks, 43 runtime archive regressions, native Surface
+protocol/pixels, draw-stat checks, 1,174 version-codec checks, **198 runtime
+unit tests** and **138 server unit tests** pass. Fresh CI at `e278b902` passes
+API 35 compilation/dex/package checks and **146 Android tests**, including
+Activity/display/controller lifecycle, plus native Windows launcher and real
+ARM64 server deployment/recovery in
+[PR run 40626546410](https://github.com/Russianranger/lsb-android/actions/runs/40626546410).
+The local Android test runner could not resolve Maven dependencies through its
+proxy; the Android result cited here is the successful CI execution.
+
+The handoff described [c52c21d run 40611076585](https://github.com/Russianranger/lsb-android/actions/runs/40611076585)
+as fully passed. Reinspection shows its Windows launcher job failed the
+PlayOnline heartbeat/normal-exit assertion; its other six qualification jobs
+passed. The new Windows job **122613779034** passes the unchanged suite with
+identical packaged Windows helpers. No deadline or runtime changes were made
+to obtain that result.
+
+Fresh qualification remains **mixed**, not entirely green. Presentation,
+Android verification and Windows launcher jobs pass in both final-version runs;
+ARM64 server deployment passes in run 40626546410. Observed additional failures:
+
+| Job | Observed failure |
+| --- | --- |
+| FEX `122613779011`, PR run `40626546410` | Software-renderer DXVK 2.7.1 draw/presentation check timed out; fallback selected 2.5.3, failing the expected-DXVK assertion in the graphics-tuning fixture. Native Surface capture, pixels, audio/input and HUD checks had passed. |
+| Box64 `122613907437`, push run `40626514733` | Compressed-texture/UP-submission fixture timed out under llvmpipe before probe readiness. |
+
+Other fresh PlayOnline/FEX/Box64 jobs were still running at this packaging
+checkpoint. These are actual unresolved automated results, not evidence of a
+Thor regression or a proven harmless flake. The same runtime/helper bytes passed
+the prior c52c21d jobs. No production runtime, fixture deadline or gate was
+changed to make the runs pass. Later statuses remain visible on the linked runs.
+The documentation-only delivery commit does not alter the tested APK inputs.
+
+Thor installation, Surface recreation and same-route pacing comparison remain
+pending. Host/CI success does not establish improved gameplay FPS, reduced
+Surface-post gaps or a physical panel-mode change. Follow
+[TESTING-0.7.7.md](TESTING-0.7.7.md): stop client/server and install the
+[original-signed prerelease](https://github.com/Russianranger/lsb-android/releases/tag/v0.7.7-presentation-pacing)
+in place; do not uninstall, clear storage, reimport, reprepare, replace the
+database or redeploy the server. [PR #7](https://github.com/Russianranger/lsb-android/pull/7)
+is left for the owner to merge. Main and the existing Beta 0.7 release remain
+unchanged.
+
+---
+
 # Server localhost resolution 0.5.33
 
 The .32 phone log confirms all four imported server dependencies resolve, then
