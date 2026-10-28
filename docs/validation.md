@@ -1,3 +1,96 @@
+# Capture-overlap preview 0.7.8 (2026-10-28)
+
+Standard package `io.github.russianranger.lsb`, version **0.7.8 / code 82**.
+Implementation commit `f8149d65522292a8a2e9e19f655d4aafef43a64f` follows the
+original 0.7.7 presentation changes. The next capture request is sent only after
+the current pixels have been copied into Android's private Surface buffer, but
+before `ANativeWindow_unlockAndPost`. At most one request is outstanding. The
+default-on **Overlap native capture and presentation** setting under Advanced
+settings / Proven fixes provides the old serial path after stop/relaunch.
+Format 3 diagnostics add actual display mode/refresh observations, request
+wait/age/overlap measurements, unchanged-response timing and bounded gap events
+above 50 ms. No vsync scheduler or guest protocol change is included.
+
+The October 28 0.7.7 support session is an observational reference: 4,657 Surface
+posts over 165.237 seconds (28.184 posts/s), average post-call time 4.914 ms,
+345 gaps above 50 ms and 21 above 100 ms. The longer gaps also contained repeated
+unchanged responses. Overlap targets a measurable serialization opportunity;
+it does not establish that submission caused every hitch or promise locked
+30 FPS. See [presentation-pacing.md](presentation-pacing.md) for the analysis.
+
+## Original-signed APK and exact payload
+
+`LSB-Android-0.7.8.apk`: **18,585,304 bytes**, SHA-256
+`48adb3d0a9c0eac7f44b526312fbb29b647f0b12d7ff9a570b3468d244c9da3e`.
+The original `lsb-preview` key from the separately saved signing checkpoint was
+kept outside Git. Certificate SHA-256 is exactly
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+APK v2/v3 verification, ZIP CRC/integrity with no duplicate entry names,
+package/version/minSdk 26/targetSdk 35 and `zipalign -c -P 16 -v 4` pass.
+Presentation ELF LOAD segments remain aligned to 0x4000. No APK or signing key
+is committed; the three earlier scaffolding commits remain outside the branch
+ancestry.
+
+Built through `scripts/build-presentation.py android` with NDK
+**27.2.12479018**, followed by `scripts/build-apk.py --android-jar` (API 35),
+`--build-tools` (35.0.0) and `--keystore`. The JDK 17, MinGW GCC 13.2,
+Clang 18.1.3 and GitHub checkout path match the 0.7.7 direct build below.
+Unchanged ARM64 guest outputs were recovered from the SHA-256-verified released
+0.7.7 APK. Other outputs were compiled or fetched by the existing checksum-pinned
+build scripts. No built APK entries were swapped afterward.
+
+Against the released 0.7.7 APK (SHA-256
+`5c598762a78109bdf1214e951496c4dbb42242e9d066c0b8eb98db8f9e2e64aa`),
+the inventory is still **74 non-signature entries**, of which **71 are
+byte-for-byte identical**. Only `AndroidManifest.xml` (version), `classes.dex`
+(Android presentation/settings/diagnostics) and
+`lib/arm64-v8a/liblsb-presentation.so` (request overlap/timing) differ.
+Those same 71 entries were verified identical to Beta 0.7 in the 0.7.7 audit
+below. All runtime, driver, DXVK, FEX/Box64, guest/Windows helper and server
+payloads therefore remain unchanged from Beta 0.7. There is no client-data,
+loader, runtime or database migration.
+
+**CI parity: 74/74.** Successful verification job **123170556549** in
+[PR run 40789357903](https://github.com/Russianranger/lsb-android/actions/runs/40789357903)
+at `f8149d6` produced `runtime-device-build` artifact **12860019522**.
+Its disposable-signed CI APK SHA-256 is
+`89348fe2632550492b2d7e27f8c851fa39d1c5d20c1c7ea5dcae8b5a96838b9f`.
+All entry names and SHA-256 values from the authenticated job log's
+`APK_PAYLOAD_SHA256` record were compared programmatically with the independent
+original-signed device APK: exact equality, excluding only signature metadata.
+This uses the CI-produced per-entry audit, not a direct artifact ZIP download.
+
+## Checks and remaining device validation
+
+Local and CI core/import/recovery checks and the new host JNI pipeline regression
+pass. The regression compiles the actual Android native implementation with a
+test window, uses a real socket pair and overwrites shared pixels while the
+private-buffer post is blocked. It verifies ownership, early request ordering,
+serial fallback, unchanged frames, resize caching, fragmented/invalid headers,
+reconnect and error cleanup, including releasing the window after a failed
+prefetch send. It is not a physical Android graphics test.
+
+All **148 Android tests** pass locally and in CI, including the new format 3
+timing/gap/mode snapshots and the existing bounded-history, display/controller
+lifecycle tests. Local **198 runtime** and **138 server unit tests** pass.
+CI's guest presentation and API 35 compile/dex/package jobs pass. At this
+packaging checkpoint, the broader ARM64 server, Box64/FEX, Windows launcher and
+PlayOnline jobs are still running; full integration qualification is not
+claimed. Their later results remain visible on the linked run. No runtime
+deadline or qualification gate was changed. This documentation-only delivery
+follow-up does not alter the tested APK inputs.
+
+Thor installation, Surface recreation and actual pacing benefit still need a
+device result. Follow [TESTING-0.7.8.md](TESTING-0.7.8.md): install the
+[original-signed prerelease](https://github.com/Russianranger/lsb-android/releases/tag/v0.7.8-presentation-overlap)
+in place, keep the same 1280x720 / Native Surface / 60 Hz / startup capture off
+settings, play one 3-5 minute route and export Diagnostics. Do not uninstall,
+clear storage or reprepare/redeploy existing data. The optional overlap-off
+comparison requires only stop/relaunch. [PR #7](https://github.com/Russianranger/lsb-android/pull/7)
+remains open for the owner to merge; main and previous releases are unchanged.
+
+---
+
 # Presentation-pacing preview 0.7.7 (2026-10-27)
 
 The standard update remains `io.github.russianranger.lsb`, now **0.7.7 / code
