@@ -8,8 +8,11 @@ the other application's runtime or input stack.
 
 Pixels are published in a fixed-size owner-only shared file. A 32-byte network-order
 header is the entire socket response. One outstanding request grants the producer
-write ownership; the consumer requests again only after copying/posting the
-previous frame. Release/acquire fences bracket publication/consumption. Bounds,
+write ownership. With overlap enabled, Android requests again after copying all
+pixels into its private Surface buffer and before posting it. The serial fallback
+requests after posting. An unchanged response can be followed immediately by the
+next request. Neither path permits two outstanding requests or reads shared pixels
+after returning ownership. Release/acquire fences bracket publication/consumption. Bounds,
 format and file size are checked before the native copy. Neither passwords nor
 game data paths occur in bridge logs. No frame images are saved in diagnostics.
 

@@ -140,7 +140,7 @@ public final class RuntimeActivity extends Activity {
                 socket=s;connection=c;displaySession=display;ui.post(()->{
                     if(!viewing||generation!=connectionGeneration)return;
                     displayError="";
-                    if(nativeRequested)openNative(rt,id,c,generation);
+                    if(nativeRequested)openNative(rt,id,c,generation,cap);
                     else presentationStatus="Standard display";
                 });
                 while(viewing&&generation==connectionGeneration)c.readUpdate();
@@ -148,13 +148,15 @@ public final class RuntimeActivity extends Activity {
             finally{if(display!=null){recordFrames(display);display.connection.close();}try{if(s!=null)s.close();}catch(Exception ignored){}if(generation==connectionGeneration){connection=null;socket=null;displaySession=null;}}
         },"lsb-display").start();
     }
-    private void openNative(ClientRuntime rt,String id,RfbConnection c,int generation){
+    private void openNative(ClientRuntime rt,String id,RfbConnection c,int generation,int cap){
         closeNative();screen.nativeMode=true;
         nativeDisplay=new NativePresentation(this,rt.nativeFrameSocket(),rt.nativeFramePixels(),rt.nativeFrameReports(id),new NativePresentation.Events(){
             public boolean current(){return generation==connectionGeneration&&java.util.Objects.equals(id,rt.sessionKey());}
             public void size(int w,int h){if(viewing&&generation==connectionGeneration){screen.frameSize(w,h);fitNative();}}
             public void failed(String reason){fallbackNative(c,generation,reason);}
         });
+        nativeDisplay.frameRate(cap);
+        nativeDisplay.overlap(getSharedPreferences("runtime",0).getBoolean("native_capture_overlap",true));
         layout.addView(nativeDisplay,0,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
         presentationStatus="Native Surface · shared memory";fitNative();
     }
