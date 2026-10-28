@@ -42,7 +42,7 @@ final class NativePerformance {
             window=sample.json().put("writer_queue_wait_ms",(begin-queued)/1e6)
                 .put("report_started_at_seconds",(begin-sample.start)/1e9);
             stream.history.addLast(window);while(stream.history.size()>LIMIT)stream.history.removeFirst();stream.windows++;
-            JSONObject report=new JSONObject().put("format",2).put("session_id",stream.id).put("connection_id",stream.token)
+            JSONObject report=new JSONObject().put("format",3).put("session_id",stream.id).put("connection_id",stream.token)
                 .put("presentation","shared_native_surface")
                 .put("measurement","Capture and Surface submission, not game FPS. Posted gaps may include an unchanged scene; inspect unchanged_between_posts.")
                 .put("window_limit",LIMIT).put("windows_recorded",stream.windows).put("dropped_windows",dropped.get())

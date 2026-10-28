@@ -3,6 +3,7 @@ package io.github.russianranger.lsb;
 import android.content.Context;
 import android.net.*;
 import android.os.ParcelFileDescriptor;
+import android.hardware.display.DisplayManager;
 import android.view.*;
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -21,11 +22,37 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
     private Thread lastWorker;
     private volatile boolean closed;
     private volatile int frameRateHint;
+    private volatile boolean overlap=true;
+    private volatile DisplayInfo displayInfo=new DisplayInfo(0,0);
+    private DisplayManager displayManager;
+    private final DisplayManager.DisplayListener displayListener=new DisplayManager.DisplayListener(){
+        public void onDisplayAdded(int id){updateDisplay();}
+        public void onDisplayRemoved(int id){updateDisplay();}
+        public void onDisplayChanged(int id){updateDisplay();}
+    };
+    private static final class DisplayInfo {
+        final int mode;final float hz;
+        DisplayInfo(int mode,float hz){this.mode=mode;this.hz=hz;}
+    }
     NativePresentation(Context context,File path,File pixelsPath,NativePerformance.Stream reports,Events events){
         super(context);this.path=path;this.pixelsPath=pixelsPath;this.reports=reports;this.events=events;
         getHolder().addCallback(this);
     }
-    private static native int frame(Surface surface,int fd,ByteBuffer pixels,long[] measures);
+    private static native int frame(Surface surface,int fd,ByteBuffer pixels,long[] measures,boolean overlap);
+    void overlap(boolean enabled){overlap=enabled;}
+    private void updateDisplay(){
+        Display display=getDisplay();
+        displayInfo=display==null?new DisplayInfo(0,0):new DisplayInfo(display.getMode().getModeId(),display.getRefreshRate());
+    }
+    @Override protected void onAttachedToWindow(){
+        super.onAttachedToWindow();displayManager=(DisplayManager)getContext().getSystemService(Context.DISPLAY_SERVICE);
+        if(displayManager!=null)displayManager.registerDisplayListener(displayListener,new android.os.Handler(android.os.Looper.getMainLooper()));
+        updateDisplay();
+    }
+    @Override protected void onDetachedFromWindow(){
+        if(displayManager!=null){displayManager.unregisterDisplayListener(displayListener);displayManager=null;}
+        super.onDetachedFromWindow();
+    }
     /** Display refresh vote in frames per second (the configured cap); 0 leaves SurfaceFlinger's own choice. Call before the Surface exists. */
     void frameRate(int fps){frameRateHint=fps;}
     // Game content arrives at an irregular 15-60 posts/s. Without a vote, SurfaceFlinger's
@@ -38,12 +65,13 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
             else surface.setFrameRate(fps,Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
         }catch(RuntimeException ignored){} // A hint only; presentation never depends on it.
     }
-    @Override public void surfaceCreated(SurfaceHolder holder){voteFrameRate(holder.getSurface(),frameRateHint);start(holder.getSurface());}
+    @Override public void surfaceCreated(SurfaceHolder holder){voteFrameRate(holder.getSurface(),frameRateHint);updateDisplay();start(holder.getSurface());}
     @Override public void surfaceChanged(SurfaceHolder holder,int format,int w,int h){}
     @Override public void surfaceDestroyed(SurfaceHolder holder){stopWorker();}
     private synchronized void start(Surface surface){
         if(closed)return;
         Thread old=lastWorker;
+        final boolean overlapRequests=overlap;
         Thread next=new Thread(()->{
             // Never run two frame readers when Android recreates the Surface.
             if(old!=null)try{old.join(5500);}catch(InterruptedException e){Thread.currentThread().interrupt();return;}
@@ -65,12 +93,13 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
                     try(ParcelFileDescriptor fd=ParcelFileDescriptor.dup(local.getFileDescriptor());FileInputStream backing=new FileInputStream(pixelsPath)){
                         if(backing.getChannel().size()!=CAPACITY)throw new IOException("Invalid native display buffer size");
                         ByteBuffer pixels=backing.getChannel().map(FileChannel.MapMode.READ_ONLY,0,CAPACITY);
-                        // [0..8] per-frame results; [9],[10] buffer size already applied to this Surface (native cache).
-                        long[] times=new long[11];
+                        // Results, geometry and one outstanding request belong to this socket/Surface only.
+                        long[] times=new long[15];
                         long lastReport=System.nanoTime();
                         while(worker==Thread.currentThread()&&!closed&&events.current()&&surface.isValid()){
                             long begin=System.nanoTime();
-                            int result=frame(surface,fd.getFd(),pixels,times);
+                            DisplayInfo display=displayInfo;stats.display(display.mode,display.hz,frameRateHint,overlapRequests);
+                            int result=frame(surface,fd.getFd(),pixels,times,overlapRequests);
                             long end=System.nanoTime();stats.frame(begin,end,result,times);
                             if(result==1){if(end-lastReport>5_000_000_000L){report(null,false);lastReport=System.nanoTime();}continue;}
                             if(result!=0)throw new IOException("Native frame delivery failed ("+result+")");

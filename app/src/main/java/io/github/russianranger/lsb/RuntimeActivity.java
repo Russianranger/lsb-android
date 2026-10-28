@@ -156,6 +156,7 @@ public final class RuntimeActivity extends Activity {
             public void failed(String reason){fallbackNative(c,generation,reason);}
         });
         nativeDisplay.frameRate(cap);
+        nativeDisplay.overlap(getSharedPreferences("runtime",0).getBoolean("native_capture_overlap",true));
         layout.addView(nativeDisplay,0,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
         presentationStatus="Native Surface · shared memory";fitNative();
     }
