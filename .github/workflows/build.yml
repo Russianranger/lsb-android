@@ -76,6 +76,20 @@ jobs:
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
           "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.7.7.apk
+      - name: Record APK payload hashes for device signing verification
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, zipfile
+          from pathlib import Path
+          apk = Path('out/LSB-Android-0.7.7.apk')
+          with zipfile.ZipFile(apk) as z:
+              assert z.testzip() is None
+              names = z.namelist()
+              assert len(names) == len(set(names)), 'Duplicate APK entries'
+              payload = {n: hashlib.sha256(z.read(n)).hexdigest() for n in sorted(names) if not n.startswith('META-INF/')}
+          print('APK_FILE_SHA256=' + hashlib.sha256(apk.read_bytes()).hexdigest())
+          print('APK_PAYLOAD_SHA256=' + json.dumps(payload, sort_keys=True))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
