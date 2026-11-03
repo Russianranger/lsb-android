@@ -22,7 +22,7 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
     private Thread lastWorker;
     private volatile boolean closed;
     private volatile int frameRateHint;
-    private volatile boolean overlap=true;
+    private volatile boolean overlap=true,eventDriven=true;
     private volatile DisplayInfo displayInfo=new DisplayInfo(0,0);
     private DisplayManager displayManager;
     private final DisplayManager.DisplayListener displayListener=new DisplayManager.DisplayListener(){
@@ -38,8 +38,9 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
         super(context);this.path=path;this.pixelsPath=pixelsPath;this.reports=reports;this.events=events;
         getHolder().addCallback(this);
     }
-    private static native int frame(Surface surface,int fd,ByteBuffer pixels,long[] measures,boolean overlap);
+    private static native int frame(Surface surface,int fd,ByteBuffer pixels,long[] measures,boolean overlap,boolean eventDriven);
     void overlap(boolean enabled){overlap=enabled;}
+    void eventDriven(boolean enabled){eventDriven=enabled;}
     private void updateDisplay(){
         Display display=getDisplay();
         displayInfo=display==null?new DisplayInfo(0,0):new DisplayInfo(display.getMode().getModeId(),display.getRefreshRate());
@@ -71,7 +72,7 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
     private synchronized void start(Surface surface){
         if(closed)return;
         Thread old=lastWorker;
-        final boolean overlapRequests=overlap;
+        final boolean overlapRequests=overlap,eventCapture=eventDriven;
         Thread next=new Thread(()->{
             // Never run two frame readers when Android recreates the Surface.
             if(old!=null)try{old.join(5500);}catch(InterruptedException e){Thread.currentThread().interrupt();return;}
@@ -98,8 +99,8 @@ final class NativePresentation extends SurfaceView implements SurfaceHolder.Call
                         long lastReport=System.nanoTime();
                         while(worker==Thread.currentThread()&&!closed&&events.current()&&surface.isValid()){
                             long begin=System.nanoTime();
-                            DisplayInfo display=displayInfo;stats.display(display.mode,display.hz,frameRateHint,overlapRequests);
-                            int result=frame(surface,fd.getFd(),pixels,times,overlapRequests);
+                            DisplayInfo display=displayInfo;stats.display(display.mode,display.hz,frameRateHint,overlapRequests);stats.captureEvents(eventCapture);
+                            int result=frame(surface,fd.getFd(),pixels,times,overlapRequests,eventCapture);
                             long end=System.nanoTime();stats.frame(begin,end,result,times);
                             if(result==1){if(end-lastReport>5_000_000_000L){report(null,false);lastReport=System.nanoTime();}continue;}
                             if(result!=0)throw new IOException("Native frame delivery failed ("+result+")");

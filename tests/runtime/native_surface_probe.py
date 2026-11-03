@@ -6,6 +6,7 @@ Surface itself still needs device acceptance. Socket messages contain no pixels.
 import ctypes,json,mmap,os,socket,stat,struct,subprocess,time
 from pathlib import Path
 from native_metadata_probe import verify_metadata
+from native_event_probe import verify_event_wait
 
 def verify_native_surface(folder,display,x,d,window,gc):
     helper=Path('/presentation/x11-frame-bridge')
@@ -18,10 +19,10 @@ def verify_native_surface(folder,display,x,d,window,gc):
     x.XSetForeground.argtypes=[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_ulong]
     x.XFillRectangle.argtypes=[ctypes.c_void_p,ctypes.c_ulong,ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_uint,ctypes.c_uint]
     # XGetImage fallback is tested separately from the required MIT-SHM path.
-    for fps,no_shm,poll in ((30,False,False),(30,True,False),(60,False,False),(60,True,False),(60,False,True)):
+    for fps,no_shm,poll,event_wait in ((30,False,False,False),(30,True,False,False),(60,False,False,False),(60,True,False,False),(60,False,True,False),(30,False,False,True),(60,False,False,True),(60,True,False,True),(60,False,True,True)):
         sock=folder/'native.sock';pixels=folder/'framebuffer.bin'
         sock.unlink(missing_ok=True)
-        log=folder/(('native-xgetimage' if no_shm else 'native-shm')+('-60' if fps==60 else '')+('-poll' if poll else '')+'.log')
+        log=folder/(('native-xgetimage' if no_shm else 'native-shm')+('-60' if fps==60 else '')+('-poll' if poll else '')+('-events' if event_wait else '')+'.log')
         requests=0
         with log.open('w') as output:
             process=subprocess.Popen([str(helper),str(sock),str(pixels),str(fps)]+(['--no-shm'] if no_shm else [])+(['--poll-metadata'] if poll else []),env=dict(os.environ,DISPLAY=display),stdout=output,stderr=subprocess.STDOUT)
@@ -38,9 +39,10 @@ def verify_native_surface(folder,display,x,d,window,gc):
                     for reconnect in range(2):
                         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as client:
                             client.settimeout(5);client.connect(str(sock))
-                            def frame(size=(1280,720)):
+                            def frame(size=(1280,720),pending=False):
                                 nonlocal requests
-                                client.sendall(b'\x01');data=b''
+                                if not pending:client.sendall(b'\x02' if event_wait else b'\x01')
+                                data=b''
                                 while len(data)<32:
                                     part=client.recv(32-len(data));assert part,'Producer disconnected';data+=part
                                 h=struct.unpack('!8I',data)
@@ -85,6 +87,7 @@ def verify_native_surface(folder,display,x,d,window,gc):
                                 x.XSetForeground(d,gc,colour+n+1);x.XFillRectangle(d,window,gc,0,0,200,100);x.XSync(d,0)
                                 assert not frame()[7]&2
                             for _ in range(12):assert frame()[7]&2
+                            if event_wait and not poll:verify_event_wait(x,d,window,gc,client,frame,mapped,fps,colour+12)
                 assert 'cap='+str(fps) in log.read_text()
                 deadline=time.monotonic()+5
                 while True:
@@ -108,6 +111,11 @@ def verify_native_surface(folder,display,x,d,window,gc):
                 else:
                     assert 6<=counts['geometry_queries']<=10,counts # initial + two real resizes per connection
                     assert 0<counts['cursor_queries']<counts['captures']/2,counts
+                assert all(r['capture_request_policy']==('xdamage_wait' if event_wait else 'poll_ticks') for r in records)
+                if event_wait and not poll:
+                    assert sum(r['event_waits'] for r in records)>0,records
+                    assert sum(r['event_wakes'] for r in records)>0,records
+                    assert sum(r['idle_heartbeats'] for r in records)>0,records
                 print('PASS: native shared-file exact pixels, changed/idle/duplicate frames, ownership, reconnect, permissions and '+str(fps)+' Hz cap; '+('XGetImage' if no_shm else 'MIT-SHM'),flush=True)
                 print('PASS: live cursor position, shape, hotspot, transparency, clipping, RandR resize and metadata '+('poll' if poll else 'cache')+' '+json.dumps(counts),flush=True)
             finally:

@@ -131,4 +131,13 @@ public class NativePerformanceTest {
         end+=33_333_333;stats.frame(end-1,end,0,TIMES);
         assertEquals(1,stats.sample(end+1,null,false).json().getJSONObject("post_gap_histogram").getInt("gt_20_le_40ms"));
     }
+
+    @Test public void captureWakePolicySnapshotSurvivesComparisonSwitch()throws Exception {
+        NativeFrameStats stats=new NativeFrameStats(1);
+        stats.captureEvents(true);
+        NativeFrameStats.Sample events=stats.sample(2,null,false);
+        stats.captureEvents(false);
+        assertEquals("damage_events",events.json().getString("capture_wake_policy"));
+        assertEquals("fixed_polling",stats.sample(3,null,true).json().getString("capture_wake_policy"));
+    }
 }

@@ -157,6 +157,7 @@ public final class RuntimeActivity extends Activity {
         });
         nativeDisplay.frameRate(cap);
         nativeDisplay.overlap(getSharedPreferences("runtime",0).getBoolean("native_capture_overlap",true));
+        nativeDisplay.eventDriven(getSharedPreferences("runtime",0).getBoolean("native_capture_events",true));
         layout.addView(nativeDisplay,0,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
         presentationStatus="Native Surface · shared memory";fitNative();
     }

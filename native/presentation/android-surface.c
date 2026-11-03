@@ -12,19 +12,19 @@ static int receive(int fd,void *data,size_t size){char *p=data;while(size){ssize
 /* One request transfers ownership of the shared pixels to the producer. It may
  * overwrite them immediately. Never request again until the complete copy into
  * the private ANativeWindow buffer has finished; posting no longer reads them. */
-static int request_frame(JNIEnv *env,int fd,jlongArray measures){
-    unsigned char request=1;ssize_t sent;uint64_t begin=now_ns();
+static int request_frame(JNIEnv *env,int fd,jlongArray measures,jboolean event_driven){
+    unsigned char request=event_driven?2:1;ssize_t sent;uint64_t begin=now_ns();
     do{sent=send(fd,&request,1,MSG_NOSIGNAL);}while(sent<0&&errno==EINTR);
     if(sent!=1)return -1;
     jlong pending[2]={1,(jlong)begin};(*env)->SetLongArrayRegion(env,measures,11,2,pending);return 0;
 }
-JNIEXPORT jint JNICALL Java_io_github_russianranger_lsb_NativePresentation_frame(JNIEnv *env,jclass cls,jobject surface,jint fd,jobject storage,jlongArray measures,jboolean overlap){
+JNIEXPORT jint JNICALL Java_io_github_russianranger_lsb_NativePresentation_frame(JNIEnv *env,jclass cls,jobject surface,jint fd,jobject storage,jlongArray measures,jboolean overlap,jboolean event_driven){
     (void)cls;uint32_t header[8];uint64_t start=now_ns();
     /* [0..8] results, [9..10] geometry, [11..12] request state,
      * [13..14] response request age and time overlapped before this call. */
     if((*env)->GetArrayLength(env,measures)<15)return -2;
     jlong pending[2];(*env)->GetLongArrayRegion(env,measures,11,2,pending);
-    if(!pending[0]){if(request_frame(env,fd,measures))return -1;(*env)->GetLongArrayRegion(env,measures,11,2,pending);}
+    if(!pending[0]){if(request_frame(env,fd,measures,event_driven))return -1;(*env)->GetLongArrayRegion(env,measures,11,2,pending);}
     if(receive(fd,header,sizeof(header)))return -1;
     uint64_t received=now_ns();jlong consumed=0;
     (*env)->SetLongArrayRegion(env,measures,11,1,&consumed);
@@ -33,7 +33,7 @@ JNIEXPORT jint JNICALL Java_io_github_russianranger_lsb_NativePresentation_frame
     jlong wait=(jlong)(received-start),request_times[2]={(jlong)(received-(uint64_t)pending[1]),start>(uint64_t)pending[1]?(jlong)(start-(uint64_t)pending[1]):0};
     (*env)->SetLongArrayRegion(env,measures,3,1,&wait);
     (*env)->SetLongArrayRegion(env,measures,13,2,request_times);
-    if(header[7]&2){if(overlap&&request_frame(env,fd,measures))return -1;return 1;} /* No pixel access. */
+    if(header[7]&2){if(overlap&&request_frame(env,fd,measures,event_driven))return -1;return 1;} /* No pixel access. */
     void *pixels=(*env)->GetDirectBufferAddress(env,storage);jlong capacity=(*env)->GetDirectBufferCapacity(env,storage);
     if(!pixels||capacity<LSB_MAX_PIXELS*4)return -3;
     atomic_thread_fence(memory_order_acquire);
@@ -58,7 +58,7 @@ JNIEXPORT jint JNICALL Java_io_github_russianranger_lsb_NativePresentation_frame
         /* At most one outstanding request. The producer can prepare the next
          * frame while Android submits this private copy. Even a failed request
          * must unlock/release the window; the worker then closes the socket. */
-        if(!error&&overlap&&request_frame(env,fd,measures))error=-7;
+        if(!error&&overlap&&request_frame(env,fd,measures,event_driven))error=-7;
         posting=now_ns();int post_error=ANativeWindow_unlockAndPost(window);posted=now_ns();if(!error)error=post_error;
     }
     ANativeWindow_release(window);if(error)return -6;

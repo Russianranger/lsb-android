@@ -1,3 +1,51 @@
+# November 2 follow-up: wake capture on image changes in 0.7.9
+
+The user reports no noticeable improvement from 0.7.8. Support ZIP
+`lsb-support(20261103-033255).zip`, SHA-256 `f661b7ee575b1d2733e8b936c3217e5a9fbf1340587b9da88ba28dc9a6232fe6`,
+contains session `4009838e-805c-4eb4-82fb-f47edb205aae`. Overlap is active,
+actual Android refresh stays 60.000004 Hz, mode 1, with no mode changes.
+Native windows 8–24 and 27–37 cover 140.298 seconds of sustained play:
+3,966 Surface posts / 28.268 posts per second. Compared with 0.7.7's 28.184,
+this does not establish a gain. Windows 25–26 include a scene transition;
+including them lowers delivery to 27.502/s and adds longer gaps.
+
+The selected run has 283 post gaps above 50 ms and 24 above 100 ms. Every one
+contains unchanged responses. In the >100 ms events, the final Android post
+costs only 0.293–1.478 ms. Average capture is 0.902 ms, lock 0.329 ms, copy
+0.549 ms and post 4.535 ms. The overlap averages 2.201 ms per response and
+works as implemented, but the longer pauses occur before a changed capture
+reaches Android. This motivates targeting detection delay; it does not prove
+that game rendering or notification cannot also stall.
+
+The old bridge tests for changes only after each relative 30/60 Hz sleep.
+The new request byte 2 waits on X11 image/shape/size events when the cursor is
+known transparent. It drains Xlib's already queued events before polling the
+connection descriptor. A changed image wakes capture without waiting for the
+next polling tick. Capture attempts, including identical repaints, are capped
+using absolute monotonic deadlines; a whole missed interval rebases the schedule
+instead of generating a catch-up burst. A hidden idle scene returns unchanged
+at a bounded 100 ms heartbeat. The existing two-second forced readback remains.
+Visible/unknown cursors, metadata diagnostic polling and unavailable XDamage
+retain periodic checks. Disconnect or extra unsolicited client input ends the
+pending wait. Shared-pixel ownership, exact comparison and header format stay
+unchanged; request byte 1 retains the old polling implementation.
+
+**Wake native capture on image changes** under Advanced → Proven fixes is on
+by default; off and relaunch uses byte 1 for an in-place comparison. Android
+reports `capture_wake_policy`; producer reports expose event waits/wakes and
+idle heartbeats. Unchanged counts and request age have different meanings with
+longer event waits, so compare changed-image gaps and visible delivery instead.
+The updated presentation helper and its checksum manifest are delivered together
+by the existing launch-time asset extraction; no runtime replacement or client
+preparation is required. Drivers, translation engines, DXVK, server, loader and
+client data are unchanged. Follow [TESTING-0.7.9.md](TESTING-0.7.9.md).
+
+Xlib event queue behavior is documented by
+[X.Org](https://www.x.org/releases/X11R7.6/doc/libX11/specs/libX11/libX11.html).
+A Thor gameplay improvement remains unmeasured for this preview.
+
+---
+
 # Presentation pacing: Surface geometry, thread priority and refresh vote
 
 ## October 28 follow-up: capture overlap in 0.7.8

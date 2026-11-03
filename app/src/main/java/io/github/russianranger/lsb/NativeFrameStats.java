@@ -12,7 +12,8 @@ final class NativeFrameStats {
     // max capture/read/lock/copy/post, max reporting enqueue time.
     private long[] counters=new long[38],events=new long[EVENTS*EVENT_FIELDS];
     private int eventCount,eventDropped,width,height,displayMode,displayCap;
-    private float displayHz;private boolean overlap;
+    private float displayHz;private boolean overlap,eventCapture;
+    void captureEvents(boolean enabled){eventCapture=enabled;}
     void display(int mode,float hz,int cap,boolean pipelined){
         if(displayMode!=0&&(mode!=displayMode||hz!=displayHz))counters[37]++;
         displayMode=mode;displayHz=hz;displayCap=cap;overlap=pipelined;
@@ -53,14 +54,14 @@ final class NativeFrameStats {
     void enqueued(long elapsed){counters[20]=Math.max(counters[20],elapsed);}
     Sample sample(long now,String failure,boolean terminal){
         long[] captured=counters,recorded=events;
-        Sample out=new Sample(start,since,now,lastPost,totalFrames,totalShm,width,height,captured,recorded,eventCount,eventDropped,failure,terminal,displayMode,displayHz,displayCap,overlap);
+        Sample out=new Sample(start,since,now,lastPost,totalFrames,totalShm,width,height,captured,recorded,eventCount,eventDropped,failure,terminal,displayMode,displayHz,displayCap,overlap,eventCapture);
         counters=new long[38];events=new long[EVENTS*EVENT_FIELDS];since=now;eventCount=eventDropped=0;return out;
     }
     static final class Sample {
         final long start,since,end,lastPost,totalFrames,totalShm;final int width,height,count,dropped;
-        final long[] c,events;final String failure;final boolean terminal,overlap;final int displayMode,displayCap;final float displayHz;
-        Sample(long start,long since,long end,long lastPost,long totalFrames,long totalShm,int width,int height,long[] c,long[] events,int count,int dropped,String failure,boolean terminal,int displayMode,float displayHz,int displayCap,boolean overlap){
-            this.start=start;this.since=since;this.end=end;this.lastPost=lastPost;this.totalFrames=totalFrames;this.totalShm=totalShm;this.width=width;this.height=height;this.c=c;this.events=events;this.count=count;this.dropped=dropped;this.failure=failure;this.terminal=terminal;this.displayMode=displayMode;this.displayHz=displayHz;this.displayCap=displayCap;this.overlap=overlap;
+        final long[] c,events;final String failure;final boolean terminal,overlap,eventCapture;final int displayMode,displayCap;final float displayHz;
+        Sample(long start,long since,long end,long lastPost,long totalFrames,long totalShm,int width,int height,long[] c,long[] events,int count,int dropped,String failure,boolean terminal,int displayMode,float displayHz,int displayCap,boolean overlap,boolean eventCapture){
+            this.start=start;this.since=since;this.end=end;this.lastPost=lastPost;this.totalFrames=totalFrames;this.totalShm=totalShm;this.width=width;this.height=height;this.c=c;this.events=events;this.count=count;this.dropped=dropped;this.failure=failure;this.terminal=terminal;this.displayMode=displayMode;this.displayHz=displayHz;this.displayCap=displayCap;this.overlap=overlap;this.eventCapture=eventCapture;
         }
         JSONObject json()throws JSONException {
             double seconds=Math.max(1,end-since)/1e9;long frames=c[0];
@@ -72,7 +73,7 @@ final class NativeFrameStats {
                 .put("max_post_gap_ms",c[9]/1e6).put("post_gaps_over_50ms",c[10]).put("post_gaps_over_100ms",c[11]).put("post_gaps_over_250ms",c[12])
                 .put("max_loop_gap_ms",c[13]/1e6).put("max_native_call_ms",c[14]/1e6).put("max_report_enqueue_ms",c[20]/1e6)
                 .put("terminal",terminal).put("gap_events_dropped",dropped)
-                .put("gap_event_threshold_ms",50).put("capture_request_policy",overlap?"after_copy_before_post":"after_post")
+                .put("capture_wake_policy",eventCapture?"damage_events":"fixed_polling").put("gap_event_threshold_ms",50).put("capture_request_policy",overlap?"after_copy_before_post":"after_post")
                 .put("display_mode_id",displayMode).put("display_refresh_hz",displayHz).put("requested_display_cap_hz",displayCap).put("display_mode_changes",c[37])
                 .put("responses",c[21]).put("reader_wait_ms_per_response",c[21]==0?0:c[22]/1e6/c[21]).put("max_reader_wait_ms",c[23]/1e6)
                 .put("request_age_ms_per_response",c[21]==0?0:c[24]/1e6/c[21]).put("max_request_age_ms",c[25]/1e6)

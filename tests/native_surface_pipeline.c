@@ -13,7 +13,7 @@
 static uint32_t shared_pixels[LSB_MAX_PIXELS],window_pixels[LSB_MAX_PIXELS];
 static ANativeWindow window;
 static int array_length=15,geometry_calls,releases,locks,posts,fail_geometry,fail_lock,fail_post;
-static int overlap_mode,expected_before_post,requests,unchanged_first,resize_second,bad_header,disconnect_first;
+static int event_mode,overlap_mode,expected_before_post,requests,unchanged_first,resize_second,bad_header,disconnect_first;
 static pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t changed=PTHREAD_COND_INITIALIZER;
 static jsize array_size(JNIEnv *e,jarray a){(void)e;(void)a;return array_length;}
@@ -41,7 +41,7 @@ struct producer {int fd,responses,total_requests;};
 static void *produce(void *arg){
     struct producer *p=arg;
     for(int n=1;n<=p->total_requests;n++){
-        unsigned char request;assert(recv(p->fd,&request,1,0)==1&&request==1);
+        unsigned char request;assert(recv(p->fd,&request,1,0)==1&&request==(event_mode?2:1));
         if(n>1&&!(unchanged_first&&n==2)){
             uint32_t wanted=0xff000000u|((uint32_t)(n-1)<<16);
             for(int i=0;i<(resize_second&&n>2?6:4);i++)assert(window_pixels[i]==wanted);
@@ -60,7 +60,7 @@ static void *produce(void *arg){
     }
     return NULL;
 }
-static jint frame(int fd,jlong *times){return Java_io_github_russianranger_lsb_NativePresentation_frame(&env,NULL,(jobject)&window,fd,(jobject)shared_pixels,(jlongArray)times,overlap_mode?JNI_TRUE:JNI_FALSE);}
+static jint frame(int fd,jlong *times){return Java_io_github_russianranger_lsb_NativePresentation_frame(&env,NULL,(jobject)&window,fd,(jobject)shared_pixels,(jlongArray)times,overlap_mode?JNI_TRUE:JNI_FALSE,event_mode?JNI_TRUE:JNI_FALSE);}
 static void reset(void){
     geometry_calls=releases=locks=posts=requests=0;fail_geometry=fail_lock=fail_post=0;
     unchanged_first=resize_second=bad_header=disconnect_first=0;array_length=15;
@@ -91,7 +91,7 @@ static void scenario(int overlap,int idle,int resize,int fault){
     close(pair[0]);close(pair[1]);
 }
 int main(void){
-    for(int mode=0;mode<=1;mode++){
+    for(event_mode=0;event_mode<=1;event_mode++)for(int mode=0;mode<=1;mode++){
         scenario(mode,0,0,0);scenario(mode,1,0,0);scenario(mode,0,1,0);
         for(int fault=1;fault<=5;fault++)scenario(mode,0,0,fault);
     }
