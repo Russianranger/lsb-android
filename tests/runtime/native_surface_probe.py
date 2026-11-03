@@ -57,7 +57,9 @@ def verify_native_surface(folder,display,x,d,window,gc):
                                 finally:client.settimeout(5)
                                 return h
                             h=frame();assert not h[7]&2,'Reconnect must deliver a complete first frame'
-                            if fps==30 and not no_shm and not reconnect:
+                            # The fixture seeds its pattern once. Later policy
+                            # variants inherit the repaints from preceding cases.
+                            if fps==30 and not no_shm and not reconnect and not event_wait:
                                 for py in range(0,600,7):
                                     for px in range(0,1100,11):
                                         expected=(((px//4+py//8)&31)<<19)|(((px//8+py//4)&63)<<10)|((((px^py)//4)&31)<<3)
