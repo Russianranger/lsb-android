@@ -1,3 +1,90 @@
+# Image-change capture preview 0.7.9 (2026-11-02)
+
+Standard package `io.github.russianranger.lsb`, **0.7.9 / code 83**.
+Implementation `72624ce6e93ff7ac7a31ad449f70d2bd4878ff5e` adds event-driven capture,
+bounded idle waits and absolute capture deadlines. **Wake native capture on image
+changes** defaults on; off plus relaunch selects the prior polling path.
+The latest Thor report supports no noticeable gain from 0.7.8: selected steady
+play averaged 28.268 Surface posts/s and all 283 gaps above 50 ms included
+unchanged responses. See [presentation-pacing.md](presentation-pacing.md) for
+selection and limitations. A 0.7.9 Thor improvement is not yet established.
+
+## Original-signed APK and payload
+
+`LSB-Android-0.7.9.apk`: **18,585,304 bytes**, SHA-256
+`0a22dacbedcd455b76bff07951ba18f5b90de6069a2663461c852969911dbe83`.
+Original `lsb-preview` certificate SHA-256:
+`f1e6b27114c823eaf938d0b43316572303ae9e88743776112a705356c46a035e`.
+APK v2/v3 signatures, ZIP CRC/integrity with no duplicate entries,
+package/version/minSdk 26/targetSdk 35 and `zipalign -c -P 16 -v 4` pass.
+Android presentation ELF LOAD alignment remains 0x4000.
+
+Built via `scripts/build-presentation.py android` with NDK **27.2.12479018**,
+then `scripts/build-apk.py --android-jar` (API 35), `--build-tools` (35.0.0)
+and `--keystore` (original private checkpoint). JDK 17, MinGW GCC 13.2,
+Clang 18.1.3 and the GitHub checkout path reproduce unchanged helpers. The
+guest presentation files come from CI native-presentation artifact **13203405324**
+at the implementation commit, including the exact ARM64 helper tested by Xvfb.
+Its ZIP SHA-256 is
+`1d3c51543b686bffcb762175a85e1b219e7bdc9cbbcb89557eecb45ad444fcf3`;
+the downloaded archive CRC and digest were verified before extraction. CI uses
+Debian Bookworm GCC 12.2.0-14+deb12u1 with the existing static XDamage link.
+The final APK is rebuilt from these inputs through the direct Android route. No built APK entries were swapped afterward. No APK/key is committed.
+
+Both 0.7.8 and 0.7.9 have **74 non-signature entries**; **69 match exactly**.
+Only `AndroidManifest.xml`, `classes.dex`,
+`lib/arm64-v8a/liblsb-presentation.so`, `assets/runtime/x11-frame-bridge` and
+`assets/runtime/presentation-bundle.json` differ. The last two are the changed
+presentation capture helper and its checksum. Runtime engines, drivers, DXVK,
+FEX/Box64, server, Windows helpers and guest upload helpers remain byte-identical
+to 0.7.8/Beta 0.7. Launch-time extraction updates the capture helper without a
+runtime replacement, client reprepare or database migration.
+
+## Checks and device boundary
+
+Local **149 Android**, **198 runtime** and **138 server unit tests**, core/import
+checks and actual native JNI ownership tests pass. Deadline tests cover 30/60 Hz
+phase retention and bounded late-wake rebasing. Socketpair tests exercise EINTR,
+absolute timeout, queued/late input, disconnect and unsolicited requests.
+
+The actual shipped ARM64 helper passes the focused Xvfb/X11 suite in
+[presentation job 125713983829, PR run 41574252946](https://github.com/Russianranger/lsb-android/actions/runs/41574252946):
+request 1/2, 30/60 Hz, MIT-SHM/XGetImage, live cursor, ownership, reconnect and
+pending-request XDamage wake. A 2.15-second idle check preserves unchanged
+headers/pixels; it does not independently count the forced-readback branch.
+Local Xvfb integration was blocked by environment listener/setup restrictions;
+the real-X11 result cited above is from CI, while native/socketpair tests ran
+locally. Host/CI success does not prove gameplay FPS or screen scanout.
+
+**CI parity: 74/74.** Successful verify job **125714322567** in
+[PR run 41574252946](https://github.com/Russianranger/lsb-android/actions/runs/41574252946)
+at `72624ce` produced runtime-device-build artifact **13203340909**.
+Disposable-signed CI APK SHA-256:
+`a0c727d5b9c35741e62e6d6e6c27c2485a055c274f337545ebf881fb1f616d69`.
+All 74 non-signature entry names and SHA-256 values from the authenticated
+job log's `APK_PAYLOAD_SHA256` match the original-signed device APK exactly.
+Only signature metadata is excluded. CI also passes all 149 Android tests,
+core/native regressions and API 35 compile/dex/package verification.
+The Windows launcher and real ARM64 server deployment jobs pass. Runtime job **125715122885** stopped in the
+expanded test fixture: its new event-policy case incorrectly rechecked the
+one-time initial pixel pattern after previous cases had repainted the window.
+Test-only follow-up `c897892e99a539c97ef484bb0146a9596615dc24` limits that initial
+assertion to the original first case; per-policy repaint/pixel checks remain.
+It changes no APK inputs. [Fresh PR run 41574902978](https://github.com/Russianranger/lsb-android/actions/runs/41574902978)
+already passes the shipped-helper X11 suite; its broader Box64/FEX and PlayOnline
+qualification is still running. Later results are visible on the linked runs.
+No runtime deadline
+or gate was weakened. This documentation-only follow-up changes no APK inputs.
+
+Thor pacing, temperature and background/return checks remain pending. Follow
+[TESTING-0.7.9.md](TESTING-0.7.9.md) using the
+[original-signed prerelease](https://github.com/Russianranger/lsb-android/releases/tag/v0.7.9-damage-capture).
+Install in place without uninstalling or clearing data. The on/off comparison
+uses this same APK. [PR #7](https://github.com/Russianranger/lsb-android/pull/7)
+remains unmerged for the owner; main and previous releases are unchanged.
+
+---
+
 # Capture-overlap preview 0.7.8 (2026-10-28)
 
 Standard package `io.github.russianranger.lsb`, version **0.7.8 / code 82**.
