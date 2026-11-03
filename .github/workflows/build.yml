@@ -12,6 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 scripts/build-presentation.py guest
+      - name: Real X11 event wake, cursor and capture ownership
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends xvfb libx11-6 libxext6 libxfixes3
+          python3 scripts/test-capture-events.py --helper out/presentation/x11-frame-bridge
       - uses: actions/upload-artifact@v4
         with:
           name: native-presentation
@@ -36,6 +42,8 @@ jobs:
           python3 scripts/test-server-runtime-archive.py
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/native_surface.c -o /tmp/lsb-native-surface-test
           /tmp/lsb-native-surface-test
+          python3 scripts/test-presentation-pipeline.py
+          python3 scripts/test-capture-pacing.py
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/draw-stats.c -o /tmp/lsb-draw-stats-test
           /tmp/lsb-draw-stats-test
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/version-codec.c -o /tmp/lsb-version-codec-test
@@ -75,12 +83,26 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.7.0.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.7.9.apk
+      - name: Record APK payload hashes for device signing verification
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, zipfile
+          from pathlib import Path
+          apk = Path('out/LSB-Android-0.7.9.apk')
+          with zipfile.ZipFile(apk) as z:
+              assert z.testzip() is None
+              names = z.namelist()
+              assert len(names) == len(set(names)), 'Duplicate APK entries'
+              payload = {n: hashlib.sha256(z.read(n)).hexdigest() for n in sorted(names) if not n.startswith('META-INF/')}
+          print('APK_FILE_SHA256=' + hashlib.sha256(apk.read_bytes()).hexdigest())
+          print('APK_PAYLOAD_SHA256=' + json.dumps(payload, sort_keys=True))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.7.0.apk
+            out/LSB-Android-0.7.9.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/

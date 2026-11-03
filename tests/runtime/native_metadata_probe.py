@@ -2,7 +2,7 @@
 import ctypes,struct
 
 
-def verify_metadata(x,d,window,gc,frame,mapped,background):
+def verify_metadata(x,d,window,gc,frame,mapped,background,resize=True):
     P=ctypes.c_void_p;L=ctypes.c_ulong;I=ctypes.c_int;U=ctypes.c_uint
     class Color(ctypes.Structure):
         _fields_=[('pixel',L),('red',ctypes.c_ushort),('green',ctypes.c_ushort),('blue',ctypes.c_ushort),('flags',ctypes.c_char),('pad',ctypes.c_char)]
@@ -48,32 +48,33 @@ def verify_metadata(x,d,window,gc,frame,mapped,background):
         x.XDefineCursor(d,window,cursors[0]);move(0,0);changed();patch(0,0,0xff0000,6,5)
         x.XDefineCursor(d,window,cursors[2]);x.XSync(d,0);changed();patch(0,0,background,6,5)
 
-        # Use the actual RandR mode change so the root sends ConfigureNotify.
-        # A window-only resize would not exercise cached root geometry.
-        randr=ctypes.CDLL('libXrandr.so.2')
-        class Size(ctypes.Structure):
-            _fields_=[('width',I),('height',I),('mm_width',I),('mm_height',I)]
-        randr.XRRGetScreenInfo.argtypes=[P,L];randr.XRRGetScreenInfo.restype=P
-        randr.XRRConfigSizes.argtypes=[P,ctypes.POINTER(I)];randr.XRRConfigSizes.restype=ctypes.POINTER(Size)
-        randr.XRRSetScreenConfig.argtypes=[P,P,L,I,ctypes.c_ushort,L];randr.XRRSetScreenConfig.restype=I
-        randr.XRRFreeScreenConfigInfo.argtypes=[P]
-        root=x.XDefaultRootWindow(d)
-        def resize(width,height):
-            config=randr.XRRGetScreenInfo(d,root);assert config
-            try:
-                count=I();sizes=randr.XRRConfigSizes(config,ctypes.byref(count))
-                modes=[(sizes[i].width,sizes[i].height) for i in range(count.value)]
-                assert (width,height) in modes,modes
-                assert randr.XRRSetScreenConfig(d,config,root,modes.index((width,height)),1,0)==0
-                x.XSync(d,0);changed((width,height))
-                # TigerVNC clears window contents on a screen mode change.
-                # Repaint the fixture as an application handles Expose; first
-                # validate the resize header independently of this new damage.
-                x.XSetForeground(d,gc,background);x.XFillRectangle(d,window,gc,0,0,200,100);x.XSync(d,0)
-                changed((width,height))
-                assert pixel(10,10,width)==background,'Resized capture lost repainted pixels'
-            finally:randr.XRRFreeScreenConfigInfo(config)
-        resize(800,600);resize(1280,720)
+        if resize:
+            # Use the actual RandR mode change so the root sends ConfigureNotify.
+            # A window-only resize would not exercise cached root geometry.
+            randr=ctypes.CDLL('libXrandr.so.2')
+            class Size(ctypes.Structure):
+                _fields_=[('width',I),('height',I),('mm_width',I),('mm_height',I)]
+            randr.XRRGetScreenInfo.argtypes=[P,L];randr.XRRGetScreenInfo.restype=P
+            randr.XRRConfigSizes.argtypes=[P,ctypes.POINTER(I)];randr.XRRConfigSizes.restype=ctypes.POINTER(Size)
+            randr.XRRSetScreenConfig.argtypes=[P,P,L,I,ctypes.c_ushort,L];randr.XRRSetScreenConfig.restype=I
+            randr.XRRFreeScreenConfigInfo.argtypes=[P]
+            root=x.XDefaultRootWindow(d)
+            def resize(width,height):
+                config=randr.XRRGetScreenInfo(d,root);assert config
+                try:
+                    count=I();sizes=randr.XRRConfigSizes(config,ctypes.byref(count))
+                    modes=[(sizes[i].width,sizes[i].height) for i in range(count.value)]
+                    assert (width,height) in modes,modes
+                    assert randr.XRRSetScreenConfig(d,config,root,modes.index((width,height)),1,0)==0
+                    x.XSync(d,0);changed((width,height))
+                    # TigerVNC clears window contents on a screen mode change.
+                    # Repaint the fixture as an application handles Expose; first
+                    # validate the resize header independently of this new damage.
+                    x.XSetForeground(d,gc,background);x.XFillRectangle(d,window,gc,0,0,200,100);x.XSync(d,0)
+                    changed((width,height))
+                    assert pixel(10,10,width)==background,'Resized capture lost repainted pixels'
+                finally:randr.XRRFreeScreenConfigInfo(config)
+            resize(800,600);resize(1280,720)
     finally:
         x.XUndefineCursor(d,window);move(1279,719)
         for cursor in cursors:x.XFreeCursor(d,cursor)

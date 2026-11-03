@@ -1,6 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 #include "frame.h"
 #include "transfer.h"
+#include "capture-pacing.h"
+#include "capture-wait.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/XShm.h>
@@ -23,6 +25,7 @@
 #include <sys/file.h>
 #include <fcntl.h>
 #include <stdatomic.h>
+
 static int xerror;
 static int poll_metadata;
 static int error_handler(Display *d,XErrorEvent *e){(void)d;xerror=e->error_code;return 0;}
@@ -30,17 +33,25 @@ static uint64_t now_ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t)
 struct frame_stats {
     uint64_t since,frames,capture_ns,send_ns,pace_ns,calls,bytes,requests,captures,idle,duplicates;
     uint64_t query_ns,max_query_ns,cursor_ns,max_capture_ns,geometry_queries,pointer_queries,cursor_queries,resize_events,cursor_events,hidden_pointer_skips;
+    uint64_t event_requests,event_waits,event_wakes,event_wait_ns,heartbeats;
 };
 static void report(struct frame_stats *s,int final){
     uint64_t now=now_ns();if(!s->requests||(!final&&now-s->since<5000000000ull))return;
     double frames=s->frames?(double)s->frames:1,requests=(double)s->requests,captures=s->captures?(double)s->captures:1;
-    fprintf(stderr,"{\"transport\":\"shared-file-v1\",\"frames\":%llu,\"seconds\":%.3f,\"capture_ms_per_frame\":%.3f,\"send_ms_per_frame\":%.3f,\"pacing_ms_per_request\":%.3f,\"send_calls_per_frame\":%.3f,\"mapped_bytes_per_frame\":%.0f,\"requests\":%llu,\"captures\":%llu,\"idle_skips\":%llu,\"duplicate_skips\":%llu,\"metadata_policy\":\"%s\",\"metadata_query_ms_per_request\":%.3f,\"max_metadata_query_ms\":%.3f,\"cursor_fetch_ms\":%.3f,\"max_capture_ms\":%.3f,\"geometry_queries\":%llu,\"pointer_queries\":%llu,\"cursor_queries\":%llu,\"resize_events\":%llu,\"cursor_events\":%llu,\"hidden_pointer_skips\":%llu}\n",
+    fprintf(stderr,"{\"transport\":\"shared-file-v1\",\"frames\":%llu,\"seconds\":%.3f,\"capture_ms_per_frame\":%.3f,\"send_ms_per_frame\":%.3f,\"pacing_ms_per_request\":%.3f,\"send_calls_per_frame\":%.3f,\"mapped_bytes_per_frame\":%.0f,\"requests\":%llu,\"captures\":%llu,\"idle_skips\":%llu,\"duplicate_skips\":%llu,\"metadata_policy\":\"%s\",\"metadata_query_ms_per_request\":%.3f,\"max_metadata_query_ms\":%.3f,\"cursor_fetch_ms\":%.3f,\"max_capture_ms\":%.3f,\"geometry_queries\":%llu,\"pointer_queries\":%llu,\"cursor_queries\":%llu,\"resize_events\":%llu,\"cursor_events\":%llu,\"hidden_pointer_skips\":%llu,\"capture_request_policy\":\"%s\",\"event_waits\":%llu,\"event_wakes\":%llu,\"event_wait_ms_per_request\":%.3f,\"idle_heartbeats\":%llu}\n",
         (unsigned long long)s->frames,(now-s->since)/1e9,s->capture_ns/1e6/captures,s->send_ns/1e6/frames,s->pace_ns/1e6/requests,s->calls/frames,s->bytes/frames,
         (unsigned long long)s->requests,(unsigned long long)s->captures,(unsigned long long)s->idle,(unsigned long long)s->duplicates,
         poll_metadata?"poll":"events",s->query_ns/1e6/requests,s->max_query_ns/1e6,s->cursor_ns/1e6,s->max_capture_ns/1e6,
         (unsigned long long)s->geometry_queries,(unsigned long long)s->pointer_queries,(unsigned long long)s->cursor_queries,
-        (unsigned long long)s->resize_events,(unsigned long long)s->cursor_events,(unsigned long long)s->hidden_pointer_skips);fflush(stderr);
+        (unsigned long long)s->resize_events,(unsigned long long)s->cursor_events,(unsigned long long)s->hidden_pointer_skips,
+        s->event_requests==s->requests?"xdamage_wait":s->event_requests?"mixed":"poll_ticks",
+        (unsigned long long)s->event_waits,(unsigned long long)s->event_wakes,s->event_wait_ns/1e6/requests,(unsigned long long)s->heartbeats);fflush(stderr);
     memset(s,0,sizeof(*s));s->since=now;
+}
+static int wait_capture(uint64_t deadline){
+    struct timespec target={.tv_sec=(time_t)(deadline/1000000000ull),.tv_nsec=(long)(deadline%1000000000ull)};
+    int result;do{result=clock_nanosleep(CLOCK_MONOTONIC,TIMER_ABSTIME,&target,NULL);}while(result==EINTR);
+    return result;
 }
 static int unchanged(int fd,uint32_t *header,int shared,struct frame_stats *stats){
     uint32_t wire[8];header[4]=0;header[6]=0;header[7]=2u|(unsigned)shared;
@@ -96,16 +107,24 @@ int main(int argc,char **argv){
     for(;;){
         int fd=accept(listener,NULL,NULL);if(fd<0){if(errno==EINTR)continue;break;}
         struct timeval timeout={.tv_sec=5};setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
-        XImage *image=NULL;XShmSegmentInfo shm={.shmid=-1};int shared=0,lastw=0,lasth=0;uint64_t last=0;
+        XImage *image=NULL;XShmSegmentInfo shm={.shmid=-1};int shared=0,lastw=0,lasth=0;uint64_t last=0,next_capture=0;
         int published=0,geometry_dirty=1,cursor_dirty=1,cursor_shown=1;
         XWindowAttributes a={0};XFixesCursorImage *cursor_image=NULL;
         uint64_t last_capture=0;int pointer_x=-1,pointer_y=-1;struct frame_stats stats={.since=now_ns()};
         unsigned char request;
-        while(recv(fd,&request,1,0)==1&&request==1){
-            uint64_t elapsed=now_ns()-last,interval=1000000000u/(unsigned)fps;
-            uint64_t pacing=now_ns();if(last&&elapsed<interval){struct timespec wait={.tv_nsec=(long)(interval-elapsed)};while(nanosleep(&wait,&wait)&&errno==EINTR){}}stats.pace_ns+=now_ns()-pacing;last=now_ns();
-            stats.requests++;
-            uint64_t querying=now_ns();
+        while(recv(fd,&request,1,0)==1&&(request==1||request==2)){
+            /* Byte 1 preserves the old polling path for an in-place comparison.
+             * Byte 2 waits for XDamage when the cursor is known transparent. */
+            int event_request=request==2;
+            uint64_t interval=1000000000u/(unsigned)fps,request_started=now_ns();
+            if(!event_request){
+                uint64_t elapsed=request_started-last,pacing=now_ns();
+                if(last&&elapsed<interval){struct timespec wait={.tv_nsec=(long)(interval-elapsed)};while(nanosleep(&wait,&wait)&&errno==EINTR){}}
+                stats.pace_ns+=now_ns()-pacing;last=now_ns();
+            }
+            stats.requests++;stats.event_requests+=(unsigned)event_request;
+            uint64_t querying=now_ns(),query_total=0,capture_deadline=0;
+            int ready=!event_request,paced=0,disconnected=0,heartbeat=0;
             Window root,child;int rx=pointer_x,ry=pointer_y,wx=0,wy=0;unsigned mask=0;
             /* Drain notifications before deciding whether position is needed.
              * XPending flushes and reads queued events without a round trip.
@@ -123,6 +142,32 @@ drain_events:
                     stats.cursor_events++;
                 }
             }
+            if(!ready){
+                uint64_t now=now_ns();
+                int fallback=!damage_ready||poll_metadata||cursor_shown;
+                int dirty=!published||geometry_dirty||event_dirty||cursor_dirty;
+                uint64_t periodic=last_capture+2000000000ull;
+                uint64_t deadline=request_started+100000000ull;
+                if(periodic<deadline)deadline=periodic;
+                if(!fallback&&!dirty&&now<deadline){
+                    query_total+=now-querying;
+                    uint64_t waiting=now_ns();stats.event_waits++;
+                    int wake=lsb_capture_wait_event(ConnectionNumber(d),fd,deadline);stats.event_wait_ns+=now_ns()-waiting;
+                    querying=now_ns();
+                    if(wake<0){disconnected=1;goto request_done;}
+                    if(wake>0)stats.event_wakes++;
+                    goto drain_events;
+                }
+                ready=1;heartbeat=!fallback&&!dirty&&now<periodic;
+                if(!heartbeat){
+                    query_total+=now_ns()-querying;
+                    uint64_t pacing=now_ns();capture_deadline=lsb_capture_deadline(next_capture,pacing,interval);
+                    if(wait_capture(capture_deadline)){disconnected=1;goto request_done;}
+                    stats.pace_ns+=now_ns()-pacing;paced=1;querying=now_ns();
+                    /* A resize/cursor event may have arrived while capped. */
+                    goto drain_events;
+                }
+            }
             if(!queried&&(poll_metadata||cursor_shown||cursor_dirty)){
                 XQueryPointer(d,screen,&root,&child,&rx,&ry,&wx,&wy,&mask);stats.pointer_queries++;queried=1;
                 /* The reply may bring additional preceding notifications. */
@@ -132,13 +177,18 @@ drain_events:
             if(geometry_dirty||poll_metadata){
                 stats.geometry_queries++;if(!XGetWindowAttributes(d,screen,&a))break;geometry_dirty=0;
             }
-            uint64_t query_ns=now_ns()-querying;stats.query_ns+=query_ns;if(query_ns>stats.max_query_ns)stats.max_query_ns=query_ns;
+            uint64_t query_ns=query_total+now_ns()-querying;stats.query_ns+=query_ns;if(query_ns>stats.max_query_ns)stats.max_query_ns=query_ns;
             uint32_t header[8]={LSB_MAGIC,(uint32_t)a.width,(uint32_t)a.height,(uint32_t)a.width*4,0,++sequence,(uint32_t)a.width*a.height*4,0};
             if(!lsb_frame_valid(header))break;
             int resized=a.width!=lastw||a.height!=lasth;
             int dirty=!published||resized||event_dirty||cursor_dirty||rx!=pointer_x||ry!=pointer_y;
             pointer_x=rx;pointer_y=ry;
-            if(damage_ready&&!dirty&&now_ns()-last_capture<2000000000ull){stats.idle++;if(unchanged(fd,header,shared,&stats))break;continue;}
+            if(damage_ready&&!dirty&&now_ns()-last_capture<2000000000ull){
+                if(paced)next_capture=lsb_capture_next(capture_deadline,now_ns(),interval);
+                stats.idle++;stats.heartbeats+=(unsigned)heartbeat;
+                if(unchanged(fd,header,shared,&stats))break;
+                continue;
+            }
             if(damage_ready)XDamageSubtract(d,damage,None,None);
 
             if(image&&(a.width!=lastw||a.height!=lasth)){if(shared){XShmDetach(d,&shm);XSync(d,False);shmdt(shm.shmaddr);image->data=NULL;}XDestroyImage(image);image=NULL;shared=0;}
@@ -166,7 +216,7 @@ drain_events:
                 }
                 fprintf(stderr,"Capture mode: %s; %dx%d; reason=%s; errno=%d; xerror=%d\n",shared?"MIT-SHM":"XGetImage",a.width,a.height,shared?"shared memory attached":reason,reason_errno,reason_xerror);fflush(stderr);
             }
-            uint64_t capture=now_ns();last_capture=capture;stats.captures++;xerror=0;
+            uint64_t capture=now_ns();last_capture=capture;if(paced)next_capture=lsb_capture_next(capture_deadline,capture,interval);stats.captures++;xerror=0;
             if(shared){if(!XShmGetImage(d,DefaultRootWindow(d),image,0,0,AllPlanes))break;}
             else {if(image)XDestroyImage(image);image=XGetImage(d,DefaultRootWindow(d),0,0,(unsigned)a.width,(unsigned)a.height,AllPlanes,ZPixmap);}
             if(!image||xerror||image->bits_per_pixel!=32||image->byte_order!=LSBFirst||image->red_mask!=0xff0000||image->green_mask!=0xff00||image->blue_mask!=0xff)break;
@@ -191,12 +241,14 @@ drain_events:
             if(identical){stats.duplicates++;if(unchanged(fd,header,shared,&stats))break;continue;}
             uint64_t sending=now_ns(),calls=0;
             /* The request grants exclusive write ownership. Publish pixels before
-             * the header; the consumer sends its next request only after posting. */
+             * the header; the consumer requests again after its private copy. */
             for(uint32_t y=0;y<header[2];y++)memcpy(mapped+(size_t)y*header[3],image->data+(size_t)y*image->bytes_per_line,header[3]);
             published=1;
             atomic_thread_fence(memory_order_release);
             if(lsb_send_all(fd,wire,sizeof(wire),&calls))break;
             stats.frames++;stats.send_ns+=now_ns()-sending;stats.calls+=calls;stats.bytes+=header[6];report(&stats,0);
+request_done:
+            if(disconnected)break;
         }
         if(image){if(shared){XShmDetach(d,&shm);XSync(d,False);shmdt(shm.shmaddr);image->data=NULL;}XDestroyImage(image);}
         if(cursor_image)XFree(cursor_image);

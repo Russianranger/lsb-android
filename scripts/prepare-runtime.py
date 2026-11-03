@@ -44,7 +44,14 @@ def main():
   if digest(dxvk)!=expected:raise ValueError('DXVK release checksum mismatch: '+version)
   with tarfile.open(dxvk) as t:
    for n in ['d3d8','d3d9']:(OUT/('dxvk-'+('2.7.1-' if version=='2.7.1' else '')+n+'.dll')).write_bytes(t.extractfile('dxvk-'+version+'/x32/'+n+'.dll').read())
- files={f.name:digest(f) for f in OUT.iterdir() if f.is_file() and f.name!='bundle.json'}
+ # Preserve the shipped Beta 0.7 manifest bytes across filesystems. iterdir()
+ # order is unspecified; changing JSON key order needlessly changes the APK.
+ bundle_order=['dxvk-d3d8.dll','vulkan-probe','dxvk-d3d9.dll','dxvk-2.7.1-d3d9.dll',
+  'wineserver-patch.json','turnip-26.0.0.so','dxvk-2.7.1-d3d8.dll','turnip.so',
+  'libasound_module_pcm_trasc.so','audio-bundle.json','wineserver']
+ bundle_files={f.name:f for f in OUT.iterdir() if f.is_file() and f.name!='bundle.json'}
+ order=[n for n in bundle_order if n in bundle_files]+sorted(set(bundle_files)-set(bundle_order))
+ files={n:digest(bundle_files[n]) for n in order}
  (OUT/'bundle.json').write_text(json.dumps({'format':1,'candidate':'wine10-box64-0.4.4','dxvk':'2.5.3','files':files},indent=2)+'\n')
  if a.release:
   for n in PIN:fetch(n)
