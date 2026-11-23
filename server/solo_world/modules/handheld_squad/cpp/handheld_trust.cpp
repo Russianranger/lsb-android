@@ -204,11 +204,13 @@ class HandheldTrustModule final : public CPPModule
 {
     void OnInit() override
     {
-        lua.set_function("SpawnHandheldMate", spawnMate);
-        lua.set_function("HandheldCanCastSpell", canCast);
-        lua.set_function("DismissHandheldMate", dismissMate);
-        lua.set_function("HandheldMateWasReleased", wasReleased);
-        lua.set_function("HandheldCanEquip", [](int id, int job, int level, int slot) { return equipment(id, job, level, slot) != nullptr; });
+        // Resolve the running VM here. CPPModule's member reference is captured
+        // during static initialization, before other translation units may be ready.
+        ::lua.set_function("SpawnHandheldMate", spawnMate);
+        ::lua.set_function("HandheldCanCastSpell", canCast);
+        ::lua.set_function("DismissHandheldMate", dismissMate);
+        ::lua.set_function("HandheldMateWasReleased", wasReleased);
+        ::lua.set_function("HandheldCanEquip", [](int id, int job, int level, int slot) { return equipment(id, job, level, slot) != nullptr; });
     }
 };
 

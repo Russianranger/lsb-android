@@ -1,0 +1,18 @@
+diff --git a/src/map/entities/trust_entity.cpp b/src/map/entities/trust_entity.cpp
+--- a/src/map/entities/trust_entity.cpp
++++ b/src/map/entities/trust_entity.cpp
+@@ -86,7 +86,14 @@ auto CTrustEntity::released() -> bool
+ 
+ void CTrustEntity::setReleased(bool released)
+ {
++    const bool firstRelease = released && !released_;
+     released_ = released;
++    if (firstRelease && PMaster && GetLocalVar("HANDHELD_MATE") == PMaster->id)
++    {
++        // The client starts its dismissal animation now. The owner can zone
++        // before the normal delayed despawn, so notify while both are present.
++        PAI->EventHandler.triggerListener("HANDHELD_MATE_RELEASE", this);
++    }
+ }
+ 
+ auto CTrustEntity::passiveTrust() -> IsPassiveTrust

@@ -64,6 +64,7 @@ end
 function DismissHandheldMate() spawned=nil end
 
 local player = { vars = {} }
+function GetPlayerByID(id) if id == 9 then return player end end
 function player:setLocalVar(k,v) self.vars[k]=v end
 function player:getLocalVar(k) return self.vars[k] or 0 end
 function player:getID() return 9 end
@@ -209,13 +210,20 @@ for _, policy in ipairs({'auto','tank','damage','healer','support'}) do
 end
 run('call','1'); spawned=nil;map.exp=nil
 gameIn(player,false,false); assert(not spawned and recall==0 and #timers==0)
-run('call','1');assert(mates[1].jobs[3].xp==200);spawned:death()
+run('call','1');assert(mates[1].jobs[3].xp==200)
+spawned.getMaster=function() return nil end
+spawned:death();spawned=nil;gameIn(player,false,true)
+assert(#timers==0 and not spawned)
 assert(recall==0 and not map.exp)
 run('release','6','Wrong');assert(mates[6])
 run('release','6','Fox');assert(not mates[6]);run('new','Kit','WAR');assert(mates[6].name=='Kit')
 spawned=nil;run('call','1')
-local old=spawned;spawned.released=true;spawned:despawn();spawned=nil
-assert(recall==0 and not map.exp);run('call','2')
-old:despawn();assert(recall==2 and map.exp)
-spawned:despawn();assert(recall==2 and map.exp)
+-- The client reports a release before its two-second animation finishes.
+local old=spawned;old:handheld_mate_release()
+assert(spawned==old and recall==0 and not map.exp)
+spawned=nil;gameIn(player,false,true)
+assert(#timers==0 and recall==0 and not spawned)
+run('call','2')
+old:handheld_mate_release();assert(recall==2 and map.exp)
+assert(not spawned.despawn)
 print('handheld squad command, job/role, XP, zoning, and cold-login fixtures passed')

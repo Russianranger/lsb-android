@@ -2,8 +2,7 @@
 
 This deliberately starts from GitHub's archive, without Git metadata or mesh
 submodules, just like Fetch selected source in the app. After compilation it
-starts the real profile service with an isolated synthetic database. It never
-substitutes prebuilt server executables.
+starts the profile service and the solo map with isolated databases.
 """
 
 import hashlib
@@ -22,6 +21,7 @@ import traceback
 import urllib.request
 
 import solo_source_integration
+import solo_map_integration
 import source_patch_integration
 import sol_key_integration
 import accept_loop_integration
@@ -241,6 +241,7 @@ def main():
             probes += [('source_patch_boundaries', source_patch_integration),
                        ('accept_loop_lifetimes', accept_loop_integration),
                        ('entity_evasion', entity_evasion_integration),
+                       ('solo_map_startup', solo_map_integration),
                        ('sol_key_lookups', sol_key_integration)]
         for label, probe in probes:
             try:

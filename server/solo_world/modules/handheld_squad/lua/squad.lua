@@ -221,7 +221,8 @@ local function callMate(player, slot, mate)
     player:setCharVar(recallVar, slot)
     player:setLocalVar('HH_ENTITY', trust:getID())
     local function forget(entity)
-        local owner = entity:getMaster()
+        -- A dead Trust detaches from its master before the engine emits DEATH.
+        local owner = entity:getMaster() or GetPlayerByID(entity:getLocalVar('HANDHELD_MATE'))
         if owner and owner:getLocalVar('HH_ENTITY') == entity:getID() then
             owner:setLocalVar('HH_ENTITY', 0)
             owner:setCharVar(recallVar, 0)
@@ -229,11 +230,7 @@ local function callMate(player, slot, mate)
         end
     end
     trust:addListener('DEATH', 'HANDHELD_SQUAD_FALL', forget)
-    trust:addListener('DESPAWN', 'HANDHELD_SQUAD_RELEASE', function(entity)
-        -- The client Release action and zoning both despawn a Trust. Only the
-        -- first one sets released(), and a late callback must not clear a new call.
-        if HandheldMateWasReleased(entity) then forget(entity) end
-    end)
+    trust:addListener('HANDHELD_MATE_RELEASE', 'HANDHELD_SQUAD_RELEASE', forget)
     return true, string.format('%s joined you as %s %d (%s).', mate.name, jobs[mate.main], level, mate.role)
 end
 

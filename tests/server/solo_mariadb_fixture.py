@@ -12,6 +12,10 @@ import unittest
 
 
 class MariaDBFixture:
+    def __init__(self, tcp=False):
+        self.tcp = tcp
+        self.port = None
+
     def __enter__(self):
         base = os.environ.get('MARIADB_BASE')
         if base:
@@ -32,13 +36,17 @@ class MariaDBFixture:
         unix_socket = '--socket=' + str(root / 'mysql.sock')
         server_transport = [unix_socket, '--skip-networking']
         client_transport = [unix_socket]
-        try:
-            with socket.socket(socket.AF_UNIX) as probe:
-                probe.bind(str(root / 'probe'))
-        except PermissionError:  # Some CI sandboxes only allow loopback TCP.
+        if not self.tcp:
+            try:
+                with socket.socket(socket.AF_UNIX) as probe:
+                    probe.bind(str(root / 'probe'))
+            except PermissionError:  # Some CI sandboxes only allow loopback TCP.
+                self.tcp = True
+        if self.tcp:
             with socket.socket() as probe:
                 probe.bind(('127.0.0.1', 0))
-                port = '--port=' + str(probe.getsockname()[1])
+                self.port = probe.getsockname()[1]
+            port = '--port=' + str(self.port)
             server_transport = ['--socket=', '--bind-address=127.0.0.1', port]
             client_transport = ['--protocol=TCP', '--host=127.0.0.1', port]
         self.client = [client, '--no-defaults', *client_transport, '--user=root', '--batch', '--skip-column-names']
@@ -60,7 +68,7 @@ class MariaDBFixture:
                 except RuntimeError:
                     actual = ''
                 if actual and Path(actual).resolve() == (root / 'data').resolve():
-                    self.run('CREATE DATABASE solo_test;')
+                    self.run('CREATE DATABASE solo_test CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;')
                     self.client.append('solo_test')
                     return self
                 time.sleep(0.1)

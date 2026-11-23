@@ -73,6 +73,19 @@ class BuildPipelineTests(unittest.TestCase):
         active=m.current();self.assertEqual((active/'server/xi_profile').read_bytes(),b'profile jemalloc binary')
         self.assertEqual(set(json.loads((active/'deployment.json').read_text())['binaries']),set(m.ALL_PROCESSES))
 
+    def test_old_solo_binary_cannot_replace_an_active_world(self):
+        req, info = self.stage()
+        info['build']['solo_world'] = 1
+        generation = m.STATE / 'generations' / req['generation']
+        m.write_staged(generation, info)
+        with self.assertRaisesRegex(ValueError, 'squad startup'):
+            m.check_staged(req)
+        self.build['solo_world'] = 1
+        m.atomic(m.STATE / 'source-build/server/android-build.json', self.build)
+        with self.assertRaisesRegex(ValueError, 'squad startup'):
+            m.stage_build(self.request())
+        self.assertEqual((m.STATE / 'active.json').read_bytes(), self.pointer)
+
     def test_previous_four_program_receipt_cannot_restage_a_profile_source(self):
         root=m.STATE/'source-build/server'
         (root/'src/profile').mkdir();(root/'src/profile/CMakeLists.txt').write_text('xi_add_executable(xi_profile main.cpp)')

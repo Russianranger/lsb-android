@@ -919,7 +919,8 @@ public final class MainActivity extends Activity {
         JSONObject workspace=sr.buildState(),selected=object(workspace,"selected_source"),build=object(workspace,"build"),staged=object(workspace,"staged"),deployed=object(workspace,"deployed"),sql=object(workspace,"database_import");
         JSONObject builtSource=object(build,"selected_source"),stagedSource=object(staged,"selected_source");
         String buildId=build.optString("build_id"),stagedBuildId=staged.optString("build_id"),stagedId=staged.optString("generation");
-        boolean built="passed".equals(build.optString("state"))&&!buildId.isEmpty()&&"jemalloc".equals(build.optString("allocator"));
+        boolean earlySoloBuild=build.optInt("solo_world",0)==1;
+        boolean built=!earlySoloBuild&&"passed".equals(build.optString("state"))&&!buildId.isEmpty()&&"jemalloc".equals(build.optString("allocator"));
         boolean hasStaged=!stagedId.isEmpty()&&!stagedBuildId.isEmpty();
         File report=new File(storage(this),"server/current/source-report.txt");
         LinearLayout summary=featuredCard("Build workspace");
@@ -966,7 +967,8 @@ public final class MainActivity extends Activity {
         workers.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> parent,View view,int position,long id){getSharedPreferences("server",0).edit().putInt("jobs",position+1).apply();}public void onNothingSelected(AdapterView<?> parent){}});
         compile.addView(label("Default j2. More workers use more memory and may heat the device; j1 uses the least memory.",12,MUTED));
         button(compile,"Build fetched source with jemalloc",()->{getSharedPreferences("server",0).edit().putInt("jobs",workers.getSelectedItemPosition()+1).apply();run("Building fetched source with jemalloc",(ctx,p)->ServerRuntime.get(ctx).performBuild("build-source","","","",p));}).setEnabled(sr.toolsCurrent()&&report.exists()&&idle);
-        if(!built&&buildId.isEmpty()&&"passed".equals(build.optString("state"))&&"jemalloc".equals(build.optString("allocator"))){
+        if(earlySoloBuild)compile.addView(label("Rebuild this early solo server to apply the squad startup fix. Then prepare a new copy of your current player data in step 3.",13,ACCENT));
+        if(!earlySoloBuild&&!built&&buildId.isEmpty()&&"passed".equals(build.optString("state"))&&"jemalloc".equals(build.optString("allocator"))){
             compile.addView(label("A successful build from the previous app version is available. Verify its saved binaries and assign a build ID to reuse it without compiling again.",13,ACCENT));
             button(compile,"Verify and reuse previous successful build",()->run("Verifying previous jemalloc build",(ctx,p)->ServerRuntime.get(ctx).performBuild("adopt-build","","","",p))).setEnabled(sr.toolsCurrent()&&idle);
         }

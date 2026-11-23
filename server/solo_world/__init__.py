@@ -6,7 +6,7 @@ from pathlib import Path
 
 from . import settings
 
-FORMAT = 1
+FORMAT = 2
 MODULES = ("handheld_solo", "handheld_squad")
 ASSETS = Path(__file__).resolve().parent
 
@@ -18,7 +18,7 @@ def install(root):
     init = modules / "init.txt"
     if not init.is_file() or not (modules / "module_utils.lua").is_file():
         raise ValueError("This server source does not support the handheld world modules.")
-    for filename in ("0001-personal-squad.patch", "0002-auction-demand.patch"):
+    for filename in ("0001-personal-squad.patch", "0002-auction-demand.patch", "0003-personal-squad-release.patch"):
         patch = ASSETS / "patches" / filename
         args = ["git", "apply", "--whitespace=nowarn"]
         if subprocess.run(args + ["--check", str(patch)], cwd=root, capture_output=True).returncode == 0:

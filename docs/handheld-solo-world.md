@@ -6,7 +6,7 @@ The optional solo build runs inside the managed LandSandBoat server. One FFXI cl
 
 1. Install the signed 0.8.1 APK over the standard LSB Android app. Finish the current session and stop the client and managed server. Installing the APK alone leaves the active server selected.
 2. Open the **Build** tab. If the selected source already shows LandSandBoat commit `6d5a5137024e21602e37032f6e55a682971329be`, reuse it. Otherwise choose **Fetch supported solo source**. Fetching source and missing build dependencies requires connectivity during preparation.
-3. In step 2, check **Build with handheld solo features** and tap **Build fetched source with jemalloc**. Wait for the completed build to show **Handheld solo features included**.
+3. In step 2, check **Build with handheld solo features** and tap **Build fetched source with jemalloc**. Repeat this build step if you tried the early 0.8.0 APK. It produces the corrected squad server. Wait for the completed build to show **Handheld solo features included**.
 4. In step 3, choose **Keep current player data · copy and update**, then **Prepare database and stage this build**. Check the character count, database, and expected client in step 4. Check and deploy that staged pair, then start the managed server.
 5. Sign in with your existing character. If you return to the previous deployment, its database contains the progress made before this switch. Each deployment keeps its own database.
 

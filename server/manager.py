@@ -385,10 +385,15 @@ def build_source(req):
     atomic(root/'android-build.json',report);atomic(LOGS/'build-report.json',report)
     status('build_ready','Jemalloc build '+report['build_id'][:8]+' is ready. Choose its database, then check and deploy this exact build.',build=report)
 
+def check_solo_build_revision(report):
+    if report.get('solo_world') == 1:
+        raise ValueError('This early solo build has a squad startup issue. In Build step 2, enable handheld solo features and rebuild the fetched source, then stage it again with your current player data.')
+
 def load_build(build_id=None):
     root=STATE/'source-build/server';path=root/'android-build.json'
     if not path.is_file():raise ValueError('Build the selected source with jemalloc first')
     report=json.loads(path.read_text())
+    check_solo_build_revision(report)
     if report.get('state')!='passed' or report.get('allocator')!='jemalloc':raise ValueError('The latest build did not pass jemalloc validation')
     if build_id is not None and (not build_id or report.get('build_id')!=build_id):raise ValueError('The selected build changed. Review the latest successful build before staging it.')
     if set(required_programs(root))-set(report.get('binaries',{})):
@@ -535,6 +540,7 @@ def staged_pair(req):
 
 def check_staged(req):
     generation,info=staged_pair(req);root=generation/'server';creds=None
+    check_solo_build_revision(info.get('build') or {})
     if info.get('stale_database'):raise ValueError('The active database changed after this copy was staged. Stage its database again to preserve newer progress.')
     info['state']='staged';info.pop('checked_at',None);info.pop('check_error',None)
     write_staged(generation,info)
@@ -1082,7 +1088,10 @@ class StartupProgress:
                     pending_processes=pending,stage=stage,recent_lines=self.recent[:],login_port_reachable=port_ready)
 
 def serve():
-    generation=current();recover_profile_repair(generation);root=generation/'server';programs=required_programs(root);validate_binaries(root);ensure_ports(programs)
+    generation=current();recover_profile_repair(generation);root=generation/'server'
+    meta=json.loads((generation/'deployment.json').read_text())
+    check_solo_build_revision(meta.get('build') or {})
+    programs=required_programs(root);validate_binaries(root);ensure_ports(programs)
     # Applied only to the active generation, never its reusable compiled build.
     # Failure to install optional diagnostics must not prevent gameplay.
     try:
@@ -1090,7 +1099,6 @@ def serve():
         trace=importlib.util.module_from_spec(spec);spec.loader.exec_module(trace)
         print(trace.install(root),flush=True)
     except (OSError,ValueError) as error:print('Zone-entry trace installation skipped: '+type(error).__name__,flush=True)
-    meta=json.loads((generation/'deployment.json').read_text())
     mesh_assets=prepare_meshes(root,meta.get('selected_source',{}))
     if mesh_assets:
         for name,receipt in mesh_assets.items():
