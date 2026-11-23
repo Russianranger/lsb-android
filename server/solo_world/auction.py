@@ -154,7 +154,7 @@ def disable(run_sql):
     """Withdraw only this supplier's live offers. Actual purchases stay in market history."""
     installed = run_sql("""SELECT COUNT(*) FROM information_schema.TABLES WHERE
         TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lsb_solo_auction_state';""")
-    if installed.strip() == '0':
+    if installed.strip() != '1':
         return 0
     data = run_sql(f"""
 SET SESSION innodb_lock_wait_timeout = 3;

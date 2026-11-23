@@ -6,12 +6,12 @@ require('scripts/globals/gambits')
 require('scripts/globals/trust')
 
 local module = Module:new('handheld_personal_squad')
-local jobs = { 'WAR', 'MNK', 'WHM', 'BLM', 'RDM', 'THF', 'PLD', 'DRK', 'BST', 'BRD', 'RNG', 'SAM', 'NIN', 'DRG', 'SMN', 'BLU', 'COR', 'PUP' }
+local jobs = { 'WAR', 'MNK', 'WHM', 'BLM', 'RDM', 'THF', 'PLD', 'DRK', 'BST', 'BRD', 'RNG', 'SAM', 'NIN', 'DRG', 'SMN', 'BLU', 'COR', 'PUP', 'DNC', 'SCH' }
 -- Spell IDs identify stock Trust combat scripts and client appearances. SMN and
 -- BLU have no matching stock Trust. Nashmeira provides a non-passive melee base.
-local templates = { 897, 933, 898, 896, 952, 901, 902, 906, 943, 911, 940, 900, 918, 915, 923, 923, 967, 923 }
+local templates = { 897, 933, 898, 896, 952, 901, 902, 906, 943, 911, 940, 900, 918, 915, 923, 923, 967, 923, 945, 968 }
 -- The stock templates disallow these alternate named Trusts in the same party.
-local alternate = { [933] = 1006, [896] = 1019, [906] = 1010, [900] = 1005, [923] = 1012 }
+local alternate = { [933] = 1006, [896] = 1019, [906] = 1010, [900] = 1005, [923] = 1012, [945] = 1013 }
 local slotNames = { [0] = 'main', 'sub', 'ranged', 'ammo', 'head', 'body', 'hands', 'legs', 'feet', 'neck', 'waist', 'ear1', 'ear2', 'ring1', 'ring2', 'back' }
 local roles = { auto = true, tank = true, damage = true, healer = true, support = true }
 local jobIds = {}
@@ -81,11 +81,71 @@ local function blueMagic(mate, role)
     end
 end
 
+local function dances(mate, level, role, mainDancer)
+    -- HIGHEST_WALTZ checks the dancer's current TP and main level, then aims
+    -- the highest affordable tier at the injured ally. It cannot rank /DNC.
+    if mainDancer and level >= 15 then
+        local threshold = role == 'healer' and 82 or (role == 'damage' and 40 or 65)
+        mate:addGambit(ai.t.PARTY, { ai.c.HPP_LT, threshold }, { ai.r.JA, ai.s.HIGHEST_WALTZ, xi.ja.CURING_WALTZ })
+    end
+    if level >= 5 then
+        local samba, tp = xi.ja.DRAIN_SAMBA, 100
+        if level >= 45 and (role == 'support' or role == 'damage') then
+            samba, tp = xi.ja.HASTE_SAMBA, 350
+        elseif level >= 65 then
+            samba, tp = xi.ja.DRAIN_SAMBA_III, 400
+        elseif level >= 35 then
+            samba, tp = xi.ja.DRAIN_SAMBA_II, 250
+        end
+        mate:addGambit(ai.t.SELF, { { ai.c.NO_SAMBA, 0 }, { ai.c.TP_GTE, tp } }, { ai.r.JA, ai.s.SPECIFIC, samba })
+    end
+    if level >= 20 then
+        -- Check the dancer's TP, then use the step on its combat target.
+        mate:addGambit(ai.t.TRIGGER_SELF_ACTION_TARGET, { ai.c.TP_GTE, 100 }, { ai.r.JA, ai.s.SPECIFIC, xi.ja.QUICKSTEP }, 20)
+    end
+end
+
+local function scholar(mate, role)
+    local level = mate:getMainLvl()
+    local white = role == 'healer' or role == 'support'
+    if level >= 10 then
+        local arts = white and xi.effect.LIGHT_ARTS or xi.effect.DARK_ARTS
+        local addendum = white and xi.effect.ADDENDUM_WHITE or xi.effect.ADDENDUM_BLACK
+        mate:addGambit(ai.t.SELF, { { ai.c.NOT_STATUS, arts }, { ai.c.NOT_STATUS, addendum } },
+            { ai.r.JA, ai.s.SPECIFIC, white and xi.ja.LIGHT_ARTS or xi.ja.DARK_ARTS })
+        if white or level >= 30 then
+            mate:addGambit(ai.t.SELF, { ai.c.STATUS, arts },
+                { ai.r.JA, ai.s.SPECIFIC, white and xi.ja.ADDENDUM_WHITE or xi.ja.ADDENDUM_BLACK })
+        end
+    end
+    -- Family selectors read the spell list built from the mate's actual jobs
+    -- at the effective level. Adelheid's scripted, unconditional Stun is omitted.
+    if role == 'auto' or role == 'damage' then
+        healing(mate, role == 'damage' and 40 or 65)
+    end
+    if white then
+        mate:addGambit(ai.t.PARTY, { { ai.c.HPP_LT, 80 }, { ai.c.NOT_STATUS, xi.effect.REGEN } }, { ai.r.MA, ai.s.HIGHEST, xi.magic.spellFamily.REGEN })
+    end
+    if level >= 41 then
+        mate:addGambit(ai.t.SELF, { ai.c.NO_STORM, 0 }, { ai.r.MA, ai.s.STORM_DAY, 0 })
+    end
+    if not white and HandheldCanCastSpell(mate, xi.magic.spell.STONE) then
+        if level >= 18 then
+            mate:addGambit(ai.t.TARGET, { ai.c.NOT_STATUS, xi.effect.HELIX }, { ai.r.MA, ai.s.HELIX_DAY, 0 })
+        end
+        mate:addGambit(ai.t.TARGET, { ai.c.ALWAYS, 0 }, { ai.r.MA, ai.s.BEST_AGAINST_TARGET, 0 }, 8)
+        mate:addGambit(ai.t.TARGET, { ai.c.ALWAYS, 0 }, { ai.r.MA, ai.s.HIGHEST, xi.magic.spellFamily.STONE }, 8)
+    end
+end
+
 local function applyRole(mate, job, sub, role)
-    if role ~= 'auto' then
+    if role ~= 'auto' or job == xi.job.DNC or job == xi.job.SCH then
         mate:removeAllGambits()
         mate:setAutoAttackEnabled(true)
         mate:setMobMod(xi.mobMod.TRUST_DISTANCE, xi.trust.movementType.MELEE)
+        if job == xi.job.DNC then
+            dances(mate, mate:getMainLvl(), role, true)
+        end
         if role == 'tank' then
             if (job == 1 and mate:getMainLvl() >= 5) or (sub == 1 and mate:getSubLvl() >= 5) then
                 mate:addGambit(ai.t.SELF, { ai.c.NOT_HAS_TOP_ENMITY, 0 }, { ai.r.JA, ai.s.SPECIFIC, xi.ja.PROVOKE })
@@ -95,7 +155,9 @@ local function applyRole(mate, job, sub, role)
             end
             healing(mate, 45)
         elseif role == 'healer' or role == 'support' then
-            mate:setMobMod(xi.mobMod.TRUST_DISTANCE, xi.trust.movementType.MID_RANGE)
+            if job ~= xi.job.DNC and (job ~= xi.job.SCH or HandheldCanCastSpell(mate, xi.magic.spell.CURE)) then
+                mate:setMobMod(xi.mobMod.TRUST_DISTANCE, xi.trust.movementType.MID_RANGE)
+            end
             healing(mate, role == 'healer' and 82 or 58)
             mate:addGambit(ai.t.PARTY, { ai.c.NOT_STATUS, xi.effect.PROTECT }, { ai.r.MA, ai.s.HIGHEST, xi.magic.spellFamily.PROTECT })
             if HandheldCanCastSpell(mate, xi.magic.spell.HASTE) then
@@ -112,7 +174,10 @@ local function applyRole(mate, job, sub, role)
     end
     if job == 16 then
         blueMagic(mate, role)
+    elseif job == xi.job.SCH then
+        scholar(mate, role)
     end
+    if sub == xi.job.DNC then dances(mate, mate:getSubLvl(), role, false) end
 end
 
 local function callMate(player, slot, mate)
@@ -207,7 +272,7 @@ local function command(player, action, arg, value, extra)
         local name, job = arg or '', jobIds[string.upper(value or '')]
         local level = (not extra or extra == '') and 1 or tonumber(extra)
         if not name:match('^[A-Za-z]+$') or #name < 3 or #name > 15 or not unlocked(player, job) then
-            return say(player, 'Use !squad new NAME JOB [level]. Use 3-15 letters and an unlocked job through PUP.')
+            return say(player, 'Use !squad new NAME JOB [level]. Use 3-15 letters and an unlocked job through SCH.')
         end
         if not level or level ~= math.floor(level) or level < 1 or level > math.min(12, player:getMainLvl()) then
             return say(player, 'Starting level must be between 1 and your level, up to 12.')
@@ -275,7 +340,7 @@ local function command(player, action, arg, value, extra)
         if action == 'sub' and string.lower(value or '') == 'none' then
             mate.sub = 0
         elseif not unlocked(player, job) then
-            return say(player, 'Choose an unlocked job between WAR and PUP.')
+            return say(player, 'Choose an unlocked job between WAR and SCH.')
         elseif action == 'job' then
             mate.main = job
             if mate.sub == job then mate.sub = 0 end

@@ -3,7 +3,7 @@ from solo_mariadb_fixture import MariaDBFixture
 
 
 def check(root):
-    from solo_world import WorldSession, prepare_schema
+    from solo_world import WorldSession, prepare_schema, auction, conquest
     with MariaDBFixture() as db:
         for name in ('accounts', 'accounts_sessions', 'chars', 'item_basic', 'auction_house', 'auction_house_items', 'delivery_box', 'conquest_system'):
             db.run((root / 'sql' / (name + '.sql')).read_text())
@@ -27,4 +27,12 @@ def check(root):
         assert db.run('SELECT total_xp FROM handheld_squad_jobs WHERE charid=17 AND job=3;').strip() == '150'
         assert db.run('SELECT COUNT(*) FROM delivery_box WHERE charid=17 AND quantity=250;').strip() == '1'
         assert int(db.run("SELECT COUNT(*) FROM auction_house WHERE seller_name='LSB Provisioner' AND sale=0;")) > 0
+        # Restore this solo backup into a standard build before re-enabling it.
+        # End the old simulation clock and withdraw only the supplier's unsold offers.
+        conquest.disable(db.run)
+        auction.disable(db.run)
+        assert db.run('SELECT COUNT(*) FROM lsb_solo_conquest_clock;').strip() == '0'
+        assert db.run("SELECT COUNT(*) FROM auction_house WHERE seller_name='LSB Provisioner' AND sale=0;").strip() == '0'
+        assert db.run("SELECT COUNT(*) FROM auction_house WHERE seller=17 AND sale=250;").strip() == '1'
+        assert db.run('SELECT total_xp FROM handheld_squad_jobs WHERE charid=17 AND job=3;').strip() == '150'
     return dict(state='passed', preserved_character=True, preserved_mate_xp=True, duplicate_payments=0)

@@ -15,6 +15,12 @@ import sys
 import time
 import uuid
 
+# The supervisor is also launched via runpy and loaded from its file by build tools.
+# Resolve sibling server packages exactly as a direct manager.py invocation would.
+SERVER_TOOLS = str(Path(__file__).resolve().parent)
+if SERVER_TOOLS not in sys.path:
+    sys.path.insert(0, SERVER_TOOLS)
+
 STATE=Path('/state')
 RUN=Path('/server-run')
 LOGS=Path('/server-logs')
@@ -429,7 +435,7 @@ def prepare_database(root,name,creds,mode):
 
 def is_solo_deployment(generation):
     meta = json.loads((generation / 'deployment.json').read_text())
-    return bool(meta.get('build', {}).get('solo_world'))
+    return bool((meta.get('build') or {}).get('solo_world'))
 
 
 def prepare_world_database(root, enabled, name, creds):
@@ -735,8 +741,7 @@ def restore_database(req,dump=None):
     try:
         creds=import_database(generation,dump,name)
         counts=account_counts(name,creds);write_network(root,name,creds)
-        if meta.get('build', {}).get('solo_world'):
-            prepare_world_database(root, True, name, creds)
+        prepare_world_database(root, bool((meta.get('build') or {}).get('solo_world')), name, creds)
         local_zones=meta.get('local_zones',req.get('local_zones',True))
         if local_zones:sql("UPDATE zone_settings SET zoneip='127.0.0.1',zoneport=54230;",creds['game'],'lsb',name)
         info=dict(meta)
@@ -884,6 +889,7 @@ def deploy(req):
             finally:config.unlink(missing_ok=True)
             after=account_counts(name,creds)
             if after!=before:raise RuntimeError('Account or character counts changed during the update; active deployment kept')
+        prepare_world_database(root, bool((build_report or {}).get('solo_world')), name, creds)
         info=source_info(root)
         if build_report is not None:info['build']=build_report
         info.update(format=1,generation=generation.name,database=name,selected_source=identity,mesh_assets=mesh_assets,accounts=before['accounts'],characters=before['chars'],created_at=time.time(),updated=updating,local_zones=req.get('local_zones',True),client_pair=req.get('client_pair',{}),binaries={n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in required_programs(root)})
@@ -1102,7 +1108,7 @@ def serve():
     workers=[]
     world = None
     try:
-        if meta.get('build', {}).get('solo_world'):
+        if (meta.get('build') or {}).get('solo_world'):
             from solo_world import WorldSession
             world = WorldSession(lambda statement: sql(statement, creds['game'], 'lsb', meta['database']))
             world.start()

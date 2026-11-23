@@ -30,6 +30,16 @@ class HandheldSquadTests(unittest.TestCase):
             self.assertEqual(db.run('SELECT name FROM chars WHERE charid=4;').strip(), 'Existing')
             self.assertEqual(db.run('SELECT j.total_xp, g.itemid FROM handheld_squad_jobs j '
                                     'JOIN handheld_squad_gear g USING(charid,slot,job);').strip(), '521\t1234')
+            # Train both new jobs on the existing mate and keep the original
+            # job's XP and equipment across another idempotent prepare.
+            db.run('UPDATE handheld_squad_mates SET main_job=19,sub_job=20 WHERE charid=4; '
+                   'INSERT INTO handheld_squad_jobs VALUES (4,1,19,600),(4,1,20,1400); '
+                   'INSERT INTO handheld_squad_gear VALUES (4,1,19,5,4321),(4,1,20,5,2345);')
+            db.run(schema)
+            self.assertEqual(db.run('SELECT main_job,sub_job FROM handheld_squad_mates WHERE charid=4;').strip(), '19\t20')
+            self.assertEqual(db.run('SELECT job,total_xp,itemid FROM handheld_squad_jobs '
+                                    'JOIN handheld_squad_gear USING(charid,slot,job) WHERE charid=4 ORDER BY job;').splitlines(),
+                             ['3\t521\t1234', '19\t600\t4321', '20\t1400\t2345'])
             db.run('DELETE FROM chars WHERE charid=4;')
             self.assertEqual(db.run('SELECT charid FROM handheld_squad_jobs;').strip(), '9')
             self.assertEqual(db.run('SELECT COUNT(*) FROM handheld_squad_gear;').strip(), '0')

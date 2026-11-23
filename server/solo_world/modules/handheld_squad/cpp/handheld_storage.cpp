@@ -4,6 +4,7 @@
 #include "common/lua.h"
 #include "map/utils/charutils.h"
 #include "map/utils/moduleutils.h"
+#include "handheld_mate_rules.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -90,7 +91,7 @@ sol::table roster(uint32 owner)
 
 bool createMate(uint32 owner, uint8 slot, const std::string& name, uint8 job, uint8 level)
 {
-    if (slot < 1 || slot > 6 || job < 1 || job > 18 || level < 1 || level > 12)
+    if (slot < 1 || slot > 6 || !handheld::validJobLevel(job, level) || level > 12)
     {
         return false;
     }
@@ -112,6 +113,10 @@ bool releaseMate(uint32 owner, uint8 slot, const std::string& name)
 
 bool setProfile(uint32 owner, uint8 slot, uint8 main, uint8 sub, const std::string& role)
 {
+    if (main < 1 || main > handheld::lastEraJob || sub > handheld::lastEraJob || sub == main)
+    {
+        return false;
+    }
     return db::preparedStmt("UPDATE handheld_squad_mates SET main_job=?, sub_job=?, role=? WHERE charid=? AND slot=?",
                             main, sub, role, owner, slot) != nullptr;
 }
@@ -140,7 +145,7 @@ bool setGear(uint32 owner, uint8 slot, uint8 job, const sol::table& items)
 
 uint8 gainXp(uint32 owner, uint8 slot, uint8 job, uint32 gain)
 {
-    if (gain == 0 || slot < 1 || slot > 6 || job < 1 || job > 18)
+    if (gain == 0 || slot < 1 || slot > 6 || job < 1 || job > handheld::lastEraJob)
     {
         return 0;
     }

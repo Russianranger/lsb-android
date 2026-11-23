@@ -98,14 +98,22 @@ bool learnsSpell(CTrustEntity& mate, int id)
     }
     constexpr std::array blueSet{ 577, 597, 529, 623, 569, 554, 560, 611, 549, 578, 593 };
     const auto group = spell->getSpellGroup();
+    const auto requirements = spell->getRequirements();
+    constexpr int addendum = SPELLREQ_ADDENDUM_BLACK | SPELLREQ_ADDENDUM_WHITE;
     if (group == SPELLGROUP_TRUST || group == SPELLGROUP_SUMMONING || group == SPELLGROUP_NONE ||
         (group == SPELLGROUP_BLUE && std::ranges::find(blueSet, id) == blueSet.end()) ||
-        (spell->getRequirements() & ~SPELLREQ_MAIN_JOB_ONLY))
+        (requirements & ~(addendum | SPELLREQ_MAIN_JOB_ONLY)))
     {
         return false;
     }
-    return spell->getJob(mate.GetMJob()) <= mate.GetMLevel() ||
-           (mate.GetSLevel() && !(spell->getRequirements() & SPELLREQ_MAIN_JOB_ONLY) && spell->getJob(mate.GetSJob()) <= mate.GetSLevel());
+    auto learnsAs = [&](xi::Job job, uint8 level)
+    {
+        // Addenda unlock these spells for Scholar. Other jobs learn their own
+        // versions normally, for example Poisona on White Mage.
+        return level && spell->getJob(job) <= level && !(job == xi::Job::SCH && (requirements & addendum));
+    };
+    return learnsAs(mate.GetMJob(), mate.GetMLevel()) ||
+           (!(requirements & SPELLREQ_MAIN_JOB_ONLY) && learnsAs(mate.GetSJob(), mate.GetSLevel()));
 }
 
 bool canCast(CLuaBaseEntity* entity, int id)
@@ -114,15 +122,16 @@ bool canCast(CLuaBaseEntity* entity, int id)
     return mate && mate->GetLocalVar("HANDHELD_MATE") && learnsSpell(*mate, id);
 }
 
-void configureFallbackSpells(CTrustEntity& mate)
+void configureJobSpells(CTrustEntity& mate)
 {
     const auto mainJob = mate.GetMJob();
-    if ((mainJob != xi::Job::BLU && mainJob != xi::Job::SMN) || !mate.SpellContainer)
+    constexpr std::array jobs{ xi::Job::SMN, xi::Job::BLU, xi::Job::DNC, xi::Job::SCH };
+    if (std::ranges::find(jobs, mainJob) == jobs.end() || !mate.SpellContainer)
     {
         return;
     }
-    // These two jobs use a neutral melee Trust as a model. Build their usable
-    // spells from their own job levels instead of the model's spell list.
+    // These jobs have custom gambits. Build their spell families from the mate's
+    // actual jobs and effective levels, including spells granted by its subjob.
     mate.SpellContainer->ClearSpells();
     for (int id = 1; id < static_cast<int>(MAX_SPELL_ID); ++id)
     {
@@ -159,7 +168,7 @@ auto spawnMate(CLuaBaseEntity* player, int templateId, const std::string& name, 
     auto configure = [&gear](CTrustEntity& trust)
     {
         equipMate(trust, gear);
-        configureFallbackSpells(trust);
+        configureJobSpells(trust);
     };
     const trustutils::PersonalMate profile{
         name, static_cast<uint8>(job), static_cast<uint8>(level), static_cast<uint8>(subJob), static_cast<uint8>(subLevel), configure

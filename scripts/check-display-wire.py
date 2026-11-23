@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Compare production RFB decoding with real TigerVNC pixels over a Unix socket."""
-import argparse,os,subprocess,tempfile,time
+import argparse,os,subprocess,tempfile
 from pathlib import Path
+from display_fixture_ready import wait_for_ready
 root=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--backend',choices=['native','docker','proot'],required=True);args=p.parse_args()
 for name in ('x11-frame-bridge','x11-upload-check'):(root/'out/presentation'/name).chmod(0o700)
@@ -20,11 +21,7 @@ with tempfile.TemporaryDirectory(prefix='lsb-wire-') as temporary:
     with (work/(args.backend+'.log')).open('w') as log:
         process=subprocess.Popen(command,env=env,stdout=log,stderr=subprocess.STDOUT)
         try:
-            deadline=time.monotonic()+45
-            while not (folder/'ready').exists():
-                if process.poll() is not None:raise RuntimeError('Display fixture stopped; see '+str(log.name))
-                if time.monotonic()>deadline:raise TimeoutError('Display fixture readiness')
-                time.sleep(.05)
+            wait_for_ready(folder, process, log.name)
             subprocess.run(['java','-ea','-cp',str(work),'io.github.russianranger.lsb.DisplayWireProbe',str(folder/'display.sock')],check=True,timeout=90)
         finally:
             (folder/'stop').write_text('stop')

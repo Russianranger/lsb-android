@@ -174,7 +174,11 @@ class ServerTests(unittest.TestCase):
                     if failure=='stop':(m.RUN/'stop').touch()
                 with mock.patch.object(m,'status'),mock.patch.object(m,'validate_binaries'),mock.patch.object(m,'import_database',return_value={'game':'secret'}),mock.patch.object(m,'account_counts',return_value={'accounts':2,'chars':3}),mock.patch.object(m,'write_network'),mock.patch.object(m,'sql') as sql,mock.patch.object(m,'stop_database',side_effect=stop) as shutdown,mock.patch.object(m,'atomic',side_effect=atomic):
                     with self.assertRaises(OSError if failure=='metadata' else InterruptedError):m.restore_database({'local_zones':True})
-                    shutdown.assert_called_once();sql.assert_not_called()
+                    shutdown.assert_called_once()
+                    # Restoring a vanilla generation may inspect the staged database
+                    # for managed solo tables. No game/zone rows may be written here.
+                    self.assertTrue(all(call.args[0].lstrip().startswith('SELECT COUNT(*) FROM information_schema.TABLES')
+                                        for call in sql.call_args_list))
                 self.assertEqual((m.STATE/'active.json').read_bytes(),pointer)
                 self.assertEqual(json.loads((old/'deployment.json').read_text()),original)
                 self.assertTrue(all((server/name).read_bytes()==name.encode() for name in m.PROCESSES))

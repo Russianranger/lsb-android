@@ -125,3 +125,6 @@ def verify_native_surface(folder,display,x,d,window,gc):
                 try:process.wait(timeout=5)
                 except subprocess.TimeoutExpired:process.kill();process.wait()
                 print(log.read_text(),flush=True)
+        # Let the host renew the stall timer only after *all* assertions for this
+        # configuration and its two reconnects have passed.
+        log.with_suffix('.passed').touch()

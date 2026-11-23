@@ -83,13 +83,13 @@ jobs:
             --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
             --build-tools "$ANDROID_HOME/build-tools/35.0.0" \
             --keystore "$RUNNER_TEMP/ci-only.jks"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.8.0.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging out/LSB-Android-0.8.1.apk
       - name: Record APK payload hashes for device signing verification
         run: |
           python3 - <<'PY'
           import hashlib, json, zipfile
           from pathlib import Path
-          apk = Path('out/LSB-Android-0.8.0.apk')
+          apk = Path('out/LSB-Android-0.8.1.apk')
           with zipfile.ZipFile(apk) as z:
               assert z.testzip() is None
               names = z.namelist()
@@ -110,7 +110,7 @@ jobs:
         with:
           name: runtime-device-build
           path: |
-            out/LSB-Android-0.8.0.apk
+            out/LSB-Android-0.8.1.apk
             out/runtime-probes/
             out/runtime-assets/
             out/presentation/

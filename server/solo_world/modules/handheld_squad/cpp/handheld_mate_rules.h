@@ -7,14 +7,16 @@
 
 namespace handheld
 {
+constexpr int lastEraJob = 20; // Scholar
+
 constexpr bool validJobLevel(int job, int level)
 {
-    return job >= 1 && job <= 18 && level >= 1 && level <= 75;
+    return job >= 1 && job <= lastEraJob && level >= 1 && level <= 75;
 }
 
 constexpr bool validProfile(std::string_view name, int job, int level, int subJob, int subLevel)
 {
-    if (!validJobLevel(job, level) || subJob < 0 || subJob > 18 || subJob == job ||
+    if (!validJobLevel(job, level) || subJob < 0 || subJob > lastEraJob || subJob == job ||
         subLevel < 0 || subLevel > level / 2 || ((subJob == 0) != (subLevel == 0)))
     {
         return false;

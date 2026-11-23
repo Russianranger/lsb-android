@@ -11,14 +11,23 @@ package.preload['scripts/globals/gambits'] = function() end
 local function strict(t)
     return setmetatable(t, { __index = function(_, k) error('unknown engine constant ' .. k) end })
 end
-ai = { t = strict({ PARTY=1, SELF=2, TARGET=3 }), c=strict({ HPP_LT=1, ALWAYS=2, NOT_STATUS=3, NOT_HAS_TOP_ENMITY=4 }),
-       r=strict({ MA=1, JA=2 }), s=strict({ HIGHEST=1, SPECIFIC=2, BEST_AGAINST_TARGET=3 }) }
+ai = { t = strict({ PARTY=1, SELF=2, TARGET=3, TRIGGER_SELF_ACTION_TARGET=12 }),
+       c=strict({ HPP_LT=1, ALWAYS=2, NOT_STATUS=3, NOT_HAS_TOP_ENMITY=4, STATUS=9, TP_GTE=6, NO_SAMBA=23, NO_STORM=24 }),
+       r=strict({ MA=1, JA=2 }), s=strict({ HIGHEST=1, SPECIFIC=2, BEST_AGAINST_TARGET=3, HIGHEST_WALTZ=9, STORM_DAY=12, HELIX_DAY=13 }) }
 xi = { objType={ TRUST=3 }, module={ registerCommand=function(name, value) assert(name == 'squad'); command=value.onTrigger end },
-       trust={ movementType={ MID_RANGE=6, MELEE=0 } }, mobMod={TRUST_DISTANCE=1}, ja={PROVOKE=1},
-       effect=strict({FLASH=1,HASTE=2,PROTECT=3,MARCH=4}), magic={spell={FLASH=1,HASTE=2},spellFamily={CURE=1,PROTECT=2,MARCH=3}} }
+       trust={ movementType={ MID_RANGE=6, MELEE=0 } }, mobMod={TRUST_DISTANCE=1}, job=strict({DNC=19,SCH=20}),
+       ja=strict({PROVOKE=1,DRAIN_SAMBA=184,DRAIN_SAMBA_II=185,DRAIN_SAMBA_III=186,HASTE_SAMBA=189,CURING_WALTZ=190,QUICKSTEP=201,
+                  LIGHT_ARTS=211,DARK_ARTS=212,ADDENDUM_WHITE=234,ADDENDUM_BLACK=235}),
+       effect=strict({FLASH=1,HASTE=2,PROTECT=3,MARCH=4,REGEN=5,HELIX=6,LIGHT_ARTS=7,DARK_ARTS=8,ADDENDUM_WHITE=9,ADDENDUM_BLACK=10}),
+       magic={spell=strict({CURE=1,FLASH=112,HASTE=57,STONE=159,STUN=252}),spellFamily=strict({CURE=1,PROTECT=2,MARCH=3,REGEN=4,STONE=5})} }
 function GetSpell(id) return { getID = function() return id end } end
 xi.trust.canCast = function(_, spell, variant)
     if spell:getID() == 923 then assert(variant == 1012) end
+    if spell:getID() == 945 then
+        assert(variant == 1013)
+        if map.hasLilisetteII then return 1 end
+    end
+    if spell:getID() == 968 then assert(variant == nil) end
     return map.trustBlocked and 1 or 0
 end
 Module = { new=function() return { addOverride=function(_, name, fn) assert(name == 'xi.player.onGameIn'); gameIn=fn end } end }
@@ -44,7 +53,14 @@ function HandheldSquadGainXp(_, slot, job, xp)
 end
 function HandheldCanEquip(id, _, level, slot) return slot==4 and id==100 and level>=10 end
 function HandheldMateWasReleased(entity) return entity.released == true end
-function HandheldCanCastSpell(_, id) return id~=611 end
+function HandheldCanCastSpell(mate, id)
+    if mate:getMainJob() == xi.job.SCH then
+        if id == xi.magic.spell.STONE then return mate:getMainLvl() >= 4 end
+        if id == xi.magic.spell.CURE then return mate:getMainLvl() >= 5 end
+        return false
+    end
+    return id~=611
+end
 function DismissHandheldMate() spawned=nil end
 
 local player = { vars = {} }
@@ -75,7 +91,7 @@ function player:timer(ms, callback) timers[#timers+1]=callback; assert(ms>0) end
 
 local nextId=800
 function SpawnHandheldMate(_, template, name, job, level, sub, subLevel, outfit)
-    assert(type(template)=='number' and not spawned and job<=18 and level<=75)
+    assert(type(template)=='number' and not spawned and job<=20 and level<=75)
     local vars = { HANDHELD_MATE=9 }
     nextId=nextId+1
     local id=nextId
@@ -86,12 +102,16 @@ function SpawnHandheldMate(_, template, name, job, level, sub, subLevel, outfit)
         getObjType=function() return xi.objType.TRUST end, getPacketName=function() return name end,
         isAlive=function(s) return not s.dead end, getMaster=function() return player end,
         checkDistance=function(s) return s.distance end, addListener=function(s,event,_,fn) s[event:lower()]=fn end,
-        setAutoAttackEnabled=function() end, setMobMod=function() end,
+        setAutoAttackEnabled=function() end, setMobMod=function(s,_,value) s.placement=value end,
         removeAllGambits=function(s) s.gambits={} end,
-        addGambit=function(s, target, cond, action)
+        addGambit=function(s, target, cond, action, retry)
             assert(cond[1] and action[1] and action[2] and action[3]); assert(action[3]~=611)
+            action.target, action.cond, action.retry=target, cond, retry
             s.gambits[#s.gambits+1]=action
         end }
+    if job == xi.job.SCH then
+        spawned:addGambit(ai.t.TARGET, { ai.c.ALWAYS, 0 }, { ai.r.MA, ai.s.SPECIFIC, xi.magic.spell.STUN })
+    end
     return spawned
 end
 dofile(assert(arg[1], 'pass module path'))
@@ -105,6 +125,11 @@ run('new','Bod','WAR'); run('new','Cat','MNK'); run('new','Dad','THF'); run('new
 run('new','Gil','WAR'); has('All six')
 map.jobUnlocks=false
 run('job','2','PUP'); has('unlocked'); assert(mates[2].main==1)
+for _, job in ipairs({'DNC','SCH'}) do
+    run('job','2',job); has('unlocked'); assert(mates[2].main==1)
+    run('sub','2',job); has('unlocked'); assert(mates[2].sub==0)
+    run('new','Una',job); has('unlocked')
+end
 map.jobUnlocks=true
 run('equip','1'); assert(mates[1].gear[4]==100 and mates[1].gear[0]==nil)
 run('sub','1','RDM'); run('role','1','healer')
@@ -124,13 +149,61 @@ gameIn(player,false,true); table.remove(timers)(player); assert(not spawned and 
 map.trustBlocked=false; gameIn(player,false,true); assert(#timers==1); table.remove(timers)(player)
 assert(spawned and map.exp)
 run('dismiss'); assert(not spawned and recall==0 and not map.exp)
-local ids={'WAR','MNK','WHM','BLM','RDM','THF','PLD','DRK','BST','BRD','RNG','SAM','NIN','DRG','SMN','BLU','COR','PUP'}
+local ids={'WAR','MNK','WHM','BLM','RDM','THF','PLD','DRK','BST','BRD','RNG','SAM','NIN','DRG','SMN','BLU','COR','PUP','DNC','SCH'}
 for n, job in ipairs(ids) do
     run('job','2',job); run('call','2')
     assert(spawned and spawned:getMainJob()==n)
     run('dismiss')
 end
-run('job','2','DNC'); assert(mates[2].main==18)
+run('job','2','GEO'); has('unlocked'); assert(mates[2].main==20)
+local function gambit(kind, selector, id)
+    for _, g in ipairs(spawned.gambits) do
+        if g[1] == kind and g[2] == selector and g[3] == id then return g end
+    end
+end
+local function jobAbility(id) return gambit(ai.r.JA, ai.s.SPECIFIC, id) end
+local function callAt(job, level, role)
+    run('dismiss')
+    mates[2].jobs[job]={level=level,xp=0,needed=500}
+    run('job','2',ids[job]); run('role','2',role or 'auto'); run('call','2')
+    assert(spawned and spawned:getMainLvl()==math.min(map.level,level))
+end
+callAt(19,4); assert(spawned.template==945 and #spawned.gambits==0)
+run('dismiss');map.hasLilisetteII=true;run('call','2');has('summoning rules');assert(not spawned)
+map.hasLilisetteII=false
+callAt(19,5)
+local samba=assert(jobAbility(xi.ja.DRAIN_SAMBA))
+assert(samba.target==ai.t.SELF and samba.cond[2][1]==ai.c.TP_GTE and samba.cond[2][2]==100)
+callAt(19,14);assert(not gambit(ai.r.JA,ai.s.HIGHEST_WALTZ,xi.ja.CURING_WALTZ))
+callAt(19,15,'healer')
+local waltz=assert(gambit(ai.r.JA,ai.s.HIGHEST_WALTZ,xi.ja.CURING_WALTZ))
+assert(waltz.target==ai.t.PARTY and waltz.cond[2]==82 and spawned.placement==xi.trust.movementType.MELEE)
+assert(not jobAbility(xi.ja.QUICKSTEP))
+callAt(19,20);local step=assert(jobAbility(xi.ja.QUICKSTEP))
+assert(step.target==ai.t.TRIGGER_SELF_ACTION_TARGET and step.cond[1]==ai.c.TP_GTE and step.cond[2]==100)
+callAt(19,35);assert(jobAbility(xi.ja.DRAIN_SAMBA_II).cond[2][2]==250)
+callAt(19,45,'support');assert(jobAbility(xi.ja.HASTE_SAMBA).cond[2][2]==350)
+callAt(19,75);assert(jobAbility(xi.ja.DRAIN_SAMBA_III).cond[2][2]==400)
+local priorGains=gains
+map.exp(player,mob,200); assert(gains==priorGains)
+map.level=4;callAt(19,75);assert(not jobAbility(xi.ja.DRAIN_SAMBA));map.level=75
+callAt(20,1)
+assert(spawned.template==968 and not gambit(ai.r.MA,ai.s.SPECIFIC,xi.magic.spell.STUN))
+assert(not jobAbility(xi.ja.DARK_ARTS) and not gambit(ai.r.MA,ai.s.HIGHEST,xi.magic.spellFamily.STONE))
+callAt(20,4);assert(gambit(ai.r.MA,ai.s.HIGHEST,xi.magic.spellFamily.STONE))
+callAt(20,5,'healer');assert(spawned.placement==xi.trust.movementType.MID_RANGE)
+callAt(20,10);assert(jobAbility(xi.ja.DARK_ARTS) and not jobAbility(xi.ja.ADDENDUM_BLACK))
+callAt(20,10,'support');assert(jobAbility(xi.ja.LIGHT_ARTS) and jobAbility(xi.ja.ADDENDUM_WHITE))
+assert(not jobAbility(xi.ja.DARK_ARTS))
+callAt(20,29);assert(gambit(ai.r.MA,ai.s.HELIX_DAY,0) and not jobAbility(xi.ja.ADDENDUM_BLACK))
+callAt(20,30);assert(jobAbility(xi.ja.ADDENDUM_BLACK) and not gambit(ai.r.MA,ai.s.STORM_DAY,0))
+callAt(20,75);assert(gambit(ai.r.MA,ai.s.STORM_DAY,0) and not gambit(ai.r.MA,ai.s.SPECIFIC,xi.magic.spell.STUN))
+map.exp(player,mob,200); assert(gains==priorGains)
+run('dismiss');run('job','2','WAR');run('sub','2','DNC')
+mates[2].jobs[1]={level=75,xp=0};run('call','2')
+assert(spawned:getSubLvl()==37 and jobAbility(xi.ja.DRAIN_SAMBA_II) and not jobAbility(xi.ja.DRAIN_SAMBA_III))
+assert(not gambit(ai.r.JA,ai.s.HIGHEST_WALTZ,xi.ja.CURING_WALTZ))
+run('dismiss');run('sub','2','none')
 for _, policy in ipairs({'auto','tank','damage','healer','support'}) do
     run('job','2','BLM');run('role','2',policy);run('call','2');run('dismiss')
 end
