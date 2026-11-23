@@ -17,6 +17,7 @@ final class ServerRuntime {
     private static ServerRuntime instance;
     static synchronized ServerRuntime get(Context c){if(instance==null)instance=new ServerRuntime(c.getApplicationContext());return instance;}
     private final Context context;
+    private boolean serverAssetsInstalled;
     interface ProcessStarter { Process start(ProcessBuilder builder)throws IOException; }
     private final ProcessStarter processStarter;
     final File home,root,state,run,logs,backend,tmp;
@@ -77,6 +78,7 @@ final class ServerRuntime {
     String performBuild(String action,String buildId,String generation,String databaseMode,SafeZip.Progress progress)throws Exception {
         if(!Arrays.asList("build-source","adopt-build","stage-build","check-staged","deploy-staged").contains(action))throw new IOException("Unknown build action");
         JSONObject selection=new JSONObject();
+        if(action.equals("build-source"))selection.put("solo_world",context.getSharedPreferences("server",0).getBoolean("solo_world",false));
         if(Arrays.asList("stage-build","check-staged","deploy-staged").contains(action)){
             selectedId(buildId,"build");selection.put("build_id",buildId);
         }
@@ -143,7 +145,57 @@ final class ServerRuntime {
     static synchronized void resetAfterRestore(){instance=null;}
     private void assets()throws Exception {
         for(File f:new File[]{home,state,run,logs,backend,tmp})FilesEx.mkdir(f);
-        for(String name:context.getAssets().list("server"))try(InputStream in=context.getAssets().open("server/"+name);OutputStream out=new FileOutputStream(new File(backend,name))){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
+        if (serverAssetsInstalled) return;
+        Set<File> shipped = new HashSet<>();
+        copyAssetDirectory("server", backend, new byte[65536], shipped);
+        // The package owns this directory. Obsolete SQL, Lua and patches must not
+        // survive an upgrade. World state and user settings are stored separately.
+        File solo = new File(backend, "solo_world");
+        if (solo.isDirectory() && !Files.isSymbolicLink(solo.toPath())) removeStaleAssets(solo, shipped);
+        serverAssetsInstalled = true;
+    }
+
+    private void copyAssetDirectory(String assetPath, File destination, byte[] buffer,
+                                    Set<File> shipped) throws IOException {
+        String[] names = context.getAssets().list(assetPath);
+        if (names == null) throw new IOException("Cannot list APK assets: " + assetPath);
+        for (String name : names) {
+            String path = assetPath + "/" + name;
+            File target = new File(destination, name);
+            String[] children = context.getAssets().list(path);
+            if (children != null && children.length > 0) {
+                copyAssetDirectory(path, target, buffer, shipped);
+            } else if (shipped.add(target)) {
+                // APKs without explicit ZIP directory entries can list a nested file
+                // directly. In both cases the full path opens the same asset.
+                FilesEx.mkdir(target.getParentFile());
+                File temporary = new File(target.getPath() + ".incoming");
+                try {
+                    try (InputStream in = context.getAssets().open(path);
+                         OutputStream out = new FileOutputStream(temporary)) {
+                        int count;
+                        while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+                    }
+                    Files.move(temporary.toPath(), target.toPath(),
+                            StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } finally {
+                    temporary.delete();
+                }
+            }
+        }
+    }
+
+    private void removeStaleAssets(File directory, Set<File> shipped) throws IOException {
+        for (File file : FilesEx.children(directory)) {
+            if (Files.isSymbolicLink(file.toPath())) {
+                Files.delete(file.toPath());
+            } else if (file.isDirectory()) {
+                removeStaleAssets(file, shipped);
+                if (FilesEx.children(file).length == 0) FilesEx.delete(file);
+            } else if (!shipped.contains(file)) {
+                FilesEx.delete(file);
+            }
+        }
     }
     String importDatabase(InputStream input,SafeZip.Progress progress)throws Exception {
         try(Operation reserved=beginOperation()){return importDatabaseReserved(input,progress);}

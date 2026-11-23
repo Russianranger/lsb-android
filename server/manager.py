@@ -214,7 +214,7 @@ def cache_stats(env):
         return values or None
     except (OSError,subprocess.TimeoutExpired):return None
 
-def build(root, jobs, targets=None, report_path=None):
+def build(root, jobs, targets=None, report_path=None, solo_world=False):
     checked_jobs(jobs)
     programs=tuple(targets) if targets is not None else required_programs(root)
     if not programs or len(set(programs))!=len(programs) or not set(programs).issubset(required_programs(root)):
@@ -234,6 +234,10 @@ def build(root, jobs, targets=None, report_path=None):
                 build_hook_sha256=hashlib.sha256(hook.read_bytes()).hexdigest())
     atomic(report_path,report)
     try:
+        if solo_world:
+            from solo_world import FORMAT, install
+            install(root)
+            report['solo_world'] = FORMAT
         report['patches']=apply_source_patches(root)
         atomic(report_path,report)
         status('building','Preparing the selected source and Python build dependencies…')
@@ -368,7 +372,7 @@ def build_source(req):
     workspace.mkdir(parents=True)
     snapshot_source(source,root,recover_build_binaries=False)
     identity=selected_source(req,tree_fingerprint(root,include_binaries=False))
-    report=build(root,checked_jobs(req.get('jobs',2)))
+    report=build(root,checked_jobs(req.get('jobs',2)),solo_world=req.get('solo_world') is True)
     identity['expected_client']=report['source']['expected_client']
     report.update(build_id=str(uuid.uuid4()),selected_source=identity,content_sha256=tree_fingerprint(root),
                   content_fingerprint_version=PAYLOAD_FINGERPRINT_VERSION)
@@ -423,6 +427,22 @@ def prepare_database(root,name,creds,mode):
     try:command([root/'.venv/bin/python',Path(__file__).with_name('db_update.py'),root,RUN/'mysql.sock',config],cwd=root,timeout=3600)
     finally:config.unlink(missing_ok=True)
 
+def is_solo_deployment(generation):
+    meta = json.loads((generation / 'deployment.json').read_text())
+    return bool(meta.get('build', {}).get('solo_world'))
+
+
+def prepare_world_database(root, enabled, name, creds):
+    from solo_world import prepare_schema, auction, conquest
+    def query(statement):
+        return sql(statement, creds['game'], 'lsb', name)
+    if enabled:
+        prepare_schema(root, query)
+    else:
+        conquest.disable(query)
+        auction.disable(query)
+
+
 def write_staged(generation,info):
     atomic(generation/'deployment.json',info)
     atomic(STATE/'staged.json',info)
@@ -464,8 +484,16 @@ def stage_build(req):
         status('building_database','Building a fresh database from this build’s SQL…' if mode=='fresh' else 'Importing the selected database into an isolated generation…')
         creds=initialize_database(generation,name) if mode=='fresh' else import_database(generation,dump,name)
         before=account_counts(name,creds) if mode!='fresh' else None
+        if mode == 'copy-current' and report.get('solo_world'):
+            # Preserve the active world's gameplay overrides when adding solo to a copy.
+            for setting in ('main.lua', 'map.lua'):
+                existing = previous / 'server/settings' / setting
+                if existing.is_file():
+                    shutil.copy2(existing, staged / 'settings' / setting)
         write_network(staged,name,creds)
         prepare_database(staged,name,creds,'fresh' if mode=='fresh' else 'update')
+        if report.get('solo_world') or mode == 'import' or (mode == 'copy-current' and is_solo_deployment(previous)):
+            prepare_world_database(staged, bool(report.get('solo_world')), name, creds)
         counts=account_counts(name,creds)
         if before is not None and counts!=before:raise RuntimeError('Account or character counts changed while preparing the database; active deployment kept')
         if req.get('local_zones',True):sql("UPDATE zone_settings SET zoneip='127.0.0.1',zoneport=54230;",creds['game'],'lsb',name)
@@ -707,6 +735,8 @@ def restore_database(req,dump=None):
     try:
         creds=import_database(generation,dump,name)
         counts=account_counts(name,creds);write_network(root,name,creds)
+        if meta.get('build', {}).get('solo_world'):
+            prepare_world_database(root, True, name, creds)
         local_zones=meta.get('local_zones',req.get('local_zones',True))
         if local_zones:sql("UPDATE zone_settings SET zoneip='127.0.0.1',zoneport=54230;",creds['game'],'lsb',name)
         info=dict(meta)
@@ -827,7 +857,10 @@ def deploy(req):
     root=generation/'server'
     status('copying','Staging an independent server copy…');snapshot_source(source,root,recover_build_binaries=not req.get('build',False))
     if updating:
-        for f in (previous/'server/settings').glob('*.lua'):shutil.copy2(f,root/'settings'/f.name)
+        previous_solo = is_solo_deployment(previous)
+        for f in (previous/'server/settings').glob('*.lua'):
+            if not previous_solo or f.name != 'zz_handheld_solo.lua':
+                shutil.copy2(f,root/'settings'/f.name)
     build_report=build(root,int(req.get('jobs',2))) if req.get('build',False) else None
     validate_binaries(root)
     identity=req.get('source_identity',{})
@@ -1067,7 +1100,12 @@ def serve():
     status('starting','Starting the managed server…',deployment=meta)
     creds=start_database(generation,True)
     workers=[]
+    world = None
     try:
+        if meta.get('build', {}).get('solo_world'):
+            from solo_world import WorldSession
+            world = WorldSession(lambda statement: sql(statement, creds['game'], 'lsb', meta['database']))
+            world.start()
         progress=StartupProgress(LOGS,programs)
         for name in programs:
             log=(LOGS/(name+'.log')).open('ab')
@@ -1112,6 +1150,8 @@ def serve():
                     if signature!=last_report or now-last_report_at>=2:
                         message='Starting server: '+report['stage']+' ('+str(int(elapsed))+'s). Wait for “Server ready” before connecting.'
                         status('starting',message,deployment=meta,startup=report);last_report=signature;last_report_at=now
+            if world is not None:
+                world.service()
             time.sleep(.5)
     finally:
         # Stop game writers before shutting down their database.
@@ -1124,7 +1164,11 @@ def serve():
         for _,p in workers:
             try:p.wait(timeout=15)
             except subprocess.TimeoutExpired:os.killpg(p.pid,signal.SIGKILL);p.wait(timeout=5)
-        stop_database(creds)
+        try:
+            if world is not None:
+                world.stop()
+        finally:
+            stop_database(creds)
 
 def main():
     for p in (STATE,RUN,LOGS):p.mkdir(parents=True,exist_ok=True)

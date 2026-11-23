@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fetch hash-pinned open runtime components; no game files or user data."""
 import hashlib, json, pathlib, urllib.request, zipfile, tarfile, argparse, shutil
+from server_assets import stage_server_assets
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 OUT=ROOT/'out/runtime-assets'
 CACHE=ROOT/'.tools/runtime'
@@ -60,8 +61,6 @@ def main():
   if folder.exists():
    for f in folder.iterdir():
     if f.is_file():shutil.copyfile(f,packaged/f.name)
- server=ROOT/'out/server-packaged-assets/server';server.mkdir(parents=True,exist_ok=True)
- for f in (ROOT/'server').iterdir():
-  if f.is_file():shutil.copyfile(f,server/f.name)
+ stage_server_assets(ROOT)
  print('Verified runtime assets:',len(files))
 if __name__=='__main__':main()

@@ -1,0 +1,83 @@
+diff --git a/src/search/data_loader.cpp b/src/search/data_loader.cpp
+--- a/src/search/data_loader.cpp
++++ b/src/search/data_loader.cpp
+@@ -29,6 +29,7 @@
+ #include <algorithm>
+ #include <cstring>
+ #include <fmt/ranges.h>
++#include <stdexcept>
+ 
+ #include "data_loader.h"
+ #include "search.h"
+@@ -39,6 +40,39 @@
+ 
+ CDataLoader::~CDataLoader()
+ {
++}
++
++// Price History is requested for one item and one lot size. Only the managed
++// catalogue can supply it, and every worker shares the same finite period budget.
++auto CDataLoader::TrySupplySoloAHItem(uint16 itemId, bool stack) const -> bool
++{
++    bool stocked = false;
++    const bool committed = db::transaction([&]()
++    {
++        const auto state = db::preparedStmt("SELECT demand_left FROM lsb_solo_auction_state WHERE id = 1 FOR UPDATE");
++        if (!state || !state->next() || state->get<uint8>("demand_left") == 0)
++        {
++            return;
++        }
++
++        const auto result = db::preparedStmt("INSERT INTO auction_house (itemid, stack, seller, seller_name, date, price) "
++                                             "SELECT b.itemid, ?, 0, 'LSB Provisioner', 4294967295, "
++                                             "GREATEST(b.BaseSell + 1, o.ask) * IF(?, b.stackSize, 1) "
++                                             "FROM lsb_solo_auction_offers o JOIN item_basic b ON b.itemid = o.itemid "
++                                             "WHERE o.itemid = ? AND b.aH > 0 AND (b.flags & 49216) = 0 AND (? = 0 OR b.stackSize > 1) "
++                                             "AND NOT EXISTS (SELECT 1 FROM auction_house a WHERE a.itemid = b.itemid "
++                                             "AND a.stack = ? AND a.buyer_name IS NULL AND a.sale = 0)",
++                                             stack, stack, itemId, stack, stack);
++        if (result && result->rowsAffected() > 0)
++        {
++            if (!db::preparedStmt("UPDATE lsb_solo_auction_state SET demand_left = demand_left - 1 WHERE id = 1"))
++            {
++                throw std::runtime_error("Could not record offline auction supply");
++            }
++            stocked = true;
++        }
++    });
++    return committed && stocked;
+ }
+ 
+ /************************************************************************
+diff --git a/src/search/data_loader.h b/src/search/data_loader.h
+--- a/src/search/data_loader.h
++++ b/src/search/data_loader.h
+@@ -84,6 +84,7 @@
+     ~CDataLoader();
+ 
+     auto GetPlayersCount(const SearchRequest& sr) const -> uint32;
++    auto TrySupplySoloAHItem(uint16 itemId, bool stack) const -> bool;
+     auto GetAHItemHistory(uint16 ItemID, bool stack) const -> std::vector<AuctionHouseHistory>;
+     auto GetPartyList(uint32 PartyID, uint32 AllianceID) const -> std::vector<SearchEntity>;
+     auto GetLinkshellList(uint32 LinkshellID) const -> std::vector<SearchEntity>;
+diff --git a/src/search/search_handler.cpp b/src/search/search_handler.cpp
+--- a/src/search/search_handler.cpp
++++ b/src/search/search_handler.cpp
+@@ -571,9 +571,14 @@
+     const uint16 ItemID = ref<uint16>(buffer_.data(), 0x12);
+     const uint8  stack  = ref<uint8>(buffer_.data(), 0x15);
+ 
+-    const CDataLoader      PDataLoader;
+-    const auto             HistoryList = PDataLoader.GetAHItemHistory(ItemID, stack != 0);
+-    const AuctionHouseItem item        = PDataLoader.GetAHItemFromItemID(ItemID);
++    const CDataLoader PDataLoader;
++    auto              item = PDataLoader.GetAHItemFromItemID(ItemID);
++    if (item.Category != 0 && (stack != 0 ? item.StackAmount : item.SingleAmount) == 0 &&
++        PDataLoader.TrySupplySoloAHItem(ItemID, stack != 0))
++    {
++        item = PDataLoader.GetAHItemFromItemID(ItemID);
++    }
++    const auto HistoryList = PDataLoader.GetAHItemHistory(ItemID, stack != 0);
+ 
+     CAHHistoryPacket PAHPacket = CAHHistoryPacket(item, stack);
+ 

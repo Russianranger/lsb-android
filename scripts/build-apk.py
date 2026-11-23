@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
+from server_assets import stage_server_assets
 
 root = Path(__file__).resolve().parents[1]
 android = '{http://schemas.android.com/apk/res/android}'
@@ -17,6 +18,8 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--android-jar', type=Path, required=True)
 p.add_argument('--build-tools', type=Path, required=True)
 p.add_argument('--keystore', type=Path, required=True)
+p.add_argument('--runtime-from-0-7-9', type=Path, metavar='APK',
+               help='Reuse the verified Beta 0.7.9 native runtime for a server-only build')
 p.add_argument('--alias', default='lsb-preview')
 p.add_argument('--output', type=Path, default=root/f'out/LSB-Android-{version}.apk')
 p.add_argument('--with-restore-test', action='store_true', help='Also build an isolated LSB Restore Test app from the same compiled code and runtime assets')
@@ -32,10 +35,21 @@ dex.mkdir(parents=True, exist_ok=True)
 for f in classes.rglob('*.class'): f.unlink()
 for f in dex.glob('*.dex'): f.unlink()
 def run(*cmd): subprocess.run([str(x) for x in cmd], check=True, cwd=root)
-run('python3', root/'scripts/build-launcher.py')
-run('python3', root/'scripts/prepare-runtime.py')
-run('python3', root/'scripts/build-presentation.py', 'android')
-if not (root/'out/presentation/x11-frame-bridge').is_file():raise SystemExit('Build the ARM64 guest presentation artifact first.')
+if args.runtime_from_0_7_9:
+    # Both APKs have identical verified payloads and different signing identities.
+    expected = {
+        '0a22dacbedcd455b76bff07951ba18f5b90de6069a2663461c852969911dbe83',
+        'a0c727d5b9c35741e62e6d6e6c27c2485a055c274f337545ebf881fb1f616d69',
+    }
+    with args.runtime_from_0_7_9.open('rb') as previous:
+        if hashlib.file_digest(previous, 'sha256').hexdigest() not in expected:
+            p.error('Runtime input must be the original-signed or verified CI 0.7.9 APK')
+    stage_server_assets(root)
+else:
+    run('python3', root/'scripts/build-launcher.py')
+    run('python3', root/'scripts/prepare-runtime.py')
+    run('python3', root/'scripts/build-presentation.py', 'android')
+    if not (root/'out/presentation/x11-frame-bridge').is_file():raise SystemExit('Build the ARM64 guest presentation artifact first.')
 java_files = sorted((root/'app/src/main/java').rglob('*.java'))
 run('java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '--release', '8', '-cp', args.android_jar, '-d', classes, *java_files)
 class_jar = work/'classes.jar'
@@ -54,15 +68,26 @@ def build_apk(variant, source_manifest, output):
     unsigned = folder/'unsigned.apk'
     run(args.build_tools/'aapt2', 'link', '-I', args.android_jar, '--manifest', source_manifest, '--min-sdk-version', '26', '--target-sdk-version', '35', resources, '-o', unsigned)
     with zipfile.ZipFile(unsigned, 'a', zipfile.ZIP_DEFLATED) as z:
-        z.write(root/'out/launcher-assets/LSB-FFXI.exe', 'assets/LSB-FFXI.exe')
-        for source in ['runtime', 'out/runtime-assets', 'out/runtime-probes', 'out/presentation']:
+        if args.runtime_from_0_7_9:
+            with zipfile.ZipFile(args.runtime_from_0_7_9) as old:
+                for name in old.namelist():
+                    if name == 'assets/LSB-FFXI.exe' or name.startswith(('assets/runtime/', 'lib/')):
+                        # Source-managed scripts still come from this checkout.
+                        if name.startswith('assets/runtime/') and (root/name[7:]).is_file():
+                            continue
+                        z.writestr(name, old.read(name))
+            runtime_sources = ['runtime']
+        else:
+            z.write(root/'out/launcher-assets/LSB-FFXI.exe', 'assets/LSB-FFXI.exe')
+            runtime_sources = ['runtime', 'out/runtime-assets', 'out/runtime-probes', 'out/presentation']
+            for f in sorted((root/'out/runtime-libs').rglob('*.so')):
+                z.write(f, 'lib/'+f.relative_to(root/'out/runtime-libs').as_posix())
+        for source in runtime_sources:
             for f in sorted((root/source).iterdir()):
                 if f.is_file(): z.write(f, 'assets/runtime/'+f.name)
-        for f in sorted((root/'server').glob('*')):
-            if f.is_file(): z.write(f, 'assets/server/'+f.name)
-        z.write(root/'runtime/proot_preflight.py','assets/server/proot_preflight.py')
-        for f in sorted((root/'out/runtime-libs').rglob('*.so')):
-            z.write(f, 'lib/'+f.relative_to(root/'out/runtime-libs').as_posix())
+        server_assets = root/'out/server-packaged-assets'
+        for f in sorted(server_assets.rglob('*')):
+            if f.is_file(): z.write(f, 'assets/'+f.relative_to(server_assets).as_posix())
         for f in sorted(dex.glob('*.dex')): z.write(f, f.name)
         for f in sorted((root/'app/src/main/assets').rglob('*')):
             if f.is_file(): z.write(f, 'assets/'+f.relative_to(root/'app/src/main/assets').as_posix())

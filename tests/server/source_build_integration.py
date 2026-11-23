@@ -21,6 +21,7 @@ import time
 import traceback
 import urllib.request
 
+import solo_source_integration
 import source_patch_integration
 import sol_key_integration
 import accept_loop_integration
@@ -204,7 +205,7 @@ def main():
         programs = ('xi_profile',) if PROFILE_ONLY else required
         assert all(not (STAGING / name).exists() for name in programs)
         print('Building '+', '.join(programs)+' through manager.build with two workers', flush=True)
-        backend.build(STAGING, 2, targets=programs if PROFILE_ONLY else None)
+        backend.build(STAGING, 2, targets=programs if PROFILE_ONLY else None, solo_world=not PROFILE_ONLY)
         backend.validate_binaries(STAGING, programs)
         report['backend_build_report'] = json.loads((backend.LOGS / 'build-report.json').read_text())
         assert source_fingerprint(SOURCE) == before, 'Compilation modified the imported source'
@@ -252,6 +253,12 @@ def main():
         except Exception as error:
             errors['profile_service'] = str(error)
             (ARTIFACTS / 'logs' / 'profile-service-failure.log').write_text(traceback.format_exc())
+        if not PROFILE_ONLY:
+            try:
+                report['solo_world'] = solo_source_integration.check(STAGING)
+            except Exception as error:
+                errors['solo_world'] = str(error)
+                (ARTIFACTS / 'logs' / 'solo-world-failure.log').write_text(traceback.format_exc())
         if errors:
             report['verification_errors'] = errors
             raise AssertionError('Post-build verification failed: ' + json.dumps(errors))

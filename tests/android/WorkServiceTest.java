@@ -98,6 +98,31 @@ public class WorkServiceTest {
             info.nativeLibraryDir=getFilesDir().getPath();return info;
         }};
     }
+    @Test public void packagedServerCopiesNestedModulesAndRemovesOldPayload() throws Exception {
+        File apk = new File(context.getCacheDir(), "solo-assets.apk");
+        String entry = "server/solo_world/modules/handheld_solo/lua/caskets.lua";
+        byte[] script = "return module".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(new FileOutputStream(apk))) {
+            zip.putNextEntry(new java.util.zip.ZipEntry("assets/" + entry));
+            zip.write(script);
+            zip.closeEntry();
+        }
+        android.content.res.AssetManager assets = context.getAssets();
+        Object cookie = assets.getClass().getMethod("addAssetPath", String.class).invoke(assets, apk.getPath());
+        assertTrue((Integer) cookie != 0);
+        ServerRuntime runtime = new ServerRuntime(context, builder -> { throw new AssertionError(); });
+        File obsolete = new File(runtime.backend, "solo_world/modules/old.sql");
+        File world = new File(runtime.state, "saved-world-fixture");
+        FilesEx.text(obsolete, "obsolete");
+        FilesEx.text(world, "world");
+        java.lang.reflect.Method install = ServerRuntime.class.getDeclaredMethod("assets");
+        install.setAccessible(true);
+        install.invoke(runtime);
+        File copied = new File(runtime.backend, entry.substring("server/".length()));
+        assertArrayEquals(script, java.nio.file.Files.readAllBytes(copied.toPath()));
+        assertFalse(obsolete.exists());
+        assertEquals("world", FilesEx.read(world, 128));
+    }
     private static class Child extends Process {
         final ByteArrayOutputStream input=new ByteArrayOutputStream();
         boolean alive,interruptWait,forced;

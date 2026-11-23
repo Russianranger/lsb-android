@@ -1,0 +1,161 @@
+diff --git a/src/map/entities/trust_entity.cpp b/src/map/entities/trust_entity.cpp
+index 5fc615ac..dbf41712 100644
+--- a/src/map/entities/trust_entity.cpp
++++ b/src/map/entities/trust_entity.cpp
+@@ -139,11 +139,21 @@ void CTrustEntity::Die()
+ }
+ 
+ void CTrustEntity::Spawn()
++{
++    spawnWithIdentity(false);
++}
++
++void CTrustEntity::spawnWithIdentity(bool personalMate)
+ {
+     // NOTE: This is purposefully calling CBattleEntity's impl.
+     // TODO: Calling a grand-parent's impl. of an overridden function is bad
+     // we need to skip CMobEntity's spawn because it calculates stats (and our stats are already calculated)
+     CBattleEntity::Spawn();
++    // Base spawn clears local variables. Set the owner before the template's Lua callbacks.
++    if (personalMate)
++    {
++        SetLocalVar("HANDHELD_MATE", PMaster->id);
++    }
+     luautils::OnMobSpawn(this);
+ 
+     // Recompute derived HP/MP after spawn-time modifiers (e.g. HPP/MPP)
+diff --git a/src/map/entities/trust_entity.h b/src/map/entities/trust_entity.h
+index 0b228b96..341e03b0 100644
+--- a/src/map/entities/trust_entity.h
++++ b/src/map/entities/trust_entity.h
+@@ -52,6 +52,7 @@ public:
+     void FadeOut() override;
+     void Die() override;
+     void Spawn() override;
++    void spawnWithIdentity(bool personalMate);
+     bool ValidTarget(CBattleEntity* PInitiator, uint16 targetFlags) override;
+     void OnDespawn(CDespawnState&) override;
+ 
+diff --git a/src/map/packets/s2c/0x0dd_group_list.cpp b/src/map/packets/s2c/0x0dd_group_list.cpp
+index 0f346875..3abe2d6a 100644
+--- a/src/map/packets/s2c/0x0dd_group_list.cpp
++++ b/src/map/packets/s2c/0x0dd_group_list.cpp
+@@ -100,7 +100,7 @@ GP_SERV_COMMAND_GROUP_LIST::GP_SERV_COMMAND_GROUP_LIST(const CTrustEntity* PTrus
+     packet.sjob_no      = static_cast<uint8_t>(PTrust->GetSJob());
+     packet.sjob_lv      = PTrust->GetSLevel();
+ 
+-    const auto nameSize       = std::min<size_t>(PTrust->getName().size(), sizeof(packet.Name));
++    const auto nameSize       = std::min<size_t>(PTrust->packetName.size(), sizeof(packet.Name));
+     const auto packetNameSize = roundUpToNearestFour(static_cast<uint32_t>(nameSize)) + 4; // Always 4 bytes of padding after name
+     std::memcpy(packet.Name, PTrust->packetName.c_str(), nameSize);
+ 
+diff --git a/src/map/utils/trustutils.cpp b/src/map/utils/trustutils.cpp
+index 6eeb4c6b..0402078c 100644
+--- a/src/map/utils/trustutils.cpp
++++ b/src/map/utils/trustutils.cpp
+@@ -48,7 +48,7 @@
+ //
+ 
+ void BuildTrustData(uint32 TrustID);
+-auto LoadTrust(CCharEntity* PMaster, uint32 TrustID) -> CTrustEntity*;
++auto LoadTrust(CCharEntity* PMaster, uint32 TrustID, const trustutils::PersonalMate* mate) -> CTrustEntity*;
+ void LoadTrustStatsAndSkills(CTrustEntity* PTrust);
+ 
+ // List of trusts that are essentially walking GEO bubbles that should not be targetable
+@@ -163,9 +163,9 @@ void trustutils::LoadTrustList()
+     }
+ }
+ 
+-auto trustutils::SpawnTrust(CCharEntity* PMaster, uint32 TrustID) -> CTrustEntity*
++auto trustutils::SpawnTrust(CCharEntity* PMaster, uint32 TrustID, const PersonalMate* mate) -> CTrustEntity*
+ {
+-    CTrustEntity* PTrust = LoadTrust(PMaster, TrustID);
++    CTrustEntity* PTrust = LoadTrust(PMaster, TrustID, mate);
+     if (PTrust == nullptr)
+     {
+         return nullptr;
+@@ -191,8 +191,13 @@ auto trustutils::SpawnTrust(CCharEntity* PMaster, uint32 TrustID) -> CTrustEntit
+         PTrust->PInstance = PMaster->PInstance;
+     }
+ 
++    if (mate)
++    {
++        mate->equip(*PTrust);
++    }
++
+     PMaster->loc.zone->InsertTRUST(PTrust);
+-    PTrust->Spawn();
++    PTrust->spawnWithIdentity(mate != nullptr);
+ 
+     PMaster->PParty->ReloadParty();
+ 
+@@ -325,7 +330,7 @@ void BuildTrustData(uint32 TrustID)
+     }
+ }
+ 
+-auto LoadTrust(CCharEntity* PMaster, uint32 TrustID) -> CTrustEntity*
++auto LoadTrust(CCharEntity* PMaster, uint32 TrustID, const trustutils::PersonalMate* mate) -> CTrustEntity*
+ {
+     const auto itr = g_PTrustData.find(TrustID);
+     if (itr == g_PTrustData.end())
+@@ -347,7 +352,7 @@ auto LoadTrust(CCharEntity* PMaster, uint32 TrustID) -> CTrustEntity*
+     PTrust->name  = trustData->name;
+ 
+     PTrust->m_Pool         = trustData->pool;
+-    PTrust->packetName     = trustData->packet_name;
++    PTrust->packetName     = mate ? mate->name : trustData->packet_name;
+     PTrust->m_name_prefix  = trustData->name_prefix;
+     PTrust->m_Species      = trustData->m_Species;
+     PTrust->m_MobSkillList = trustData->m_MobSkillList;
+@@ -363,12 +368,10 @@ auto LoadTrust(CCharEntity* PMaster, uint32 TrustID) -> CTrustEntity*
+     PTrust->modelHitboxSize = trustData->modelHitboxSize;
+     PTrust->m_EcoSystem     = trustData->EcoSystem;
+ 
+-    PTrust->SetMJob(trustData->mJob);
+-    PTrust->SetSJob(trustData->sJob);
+-
+-    // assume level matches master
+-    PTrust->SetMLevel(PMaster->GetMLevel());
+-    PTrust->SetSLevel(std::floor(PMaster->GetMLevel() / 2));
++    PTrust->SetMJob(mate ? mate->mainJob : trustData->mJob);
++    PTrust->SetSJob(mate ? mate->subJob : trustData->sJob);
++    PTrust->SetMLevel(mate ? mate->mainLevel : PMaster->GetMLevel());
++    PTrust->SetSLevel(mate ? mate->subLevel : PMaster->GetMLevel() / 2);
+ 
+     LoadTrustStatsAndSkills(PTrust);
+ 
+diff --git a/src/map/utils/trustutils.h b/src/map/utils/trustutils.h
+index 991e0d48..f61ac2eb 100644
+--- a/src/map/utils/trustutils.h
++++ b/src/map/utils/trustutils.h
+@@ -21,6 +21,9 @@
+ #pragma once
+ 
+ #include "common/cbasetypes.h"
++#include "common/types/fn.h"
++
++#include <string>
+ 
+ class CCharEntity;
+ class CTrustEntity;
+@@ -28,8 +31,18 @@ class CTrustEntity;
+ namespace trustutils
+ {
+ 
+-// We cache all of this so we don't have to hit the database every time a trust is spawned
++struct PersonalMate
++{
++    std::string                     name;
++    uint8                           mainJob;
++    uint8                           mainLevel;
++    uint8                           subJob;
++    uint8                           subLevel;
++    FnRef<void(CTrustEntity&) const> equip;
++};
++
++// Cache Trust templates once, at map startup.
+ void LoadTrustList();
+-auto SpawnTrust(CCharEntity* PMaster, uint32 TrustID) -> CTrustEntity*;
++auto SpawnTrust(CCharEntity* PMaster, uint32 TrustID, const PersonalMate* mate = nullptr) -> CTrustEntity*;
+ 
+ }; // namespace trustutils

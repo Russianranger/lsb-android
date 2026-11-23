@@ -941,10 +941,24 @@ public final class MainActivity extends Activity {
         EditText ref=loginField(source,"Branch, tag or exact commit",getSharedPreferences("server",0).getString("ref","base"),android.text.InputType.TYPE_CLASS_TEXT);ref.setContentDescription("Source branch tag or commit");
         source.addView(label("Editing these fields does not change the fetched source until you tap Fetch.",12,MUTED));
         button(source,"Fetch this source",()->{String repository=repo.getText().toString().trim(),revision=ref.getText().toString().trim();getSharedPreferences("server",0).edit().putString("repository",repository).putString("ref",revision).apply();run("Fetching source snapshot",(ctx,p)->SourceImport.download(new File(storage(ctx),"server"),repository,revision,p));}).setEnabled(idle);
+        button(source,"Fetch supported solo source",()->{
+            String repository="https://github.com/LandSandBoat/server";
+            String revision="6d5a5137024e21602e37032f6e55a682971329be";
+            repo.setText(repository);ref.setText(revision);
+            getSharedPreferences("server",0).edit().putString("repository",repository).putString("ref",revision).apply();
+            run("Fetching supported solo source",(ctx,p)->SourceImport.download(new File(storage(ctx),"server"),repository,revision,p));
+        }).setEnabled(idle);
         button(source,"Import source / existing server ZIP",()->pick("source")).setEnabled(idle);
         if(report.exists())button(source,"View fetched source report",()->{try{showText("Fetched source report",FilesEx.read(report,8192));}catch(Exception e){error(e);}},true);
         LinearLayout compile=featuredCard("2 · Build this source with jemalloc");
         compile.addView(label("Next build uses the fetched source shown in step 1. jemalloc is required and checked for every required server program, including the profile service in newer source.",13,MUTED));
+        CheckBox soloWorld=new CheckBox(this);
+        soloWorld.setText("Build with handheld solo features");
+        soloWorld.setTextColor(TEXT);
+        soloWorld.setChecked(getSharedPreferences("server",0).getBoolean("solo_world",false));
+        soloWorld.setOnCheckedChangeListener((view,on)->getSharedPreferences("server",0).edit().putBoolean("solo_world",on).apply());
+        compile.addView(soloWorld);
+        compile.addView(label("Adds solo crafting and gathering, fishing, extra treasure caskets, offline Conquest, a local auction market and one active personal squad mate.",13,MUTED));
         compile.addView(label("Build workers",14,TEXT));
         Spinner workers=new Spinner(this);String[] workerLabels=new String[16];for(int i=0;i<workerLabels.length;i++)workerLabels[i]="j"+(i+1)+" · "+(i+1)+" worker"+(i==0?"":"s");
         workers.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,workerLabels));workers.setContentDescription("Build worker count");
@@ -957,6 +971,7 @@ public final class MainActivity extends Activity {
             button(compile,"Verify and reuse previous successful build",()->run("Verifying previous jemalloc build",(ctx,p)->ServerRuntime.get(ctx).performBuild("adopt-build","","","",p))).setEnabled(sr.toolsCurrent()&&idle);
         }
         if(built){
+            compile.addView(label(build.optInt("solo_world",0)>0?"Handheld solo features included":"Standard world build",13,ACCENT));
             compile.addView(label("COMPLETED BUILD\nBuild ID: "+buildId+"\nAllocator: jemalloc · Workers: j"+build.optInt("jobs",2)+"\nCompleted: "+receiptTime(build,"finished_at")+"\n"+sourceIdentity(builtSource),13,TEXT));
             if(!sameSource(selected,builtSource))compile.addView(label("This completed build is from a different or unverified source snapshot. Step 3 stages the build ID above, not the newly fetched source.",14,ACCENT));
         }else compile.addView(label(buildId.isEmpty()?"No identified successful build yet. Build the fetched source or verify an available previous build before preparing its database.":"Latest build status: "+build.optString("state","unknown")+". Finish a successful jemalloc build before staging.",13,MUTED));
